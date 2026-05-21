@@ -32,10 +32,11 @@ func run() error {
 	roomRegistry := registry.NewRoomRegistry(roomFactory, roomHandlerFactory, logger)
 
 	createUseCase := room.NewCreateUseCase(roomRegistry, logger)
+	joinUseCase := room.NewJoinUseCase(nil, logger)
 	deleteUseCase := room.NewDeleteUseCase(roomRegistry, logger)
 	getListUseCase := room.NewGetListUseCase(roomRegistry, logger)
 
-	roomsHandler := http.NewRoomsHandler(createUseCase, deleteUseCase, getListUseCase, logger)
+	roomsHandler := http.NewRoomsHandler(createUseCase, joinUseCase, deleteUseCase, getListUseCase, logger)
 	roomsHandler.RegisterRoutes(fiberApp)
 
 	return fiberApp.Listen(":3000")

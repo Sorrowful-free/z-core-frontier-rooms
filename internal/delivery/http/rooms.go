@@ -8,15 +8,17 @@ import (
 
 type RoomsHandler struct {
 	createUseCase  *room.CreateUseCase
+	joinUseCase    *room.JoinUseCase
 	deleteUseCase  *room.DeleteUseCase
 	getListUseCase *room.GetListUseCase
 
 	logger logging.Logger
 }
 
-func NewRoomsHandler(createUseCase *room.CreateUseCase, deleteUseCase *room.DeleteUseCase, getListUseCase *room.GetListUseCase, logger logging.Logger) *RoomsHandler {
+func NewRoomsHandler(createUseCase *room.CreateUseCase, joinUseCase *room.JoinUseCase, deleteUseCase *room.DeleteUseCase, getListUseCase *room.GetListUseCase, logger logging.Logger) *RoomsHandler {
 	return &RoomsHandler{
 		createUseCase:  createUseCase,
+		joinUseCase:    joinUseCase,
 		deleteUseCase:  deleteUseCase,
 		getListUseCase: getListUseCase,
 		logger:         logger,
@@ -24,6 +26,11 @@ func NewRoomsHandler(createUseCase *room.CreateUseCase, deleteUseCase *room.Dele
 }
 
 func (h *RoomsHandler) CreateRoom(c *fiber.Ctx) error {
+
+	return nil
+}
+
+func (h *RoomsHandler) JoinRoom(c *fiber.Ctx) error {
 	return nil
 }
 

@@ -10,6 +10,13 @@ type WsConnection struct {
 	incoming chan domain.Frame
 }
 
+func NewWsConnection(conn *websocket.Conn) *WsConnection {
+	return &WsConnection{
+		conn:     conn,
+		incoming: make(chan domain.Frame),
+	}
+}
+
 func (c *WsConnection) Close() error {
 	return c.conn.Close()
 }

@@ -7,6 +7,6 @@ import (
 )
 
 type Admission interface {
-	Issue(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, password string) (domain.Claims, error)
+	Issue(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, password string) ([]byte, error)
 	Validate(ctx context.Context, token []byte) (domain.Claims, error)
 }
