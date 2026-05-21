@@ -1,0 +1,58 @@
+---
+description: Go best practices, Fiber для HTTP, тесты в tests/
+alwaysApply: true
+---
+
+# Go — стандарты проекта
+
+## Best practices
+
+- Следовать [Effective Go](https://go.dev/doc/effective_go), [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments) и официальным гайдам по модулям/пакетам.
+- Пакеты — по ответственности и фиче; публичный API — минимальный, остальное неэкспортируемо.
+- Ошибки: оборачивать контекстом (`fmt.Errorf("...: %w", err)`), не глотать; доменные ошибки — в `domain`, маппинг в HTTP — в `delivery`.
+- `context.Context` — первым аргументом в I/O и долгих операциях; отмена и дедлайны — через `ctx`, не через глобалы.
+- Интерфейсы — на стороне потребителя (`port`), маленькие; не создавать «на будущее».
+- Именование: короткие имена в узкой области; без префиксов `I` у интерфейсов; `ErrXxx` для sentinel-ошибок.
+- Конкурентность: явная передача ownership; `sync`/`errgroup` по необходимости; без утечек горутин при shutdown.
+- Зависимости: только нужные; версии — через `go.mod` / `go get`, без копирования в `vendor/` без причины.
+- Линтеры и формат: `go fmt`, `go vet`; при наличии в репо — `staticcheck` / `golangci-lint`.
+
+## HTTP — Fiber
+
+- Для HTTP **только** [Fiber](https://gofiber.io/) (`github.com/gofiber/fiber/v3`).
+- Запрещены: `net/http` handlers, Echo, Gin, Chi, mux и другие HTTP-фреймворки.
+- Fiber — в `internal/delivery/http/` (router, handlers, middleware).
+- Handlers тонкие: парсинг запроса → use case → маппинг ответа/ошибки. Без бизнес-логики в handlers и middleware.
+- HTTP-тесты — в `tests/delivery/http/` через `fiber.App` и `app.Test` (или httptest поверх Fiber).
+
+## Тесты — только в `tests/`
+
+- **Не** класть `*_test.go` рядом с production-кодом в `cmd/`, `internal/`, `pkg/`.
+- Все тесты — под каталогом **`tests/`**, зеркаля структуру кода:
+
+```text
+tests/
+  domain/...          # unit домена
+  usecase/...         # unit сценариев (моки port)
+  adapter/...         # интеграция адаптеров
+  delivery/...        # HTTP / transport (Fiber app.Test и т.п.)
+  integration/...     # сквозные сценарии
+```
+
+- Пакет теста — **внешний**: `package room_test`, импорт `github.com/Sorrowful-free/z-core-frontier-rooms/...`.
+- Table-driven tests, `t.Parallel()` где безопасно; хелперы — `t.Helper()`.
+- Запуск: `go test ./tests/...` (из корня модуля).
+- После завершения функционала — спросить: **«Нужно ли написать тесты для этого функционала?»** Не писать тесты молча.
+
+## Пример
+
+```go
+// tests/usecase/room/create_test.go
+package room_test
+
+import (
+	"testing"
+
+	usecaseroom "github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
+)
+```
