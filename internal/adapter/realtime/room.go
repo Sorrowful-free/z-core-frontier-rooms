@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
@@ -12,6 +13,7 @@ import (
 type Room struct {
 	id       domain.RoomID
 	handler  realtime.RoomHandler
+	mutex    sync.RWMutex
 	peers    map[domain.PeerID]realtime.Peer
 	incoming chan events.RoomEvent
 	logger   logging.Logger
@@ -23,6 +25,7 @@ func NewRoom(id domain.RoomID, handler realtime.RoomHandler, logger logging.Logg
 	return &Room{
 		id:       id,
 		handler:  handler,
+		mutex:    sync.RWMutex{},
 		peers:    make(map[domain.PeerID]realtime.Peer),
 		incoming: make(chan events.RoomEvent),
 		logger:   logger,
@@ -35,6 +38,8 @@ func (r *Room) GetID() domain.RoomID {
 }
 
 func (r *Room) GetPeers() []realtime.Peer {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
 	peers := make([]realtime.Peer, 0, len(r.peers))
 	for _, p := range r.peers {
 		peers = append(peers, p)
@@ -58,6 +63,8 @@ func (r *Room) Stop() error {
 }
 
 func (r *Room) Join(peer realtime.Peer) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
 	if err := r.handler.OnJoin(peer); err != nil {
 		return err
 	}
@@ -66,6 +73,8 @@ func (r *Room) Join(peer realtime.Peer) error {
 }
 
 func (r *Room) Leave(peer realtime.Peer) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
 	if err := r.handler.OnLeave(peer); err != nil {
 		return err
 	}
@@ -74,6 +83,8 @@ func (r *Room) Leave(peer realtime.Peer) error {
 }
 
 func (r *Room) Send(peerEvent events.PeerEvent) error {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
 	peer, ok := r.peers[peerEvent.PeerID]
 	if !ok {
 		return fmt.Errorf("peer not found: %s", peerEvent.PeerID)
