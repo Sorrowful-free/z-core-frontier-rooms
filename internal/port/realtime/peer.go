@@ -7,6 +7,8 @@ import (
 
 type Peer interface {
 	GetID() domain.PeerID
+	GetNickName() string
+	GetPing() int64
 
 	Start() error
 	Stop() error

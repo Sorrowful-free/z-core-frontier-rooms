@@ -7,6 +7,7 @@ import (
 
 type Room interface {
 	GetID() domain.RoomID
+	GetPeers() []Peer
 
 	Start() error
 	Stop() error

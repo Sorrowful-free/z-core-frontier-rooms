@@ -26,27 +26,31 @@ func NewConnectUseCase(admission admission.Admission, peerFactory realtime.PeerF
 	}
 }
 
-func (uc *ConnectUseCase) Connect(ctx context.Context, connection transport.Connection, token []byte) (realtime.Room, error) {
+func (uc *ConnectUseCase) Connect(ctx context.Context, connection transport.Connection, token []byte) (RoomSummary, error) {
 	claims, err := uc.admission.Validate(ctx, token)
 	if err != nil {
-		return nil, err
+		return EmptyRoomSummary, err
 	}
 
-	room, err := uc.roomRegistry.GetRoom(claims.RoomID)
+	room, err := uc.roomRegistry.GetRoom(ctx, claims.RoomID)
 	if err != nil {
-		return nil, err
+		return EmptyRoomSummary, err
 	}
 
 	peer := uc.peerFactory.CreatePeer(claims.PeerID, connection, uc.logging)
 
 	if err := room.Join(peer); err != nil {
-		return nil, err
+		uc.logging.Error("error joining room", "error", err)
+		return EmptyRoomSummary, err
 	}
 
 	if err := peer.Start(); err != nil {
+		room.Leave(peer)
 		peer.Stop()
-		return nil, err
+		uc.logging.Error("error starting peer", "error", err)
+		return EmptyRoomSummary, err
 	}
 
-	return room, nil
+	roomSummary := NewRoomSummaryFromRoom(room)
+	return *roomSummary, nil
 }

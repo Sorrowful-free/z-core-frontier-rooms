@@ -9,6 +9,8 @@ import (
 
 type Peer struct {
 	id         domain.PeerID
+	nickName   string
+	ping       int64
 	connection transport.Connection
 	incoming   chan events.PeerEvent
 	logger     logging.Logger
@@ -28,6 +30,14 @@ func NewPeer(id domain.PeerID, connection transport.Connection, logger logging.L
 
 func (p *Peer) GetID() domain.PeerID {
 	return p.id
+}
+
+func (p *Peer) GetNickName() string {
+	return p.nickName
+}
+
+func (p *Peer) GetPing() int64 {
+	return p.ping
 }
 
 func (p *Peer) Start() error {

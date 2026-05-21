@@ -34,6 +34,14 @@ func (r *Room) GetID() domain.RoomID {
 	return r.id
 }
 
+func (r *Room) GetPeers() []realtime.Peer {
+	peers := make([]realtime.Peer, 0, len(r.peers))
+	for _, p := range r.peers {
+		peers = append(peers, p)
+	}
+	return peers
+}
+
 func (r *Room) Start() error {
 	go processRoomEvents(r)
 	if err := r.handler.OnStart(r); err != nil {

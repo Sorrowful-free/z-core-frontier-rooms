@@ -1,12 +1,15 @@
 package registry
 
 import (
+	"context"
+
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 )
 
 type RoomRegistry interface {
-	GetRoom(id domain.RoomID) (realtime.Room, error)
-	CreateRoom(id domain.RoomID) (realtime.Room, error)
-	DeleteRoom(id domain.RoomID) error
+	GetRoom(ctx context.Context, id domain.RoomID) (realtime.Room, error)
+	CreateRoom(ctx context.Context, id domain.RoomID) (realtime.Room, error)
+	DeleteRoom(ctx context.Context, id domain.RoomID) error
+	GetList(ctx context.Context) ([]realtime.Room, error)
 }
