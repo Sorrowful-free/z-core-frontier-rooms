@@ -23,3 +23,9 @@ func (r RoomID) IsValid() bool {
 func (p PeerID) IsValid() bool {
 	return p > 0
 }
+
+const (
+	DeliveryDefault    Delivery = 0
+	DeliveryReliable   Delivery = 1
+	DeliveryUnreliable Delivery = 2
+)
