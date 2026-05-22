@@ -4,7 +4,9 @@ import (
 	"context"
 	"log"
 	"os"
+	"time"
 
+	admissionadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/admission"
 	zaplog "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/zap"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/registry"
@@ -43,9 +45,11 @@ func run() error {
 	roomRegistry := registry.NewRoomRegistry(roomFactory, roomHandlerFactory, zaplog.NewFrom(z, "rooms registry"))
 	peerFactory := realtime.NewPeerFactory(zaplog.NewFrom(z, "peer factory"))
 
+	admission := admissionadapter.NewAdmission([]byte("dev-secret-change-me"), time.Hour, "")
+
 	createUseCase := room.NewCreateUseCase(roomRegistry, zaplog.NewFrom(z, "create use case"))
-	connectUseCase := room.NewConnectUseCase(nil, peerFactory, roomRegistry, zaplog.NewFrom(z, "connect use case"))
-	joinUseCase := room.NewJoinUseCase(nil, zaplog.NewFrom(z, "join use case"))
+	connectUseCase := room.NewConnectUseCase(admission, peerFactory, roomRegistry, zaplog.NewFrom(z, "connect use case"))
+	joinUseCase := room.NewJoinUseCase(admission, zaplog.NewFrom(z, "join use case"))
 	deleteUseCase := room.NewDeleteUseCase(roomRegistry, zaplog.NewFrom(z, "delete use case"))
 	getListUseCase := room.NewGetListUseCase(roomRegistry, zaplog.NewFrom(z, "get list use case"))
 
