@@ -4,13 +4,12 @@ package enet
 
 import (
 	"context"
-	"errors"
 	"sync"
 
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/joinerror"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	libenet "github.com/codecat/go-enet"
 )
-
-var errEmptyToken = errors.New("enet: empty token")
 
 func (h *RoomsHandler) run(ctx context.Context) error {
 	libenet.Initialize()
@@ -67,6 +66,7 @@ func (h *RoomsHandler) run(ctx context.Context) error {
 				data := append([]byte(nil), packet.GetData()...)
 				packet.Destroy()
 				if err := h.admit(ctx, sess, data); err != nil {
+					joinerror.Send(sess.conn, err)
 					_ = sess.close()
 					sess.clearPeerData()
 					mu.Lock()
@@ -109,12 +109,12 @@ func (h *RoomsHandler) run(ctx context.Context) error {
 func (h *RoomsHandler) admit(ctx context.Context, sess *peerSession, token []byte) error {
 	if len(token) == 0 {
 		h.logger.Warn("enet connect: empty token", "enet_peer_id", sess.id)
-		return errEmptyToken
+		return domain.ErrEmptyToken
 	}
 
 	summary, peerID, err := h.joinRoomUseCase.JoinRoom(ctx, sess.conn, token)
 	if err != nil {
-		h.logger.Error("enet join room failed", "error", err, "enet_peer_id", sess.id)
+		h.logger.Error("enet join room failed", "error", err, "enet_peer_id", sess.id, "op", joinerror.OpCode(err))
 		return err
 	}
 

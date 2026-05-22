@@ -6,15 +6,16 @@
 
 ```text
 tests/
-  domain/           — unit домена
-  usecase/room/     — Create, IssueTicket, JoinRoom, LeaveRoom, …
-  adapter/          — admission, registry, realtime (с моками port)
-  delivery/http/    — Fiber app.Test
-  delivery/ws/      — при необходимости
-  integration/      — сквозные сценарии
+  delivery/joinerror/   — маппинг join-ошибок → OpCode
+  adapter/admission/    — ticket Issue/Validate
+  adapter/realtime/     — Room Join, handler без deadlock
+  adapter/registry/     — RoomRegistry
+  usecase/room/         — (планируется) JoinRoom / LeaveRoom с моками
+  delivery/http/        — (планируется) Fiber после REST
+  integration/          — (планируется) сквозные сценарии
 ```
 
-Пакеты — **внешние** (`package room_test`), импорт модуля `github.com/Sorrowful-free/z-core-frontier-rooms/...`.
+Пакеты — **внешние** (`package *_test`), импорт модуля `github.com/Sorrowful-free/z-core-frontier-rooms/...`.
 
 Запуск из корня модуля:
 
@@ -28,11 +29,23 @@ go test ./tests/...
 go test -race ./tests/...
 ```
 
-## Приоритет покрытия (когда появятся тесты)
+## Уже покрыто (80/20, первый срез)
 
-1. `adapter/admission` — sign/verify, expired token, invalid MAC.
-2. `usecase/room` — `IssueTicket`, `JoinRoom` (мок registry/admission), `LeaveRoom`.
-3. `adapter/registry` — create/get/delete, ошибка старта комнаты.
-4. `delivery/http` — маршруты REST после реализации handlers.
+| Пакет | Что даёт |
+|-------|----------|
+| `tests/delivery/joinerror` | Все sentinel + wrapped → `OpCode`; регрессии при новых ошибках |
+| `tests/adapter/admission` | Round-trip ticket, invalid/expired token, invalid credentials |
+| `tests/adapter/realtime` | `OnJoin` вызывает `room.Send` без deadlock; откат map при `ErrJoinDenied` |
+| `tests/adapter/registry` | `GetRoom` → `errors.Is(ErrRoomNotFound)` |
 
-Подробнее о слоях и use case — [README.md](../README.md) в корне репозитория.
+## Следующий приоритет (оставшиеся 20% усилий → много пользы)
+
+1. **`usecase/room/join_room`** — мок `Admission` + in-memory registry: успешный join, ошибка validate → не в комнате.
+2. **`adapter/realtime` `Send`** — broadcast с `ExcludePeerID` не доставляет отправителю (stub peers + счётчик `Deliver`).
+3. **`Peer.Stop`** — не зависает: mock `Connection` с блокирующим `Receive`, `Stop` завершается после `Close`.
+4. **`delivery/ws`** — `app.Test`: невалидный token → ответный opcode в записи conn (mock transport) — после стабилизации тестового harness.
+5. **Интеграция** — create room → issue ticket → join (опционально, дороже в поддержке).
+
+При добавлении join-ошибки — кейс в `op_code_test.go` (см. [.cursor/rules/join-error-opcodes.mdc](../.cursor/rules/join-error-opcodes.mdc)).
+
+Подробнее о слоях, OpCode и use case — [README.md](../README.md) в корне репозитория.

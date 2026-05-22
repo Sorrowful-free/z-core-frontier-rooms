@@ -9,7 +9,7 @@ alwaysApply: true
 
 - Следовать [Effective Go](https://go.dev/doc/effective_go), [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments) и официальным гайдам по модулям/пакетам.
 - Пакеты — по ответственности и фиче; публичный API — минимальный, остальное неэкспортируемо.
-- Ошибки: оборачивать контекстом (`fmt.Errorf("...: %w", err)`), не глотать; доменные ошибки — в `domain`, маппинг в HTTP — в `delivery`.
+- Ошибки: оборачивать контекстом (`fmt.Errorf("...: %w", err)`), не глотать; доменные ошибки — в `domain`, маппинг в HTTP — в `delivery/http`, join/admit на wire — в `delivery/joinerror` (см. [.cursor/rules/join-error-opcodes.mdc](join-error-opcodes.mdc)).
 - `context.Context` — первым аргументом в I/O и долгих операциях; отмена и дедлайны — через `ctx`, не через глобалы.
 - Интерфейсы — на стороне потребителя (`port`), маленькие; не создавать «на будущее».
 - Именование: короткие имена в узкой области; без префиксов `I` у интерфейсов; `ErrXxx` для sentinel-ошибок.

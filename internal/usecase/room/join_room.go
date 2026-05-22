@@ -2,6 +2,7 @@ package room
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/admission"
@@ -55,7 +56,7 @@ func (uc *JoinRoomUseCase) JoinRoom(ctx context.Context, connection transport.Co
 		room.Leave(peer)
 		peer.Stop()
 		uc.logging.Error("error starting peer", "error", err)
-		return EmptyRoomSummary, domain.PeerIDInvalid, err
+		return EmptyRoomSummary, domain.PeerIDInvalid, fmt.Errorf("%w: %w", domain.ErrPeerStartFailed, err)
 	}
 
 	roomSummary := NewRoomSummaryFromRoom(room)

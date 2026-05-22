@@ -1,0 +1,37 @@
+---
+description: Join/realtime ошибки — sentinel в domain, OpCode в joinerror, чеклист при новых кодах
+globs: internal/**/*.go
+alwaysApply: false
+---
+
+# Join-ошибки и OpCode (data plane)
+
+## Слои
+
+1. **`internal/domain/join_errors.go`** — sentinel (`ErrInvalidToken`, `ErrJoinDenied`, …).
+2. **`internal/domain/opcodes.go`** — байт `OpCode` для wire (группы `0x40` join, `0x50` internal, `0x60+` in-room — отдельно).
+3. **`internal/delivery/joinerror`** — единственный маппер `OpCode(err)` + `Send(conn, err)` перед закрытием transport.
+4. **Источник ошибки** — оборачивать `%w` доменным sentinel (registry, `room.Join`, use case).
+5. **Не** слать текст клиенту; UI-строки только на клиенте по opcode.
+
+## Чеклист при новой ошибке join/admit
+
+- [ ] Константа `Err…` в `domain/join_errors.go` (или переиспользован существующий).
+- [ ] Константа `Op…` в `domain/opcodes.go` в нужной группе; не занимать `0x60+` без задачи in-room.
+- [ ] Ветка `case errors.Is(err, domain.Err…):` в `delivery/joinerror/join_error.go`.
+- [ ] Table-driven кейс в `tests/delivery/joinerror/op_code_test.go`.
+- [ ] Строка в README (таблица OpCode) для клиента.
+- [ ] Возврат из adapter/use case: `fmt.Errorf("…: %w", domain.Err…, err)` — не голый `errors.New` без связи с mapper.
+
+## Пример
+
+```go
+// adapter
+return fmt.Errorf("registry: %w", domain.ErrRoomNotFound)
+
+// joinerror/join_error.go
+case errors.Is(err, domain.ErrRoomNotFound):
+    return domain.OpRoomNotFound
+```
+
+HTTP-ошибки control plane — отдельный маппинг в `delivery/http` (status), не смешивать с join opcodes.

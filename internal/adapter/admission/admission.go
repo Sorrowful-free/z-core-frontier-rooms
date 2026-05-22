@@ -5,7 +5,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"time"
 
@@ -14,9 +13,9 @@ import (
 )
 
 var (
-	ErrInvalidCredentials = errors.New("admission: invalid credentials")
-	ErrInvalidToken       = errors.New("admission: invalid token")
-	ErrExpiredToken       = errors.New("admission: expired token")
+	ErrInvalidCredentials = domain.ErrInvalidCredentials
+	ErrInvalidToken       = domain.ErrInvalidToken
+	ErrExpiredToken       = domain.ErrExpiredToken
 )
 
 const (

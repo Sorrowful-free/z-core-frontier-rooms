@@ -46,7 +46,7 @@ func (r *RoomRegistry) GetRoom(ctx context.Context, id domain.RoomID) (realtime.
 	defer r.mutex.RUnlock()
 	room, ok := r.rooms[id]
 	if !ok {
-		return nil, fmt.Errorf("room not found: %s", id)
+		return nil, fmt.Errorf("%w: %s", domain.ErrRoomNotFound, id)
 	}
 	return room, nil
 }
@@ -57,7 +57,7 @@ func (r *RoomRegistry) DeleteRoom(ctx context.Context, id domain.RoomID) error {
 	defer r.mutex.Unlock()
 	room, ok := r.rooms[id]
 	if !ok {
-		return fmt.Errorf("room not found: %s", id)
+		return fmt.Errorf("%w: %s", domain.ErrRoomNotFound, id)
 	}
 	if err := room.Stop(); err != nil {
 		r.logger.Error("error stopping room", "error", err)

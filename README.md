@@ -15,7 +15,7 @@
 | `adapter/transport` | WebSocket; ENet (CGO + build tag `enet`) |
 | Use case `Create` / `Delete` / `GetList` | Реализованы; HTTP handlers — **заглушки** (use case не вызываются) |
 | Use case `IssueTicket` | Реализован; в `cmd` подключён; **HTTP-маршрута пока нет** |
-| Use case `JoinRoom` | Data plane: validate ticket → peer → `room.Join` → `Start`; WS + ENet в `cmd` |
+| Use case `JoinRoom` | Data plane: validate ticket → peer → `room.Join` → `Start`; WS + ENet в `cmd`; при ошибке join — OpCode на wire (`delivery/joinerror`) |
 | Use case `LeaveRoom` | `GetPeer` → `room.Leave` → `peer.Stop`; вызывается при disconnect WS/ENet |
 | `delivery/http` | Маршруты REST; тела/JSON — TODO |
 | `delivery/ws` | `GET /ws` (upgrade), `JoinRoom` + `LeaveRoom` |
@@ -96,7 +96,9 @@ WebSocket — на **том же** `*fiber.App` (HTTP upgrade). ENet — **от�
 5. peer.Start()
 ```
 
-При ошибке на шаге 5: `room.Leave(peer)`, `peer.Stop()`. Закрытие сокета при ошибке до успешного join — ответственность `delivery`.
+При ошибке на шаге 5: `room.Leave(peer)`, `peer.Stop()`. При любой ошибке join delivery шлёт **один binary-кадр** с OpCode ошибки (`joinerror.Send`), затем закрывает transport (`defer Close` на WS, `sess.close` на ENet). До `peer.Start()` use case **не** вызывает `peer.Stop()` — только откат membership в `Room`.
+
+Ошибки join оборачивают sentinel из `domain/join_errors.go` (`%w`); маппинг в OpCode — **только** в `internal/delivery/joinerror` (чеклист — [.cursor/rules/join-error-opcodes.mdc](.cursor/rules/join-error-opcodes.mdc)).
 
 Возвращает `(RoomSummary, PeerID, error)` — `PeerID` нужен для `LeaveRoom` при disconnect.
 
@@ -121,7 +123,7 @@ WebSocket — на **том же** `*fiber.App` (HTTP upgrade). ENet — **от�
 Реализация: `internal/adapter/admission` (HMAC-SHA256, фиксированный размер token 33 байта).
 
 - **`Issue`** — `roomID`, `peerID`, `password` → `[]byte` ticket.
-- **`Validate`** — `token` → `domain.Claims` или ошибка (`ErrInvalidToken`, `ErrExpiredToken`, …).
+- **`Validate`** — `token` → `domain.Claims` или ошибка (`domain.ErrInvalidToken`, `domain.ErrExpiredToken`, …).
 
 `domain.Claims`: `RoomID`, `PeerID`, `IssuedAt`, `ExpiresAt`.
 
@@ -147,6 +149,26 @@ WebSocket — на **том же** `*fiber.App` (HTTP upgrade). ENet — **от�
 | WebSocket | `internal/adapter/transport/ws/` |
 | ENet | `internal/adapter/transport/enet/` (`connection_cgo.go` / stub) |
 
+### Wire: OpCode (data plane)
+
+Кадр: **1 байт `OpCode` + `Payload`**. Для ошибок join **payload пустой**; клиент мапит `OpCode` → свои UI-строки.
+
+| OpCode | Hex | Смысл (join / admit) |
+|--------|-----|----------------------|
+| `OpEmptyToken` | `0x40` | Пустой ticket (ENet admit) |
+| `OpInvalidToken` | `0x41` | Невалидный ticket |
+| `OpExpiredToken` | `0x42` | Ticket истёк |
+| `OpRoomNotFound` | `0x43` | Комната не найдена |
+| `OpJoinDenied` | `0x44` | Handler отклонил join |
+| `OpReplaceFailed` | `0x45` | Ошибка replace |
+| `OpPeerNotFound` | `0x46` | Peer не в комнате (replace) |
+| `OpInternal` | `0x50` | Прочая ошибка сервера при join |
+| `OpPeerStartFailed` | `0x51` | Не удалось `peer.Start()` |
+
+Зарезервировано: `0x01–0x3F` — игровой трафик / relay; `0x60–0x6F` — ошибки **внутри комнаты** (отдельная задача).
+
+Источник констант: `internal/domain/opcodes.go`. Маппер: `internal/delivery/joinerror`.
+
 ## API и endpoints
 
 ### HTTP (Fiber), порт `:3000`
@@ -165,7 +187,9 @@ WebSocket — на **том же** `*fiber.App` (HTTP upgrade). ENet — **от�
 |-------|------|-----------|-----------|
 | `GET` | `/ws` | `token` (query) | Upgrade → `JoinRoom` → ожидание disconnect → `LeaveRoom` |
 
-**Ограничение:** ticket бинарный (33 байта); передача в query string без base64/hex **может ломать** валидацию. Для продакшена — кодирование ticket или другой канал (header / первое binary-сообщение).
+При ошибке `JoinRoom`: один кадр с OpCode из таблицы выше → закрытие WebSocket.
+
+**Ограничение:** ticket бинарный (33 байта); передача в query string без base64/hex **может ломать** валидацию. Для продакшена — кодирование ticket или другой канал (header / первое binary-сообщение). Отсутствие `token` в query — закрытие **без** кадра (`0x40` не отправляется).
 
 ### ENet
 
@@ -173,6 +197,7 @@ WebSocket — на **том же** `*fiber.App` (HTTP upgrade). ENet — **от�
 |----------|----------------------------------------|
 | Порт | `7777` |
 | Первый пакет после connect | сырой `token` (`admit`) |
+| Ошибка admit | один кадр OpCode (`0x40`–`0x51`) → disconnect |
 | После admit | binary-кадры (`OpCode` + payload) |
 
 Сборка с ENet:
@@ -206,6 +231,7 @@ internal/
     http/rooms.go
     ws/rooms.go
     enet/                       — handler, config, run_cgo / run_stub
+    joinerror/                  — OpCode(err), Send перед close
 tests/                          — см. tests/README.md
 ```
 
@@ -243,16 +269,17 @@ REST handlers пока не вызывают use case и не отдают JSON.
 
 ```bash
 go test ./tests/...
+go test -race ./tests/...
 ```
 
-См. [tests/README.md](tests/README.md). Пакетов с тестовым кодом пока нет.
+См. [tests/README.md](tests/README.md) — приоритет 80/20 и что уже покрыто.
 
 ## Соглашения проекта
 
 - HTTP — только [Fiber](https://gofiber.io/) v3; один `*fiber.App` для REST и WS upgrade.
 - Handlers в `delivery` тонкие: парсинг → use case → JSON / маппинг ошибок.
 - Тесты — только под `tests/`, внешние пакеты `*_test`.
-- Правила для агентов — [.cursor/rules/go-standards.mdc](.cursor/rules/go-standards.mdc).
+- Правила для агентов — [.cursor/rules/go-standards.mdc](.cursor/rules/go-standards.mdc), join OpCode — [.cursor/rules/join-error-opcodes.mdc](.cursor/rules/join-error-opcodes.mdc).
 
 ## TODO (ближайшее)
 
@@ -261,7 +288,7 @@ go test ./tests/...
 - Конфигурация: порт HTTP/ENet, секрет admission из env
 - Graceful shutdown: отмена `ctx`, остановка Fiber и ENet
 - Health-check
-- Доменные ошибки и маппинг в HTTP status
+- Доменные ошибки и маппинг в HTTP status (control plane; data plane join — см. OpCode выше)
 - Идемпотентный `LeaveRoom`, если peer уже снят с комнаты
 - Замена `RelayRoomHandler` на целевую логику комнаты
 - Тесты: `adapter/admission`, `JoinRoom` / `LeaveRoom`, registry

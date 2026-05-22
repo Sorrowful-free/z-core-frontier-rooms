@@ -81,7 +81,7 @@ func (r *Room) Join(peer realtime.Peer) error {
 		r.mutex.Lock()
 		delete(r.peers, peerID)
 		r.mutex.Unlock()
-		return err
+		return fmt.Errorf("%w: %w", domain.ErrJoinDenied, err)
 	}
 	return nil
 }
@@ -113,15 +113,15 @@ func (r *Room) Replace(peer realtime.Peer) error {
 	old, ok := r.peers[peerID]
 	if !ok {
 		r.mutex.Unlock()
-		return fmt.Errorf("peer not found: %s", peerID)
+		return fmt.Errorf("%w: %s", domain.ErrPeerNotFound, peerID)
 	}
 	r.mutex.Unlock()
 
 	if err := r.handler.OnLeave(old); err != nil {
-		return err
+		return fmt.Errorf("%w: %w", domain.ErrReplaceFailed, err)
 	}
 	if err := r.handler.OnJoin(peer); err != nil {
-		return err
+		return fmt.Errorf("%w: %w", domain.ErrReplaceFailed, err)
 	}
 
 	r.mutex.Lock()
