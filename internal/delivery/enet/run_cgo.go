@@ -44,7 +44,7 @@ func (h *RoomsHandler) run(ctx context.Context) error {
 			continue
 
 		case libenet.EventConnect:
-			sess := newPeerSession(ev.GetPeer(), 256)
+			sess := newPeerSession(ev.GetPeer(), h.connectionFactory, 256)
 			mu.Lock()
 			sessions[sess.id] = sess
 			mu.Unlock()

@@ -18,16 +18,17 @@ type peerSession struct {
 	peerID   domain.PeerID
 }
 
-func newPeerSession(peer libenet.Peer, queueCap int) *peerSession {
+func newPeerSession(peer libenet.Peer, connectionFactory transport.ConnectionFactory, queueCap int) *peerSession {
 	if queueCap <= 0 {
 		queueCap = 256
 	}
 	incoming := make(chan domain.Frame, queueCap)
+	connection := connectionFactory.CreateConnection(peer, incoming)
 	return &peerSession{
 		id:       peer.GetIncomingPeerId(),
 		peer:     peer,
 		incoming: incoming,
-		conn:     connectionFactory.CreateConnection(peer, incoming),
+		conn:     connection,
 	}
 }
 
