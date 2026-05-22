@@ -5,6 +5,7 @@ package enet
 import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/enet"
 	libenet "github.com/codecat/go-enet"
 )
 
@@ -18,7 +19,7 @@ type peerSession struct {
 	peerID   domain.PeerID
 }
 
-func newPeerSession(peer libenet.Peer, connectionFactory transport.ConnectionFactory, queueCap int) *peerSession {
+func newPeerSession(peer libenet.Peer, connectionFactory enet.EnetConnectionFactory, queueCap int) *peerSession {
 	if queueCap <= 0 {
 		queueCap = 256
 	}
