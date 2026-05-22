@@ -1,6 +1,6 @@
 package logging
 
-// Logger — порт для записи диагностических сообщений (адаптеры: stdlib, slog, …).
+// Logger — порт для записи диагностических сообщений (адаптеры: stdlib, zap, …).
 type Logger interface {
 	Error(msg string, args ...any)
 	Info(msg string, args ...any)

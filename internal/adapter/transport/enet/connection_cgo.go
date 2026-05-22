@@ -8,13 +8,12 @@ import (
 )
 
 type EnetConnection struct {
-	conn     *enet.Host
 	peer     *enet.Peer
 	incoming chan domain.Frame
 }
 
 func (c *EnetConnection) Close() error {
-	return c.conn.Close()
+	return c.peer.Close()
 }
 
 func (c *EnetConnection) GetIncoming() chan<- domain.Frame {
@@ -22,5 +21,5 @@ func (c *EnetConnection) GetIncoming() chan<- domain.Frame {
 }
 
 func (c *EnetConnection) Send(frame domain.Frame) error {
-	return c.conn.Send(frame.Payload)
+	return c.peer.Send(frame.Payload)
 }

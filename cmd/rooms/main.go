@@ -4,12 +4,14 @@ import (
 	"log"
 	"os"
 
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/stdlib"
+	zaplog "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/zap"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/registry"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/http"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
+	fibzap "github.com/gofiber/contrib/v3/zap"
 	"github.com/gofiber/fiber/v3"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -21,22 +23,27 @@ func main() {
 }
 
 func run() error {
-	// TODO: wire HTTP/WS/ENet listeners and room use cases.
+	// TODO: wire WS/ENet listeners and ConnectUseCase.
+
+	z, err := zap.NewDevelopment()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = z.Sync() }()
 
 	fiberApp := fiber.New()
+	fiberApp.Use(fibzap.New(fibzap.Config{Logger: z}))
 
-	logger := stdlib.New("rooms")
+	roomFactory := realtime.NewRoomFactory(zaplog.NewFrom(z, "rooms factory"))
+	roomHandlerFactory := realtime.NewRelayRoomHandlerFactory(zaplog.NewFrom(z, "rooms handler factory"))
+	roomRegistry := registry.NewRoomRegistry(roomFactory, roomHandlerFactory, zaplog.NewFrom(z, "rooms registry"))
 
-	roomFactory := realtime.NewRoomFactory(logger)
-	roomHandlerFactory := realtime.NewRelayRoomHandlerFactory(logger)
-	roomRegistry := registry.NewRoomRegistry(roomFactory, roomHandlerFactory, logger)
+	createUseCase := room.NewCreateUseCase(roomRegistry, zaplog.NewFrom(z, "create use case"))
+	joinUseCase := room.NewJoinUseCase(nil, zaplog.NewFrom(z, "join use case"))
+	deleteUseCase := room.NewDeleteUseCase(roomRegistry, zaplog.NewFrom(z, "delete use case"))
+	getListUseCase := room.NewGetListUseCase(roomRegistry, zaplog.NewFrom(z, "get list use case"))
 
-	createUseCase := room.NewCreateUseCase(roomRegistry, logger)
-	joinUseCase := room.NewJoinUseCase(nil, logger)
-	deleteUseCase := room.NewDeleteUseCase(roomRegistry, logger)
-	getListUseCase := room.NewGetListUseCase(roomRegistry, logger)
-
-	roomsHandler := http.NewRoomsHandler(createUseCase, joinUseCase, deleteUseCase, getListUseCase, logger)
+	roomsHandler := http.NewRoomsHandler(createUseCase, joinUseCase, deleteUseCase, getListUseCase, zaplog.NewFrom(z, "rooms handler"))
 	roomsHandler.RegisterRoutes(fiberApp)
 
 	return fiberApp.Listen(":3000")

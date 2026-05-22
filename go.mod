@@ -4,13 +4,14 @@ go 1.25.1
 
 require (
 	github.com/codecat/go-enet v0.0.0-20250728072647-ae229138f138
-	github.com/gofiber/fiber/v3 v3.2.0
 	github.com/gofiber/contrib/v3/websocket v1.1.5
+	github.com/gofiber/fiber/v3 v3.2.0
 )
 
 require (
 	github.com/andybalholm/brotli v1.2.1 // indirect
 	github.com/fasthttp/websocket v1.5.12 // indirect
+	github.com/gofiber/contrib/v3/zap v1.0.6 // indirect
 	github.com/gofiber/schema v1.7.1 // indirect
 	github.com/gofiber/utils/v2 v2.0.5 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -22,6 +23,8 @@ require (
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.71.0 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
+	go.uber.org/zap v1.28.0 // indirect
 	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/net v0.54.0 // indirect
 	golang.org/x/sys v0.44.0 // indirect
