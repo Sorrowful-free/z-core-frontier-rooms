@@ -4,12 +4,14 @@ package enet
 
 import (
 	"io"
+	"sync"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
 
 type EnetConnection struct {
-	incoming chan domain.Frame
+	incoming  chan domain.Frame
+	closeOnce sync.Once
 }
 
 func NewEnetConnection(_ any, incoming chan domain.Frame) *EnetConnection {
@@ -29,8 +31,10 @@ func (c *EnetConnection) Receive() (domain.Frame, error) {
 }
 
 func (c *EnetConnection) Close() error {
-	if c.incoming != nil {
-		close(c.incoming)
-	}
+	c.closeOnce.Do(func() {
+		if c.incoming != nil {
+			close(c.incoming)
+		}
+	})
 	return nil
 }

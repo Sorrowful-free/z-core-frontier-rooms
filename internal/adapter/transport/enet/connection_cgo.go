@@ -12,7 +12,7 @@ import (
 
 type EnetConnection struct {
 	peer      libenet.Peer
-	incoming  chan []byte
+	incoming  chan domain.Frame
 	closeOnce sync.Once
 }
 
@@ -25,7 +25,7 @@ func NewEnetConnection(peer libenet.Peer, incoming chan domain.Frame) *EnetConne
 
 func (c *EnetConnection) Send(frame domain.Frame) error {
 	payload := append([]byte{byte(frame.OpCode)}, frame.Payload...)
-	return c.peer.SendBytes(payload, 0, libenet.PacketFlagReliable)
+	return c.peer.SendBytes(payload, 0, packetFlagsFromDelivery(frame.Delivery))
 }
 
 func (c *EnetConnection) Receive() (domain.Frame, error) {

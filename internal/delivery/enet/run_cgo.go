@@ -7,20 +7,10 @@ import (
 	"errors"
 	"sync"
 
-	enetconn "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	libenet "github.com/codecat/go-enet"
 )
 
 var errEmptyToken = errors.New("enet: empty token")
-
-type peerSession struct {
-	id       uint16
-	peer     libenet.Peer
-	incoming chan domain.Frame
-	conn     *enetconn.EnetConnection
-	admitted bool
-}
 
 func (h *RoomsHandler) run(ctx context.Context) error {
 	libenet.Initialize()
@@ -54,41 +44,31 @@ func (h *RoomsHandler) run(ctx context.Context) error {
 			continue
 
 		case libenet.EventConnect:
-			peer := ev.GetPeer()
-			id := peer.GetIncomingPeerId()
-			incoming := make(chan domain.Frame, 256)
-			conn := enetconn.NewEnetConnection(peer, incoming)
-			sess := &peerSession{
-				id:       id,
-				peer:     peer,
-				incoming: incoming,
-				conn:     conn,
-			}
+			sess := newPeerSession(ev.GetPeer(), 256)
 			mu.Lock()
-			sessions[id] = sess
+			sessions[sess.id] = sess
 			mu.Unlock()
-			h.logger.Info("enet peer connected", "peer_id", id)
+			h.logger.Info("enet peer connected", "enet_peer_id", sess.id)
 
 		case libenet.EventReceive:
-			peer := ev.GetPeer()
-			id := peer.GetIncomingPeerId()
+			id := ev.GetPeer().GetIncomingPeerId()
 			packet := ev.GetPacket()
-			flags := packet.GetFlags()
-			data := append([]byte(nil), packet.GetData()...)
-			packet.Destroy()
 
 			mu.Lock()
 			sess, ok := sessions[id]
 			mu.Unlock()
 			if !ok {
-				h.logger.Warn("enet receive from unknown peer", "peer_id", id)
+				packet.Destroy()
+				h.logger.Warn("enet receive from unknown peer", "enet_peer_id", id)
 				continue
 			}
 
 			if !sess.admitted {
+				data := append([]byte(nil), packet.GetData()...)
+				packet.Destroy()
 				if err := h.admit(ctx, sess, data); err != nil {
-					_ = sess.conn.Close()
-					peer.SetData(nil)
+					_ = sess.close()
+					sess.clearPeerData()
 					mu.Lock()
 					delete(sessions, id)
 					mu.Unlock()
@@ -96,28 +76,26 @@ func (h *RoomsHandler) run(ctx context.Context) error {
 				continue
 			}
 
-			frame, err := frameFromPacket(data)
+			frame, err := frameFromPacket(packet)
+			packet.Destroy()
 			if err != nil {
-				h.logger.Warn("enet invalid frame", "error", err, "peer_id", id)
+				h.logger.Warn("enet invalid frame", "error", err, "enet_peer_id", id)
 				continue
 			}
-			select {
-			case sess.incoming <- frame:
-			default:
-				h.logger.Warn("enet incoming queue full, dropping frame", "peer_id", id)
+			if !sess.deliver(frame) {
+				h.logger.Warn("enet incoming queue full, dropping frame", "enet_peer_id", id)
 			}
 
 		case libenet.EventDisconnect:
-			peer := ev.GetPeer()
-			id := peer.GetIncomingPeerId()
+			id := ev.GetPeer().GetIncomingPeerId()
 			mu.Lock()
 			sess, ok := sessions[id]
 			delete(sessions, id)
 			mu.Unlock()
 			if ok {
-				_ = sess.conn.Close()
-				peer.SetData(nil)
-				h.logger.Info("enet peer disconnected", "peer_id", id, "data", ev.GetData())
+				_ = sess.close()
+				sess.clearPeerData()
+				h.logger.Info("enet peer disconnected", "enet_peer_id", id, "data", ev.GetData())
 			}
 		}
 	}
@@ -125,16 +103,16 @@ func (h *RoomsHandler) run(ctx context.Context) error {
 
 func (h *RoomsHandler) admit(ctx context.Context, sess *peerSession, token []byte) error {
 	if len(token) == 0 {
-		h.logger.Warn("enet connect: empty token", "peer_id", sess.id)
+		h.logger.Warn("enet connect: empty token", "enet_peer_id", sess.id)
 		return errEmptyToken
 	}
 
 	if _, err := h.connectUseCase.Connect(ctx, sess.conn, token); err != nil {
-		h.logger.Error("enet connect failed", "error", err, "peer_id", sess.id)
+		h.logger.Error("enet connect failed", "error", err, "enet_peer_id", sess.id)
 		return err
 	}
 
 	sess.admitted = true
-	h.logger.Info("enet peer admitted", "peer_id", sess.id)
+	h.logger.Info("enet peer admitted", "enet_peer_id", sess.id)
 	return nil
 }
