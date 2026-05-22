@@ -3,8 +3,8 @@
 package enet
 
 import (
-	enetconn "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport"
 	libenet "github.com/codecat/go-enet"
 )
 
@@ -12,7 +12,7 @@ type peerSession struct {
 	id       uint16
 	peer     libenet.Peer
 	incoming chan domain.Frame
-	conn     *enetconn.EnetConnection
+	conn     transport.Connection
 	admitted bool
 	roomID   domain.RoomID
 	peerID   domain.PeerID
@@ -27,7 +27,7 @@ func newPeerSession(peer libenet.Peer, queueCap int) *peerSession {
 		id:       peer.GetIncomingPeerId(),
 		peer:     peer,
 		incoming: incoming,
-		conn:     enetconn.NewEnetConnection(peer, incoming),
+		conn:     connectionFactory.CreateConnection(peer, incoming),
 	}
 }
 

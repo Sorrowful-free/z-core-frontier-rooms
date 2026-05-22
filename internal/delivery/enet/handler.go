@@ -4,25 +4,28 @@ import (
 	"context"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/enet"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
 )
 
 // RoomsHandler — inbound ENet: host loop, ticket в первом пакете, JoinRoom / LeaveRoom use cases.
 type RoomsHandler struct {
-	ctx              context.Context
-	joinRoomUseCase  *room.JoinRoomUseCase
-	leaveRoomUseCase *room.LeaveRoomUseCase
-	logger           logging.Logger
-	cfg              Config
+	ctx               context.Context
+	joinRoomUseCase   *room.JoinRoomUseCase
+	leaveRoomUseCase  *room.LeaveRoomUseCase
+	connectionFactory enet.EnetConnectionFactory
+	logger            logging.Logger
+	cfg               Config
 }
 
-func NewRoomsHandler(ctx context.Context, joinRoomUseCase *room.JoinRoomUseCase, leaveRoomUseCase *room.LeaveRoomUseCase, cfg Config, logger logging.Logger) *RoomsHandler {
+func NewRoomsHandler(ctx context.Context, joinRoomUseCase *room.JoinRoomUseCase, leaveRoomUseCase *room.LeaveRoomUseCase, connectionFactory enet.EnetConnectionFactory, cfg Config, logger logging.Logger) *RoomsHandler {
 	return &RoomsHandler{
-		ctx:              ctx,
-		joinRoomUseCase:  joinRoomUseCase,
-		leaveRoomUseCase: leaveRoomUseCase,
-		logger:           logger,
-		cfg:              cfg,
+		ctx:               ctx,
+		joinRoomUseCase:   joinRoomUseCase,
+		leaveRoomUseCase:  leaveRoomUseCase,
+		connectionFactory: connectionFactory,
+		logger:            logger,
+		cfg:               cfg,
 	}
 }
 

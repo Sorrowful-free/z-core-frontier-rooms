@@ -10,6 +10,8 @@ import (
 	zaplog "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/zap"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/registry"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/ws"
 	deliveryenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/enet"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/http"
 	deliveryws "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/ws"
@@ -45,6 +47,9 @@ func run() error {
 	roomRegistry := registry.NewRoomRegistry(roomFactory, roomHandlerFactory, zaplog.NewFrom(z, "rooms registry"))
 	peerFactory := realtime.NewPeerFactory(zaplog.NewFrom(z, "peer factory"))
 
+	wsConnectionFactory := ws.NewWsConnectionFactory(zaplog.NewFrom(z, "ws connection factory"))
+	enetConnectionFactory := enet.NewEnetConnectionFactory(zaplog.NewFrom(z, "enet connection factory"))
+
 	admission := admissionadapter.NewAdmission([]byte("dev-secret-change-me"), time.Hour, "")
 
 	createUseCase := room.NewCreateUseCase(roomRegistry, zaplog.NewFrom(z, "create use case"))
@@ -57,13 +62,14 @@ func run() error {
 	roomsHandler := http.NewRoomsHandler(createUseCase, issueTicketUseCase, deleteUseCase, getListUseCase, zaplog.NewFrom(z, "rooms handler"))
 	roomsHandler.RegisterRoutes(fiberApp)
 
-	wsHandler := deliveryws.NewRoomsHandler(ctx, joinRoomUseCase, leaveRoomUseCase, zaplog.NewFrom(z, "ws rooms handler"))
+	wsHandler := deliveryws.NewRoomsHandler(ctx, joinRoomUseCase, leaveRoomUseCase, wsConnectionFactory, zaplog.NewFrom(z, "ws rooms handler"))
 	wsHandler.RegisterRoutes(fiberApp)
 
 	enetHandler := deliveryenet.NewRoomsHandler(
 		ctx,
 		joinRoomUseCase,
 		leaveRoomUseCase,
+		enetConnectionFactory,
 		deliveryenet.DefaultConfig(),
 		zaplog.NewFrom(z, "enet rooms handler"),
 	)

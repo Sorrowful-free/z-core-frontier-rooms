@@ -3,26 +3,28 @@ package ws
 import (
 	"context"
 
-	wsconn "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/ws"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/ws"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
 	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
 )
 
 type RoomsHandler struct {
-	ctx              context.Context
-	joinRoomUseCase  *room.JoinRoomUseCase
-	leaveRoomUseCase *room.LeaveRoomUseCase
-	logger           logging.Logger
+	ctx               context.Context
+	joinRoomUseCase   *room.JoinRoomUseCase
+	leaveRoomUseCase  *room.LeaveRoomUseCase
+	connectionFactory ws.WsConnectionFactory
+	logger            logging.Logger
 }
 
-func NewRoomsHandler(ctx context.Context, joinRoomUseCase *room.JoinRoomUseCase, leaveRoomUseCase *room.LeaveRoomUseCase, logger logging.Logger) *RoomsHandler {
+func NewRoomsHandler(ctx context.Context, joinRoomUseCase *room.JoinRoomUseCase, leaveRoomUseCase *room.LeaveRoomUseCase, connectionFactory ws.WsConnectionFactory, logger logging.Logger) *RoomsHandler {
 	return &RoomsHandler{
-		ctx:              ctx,
-		joinRoomUseCase:  joinRoomUseCase,
-		leaveRoomUseCase: leaveRoomUseCase,
-		logger:           logger,
+		ctx:               ctx,
+		joinRoomUseCase:   joinRoomUseCase,
+		leaveRoomUseCase:  leaveRoomUseCase,
+		connectionFactory: connectionFactory,
+		logger:            logger,
 	}
 }
 
@@ -45,7 +47,7 @@ func (h *RoomsHandler) handleConnect(c *websocket.Conn) {
 		return
 	}
 
-	connection := wsconn.NewWsConnection(c)
+	connection, waiter := h.connectionFactory.CreateConnection(c)
 	defer func() { _ = connection.Close() }()
 
 	summary, peerID, err := h.joinRoomUseCase.JoinRoom(h.ctx, connection, token)
@@ -54,7 +56,7 @@ func (h *RoomsHandler) handleConnect(c *websocket.Conn) {
 		return
 	}
 
-	connection.Wait()
+	waiter.Wait()
 
 	if err := h.leaveRoomUseCase.LeaveRoom(h.ctx, summary.ID, peerID); err != nil {
 		h.logger.Error("websocket leave room failed", "error", err, "roomID", summary.ID, "peerID", peerID)
