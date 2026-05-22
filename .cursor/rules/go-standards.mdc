@@ -42,6 +42,7 @@ tests/
 - Пакет теста — **внешний**: `package room_test`, импорт `github.com/Sorrowful-free/z-core-frontier-rooms/...`.
 - Table-driven tests, `t.Parallel()` где безопасно; хелперы — `t.Helper()`.
 - Запуск: `go test ./tests/...` (из корня модуля).
+- Моки портов: **mockgen** (`go.uber.org/mock`), генерация в `tests/mocks/` — `go generate ./tests/mocks/...`; в тестах `gomock.Controller`, не дублировать ручные стабы интерфейсов из `port/`.
 - После завершения функционала — спросить: **«Нужно ли написать тесты для этого функционала?»** Не писать тесты молча.
 
 ## Пример
