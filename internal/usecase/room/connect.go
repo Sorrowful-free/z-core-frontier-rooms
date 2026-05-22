@@ -37,7 +37,7 @@ func (uc *ConnectUseCase) Connect(ctx context.Context, connection transport.Conn
 		return EmptyRoomSummary, err
 	}
 
-	peer := uc.peerFactory.CreatePeer(claims.PeerID, connection, uc.logging)
+	peer := uc.peerFactory.CreatePeer(claims.PeerID, connection, room, uc.logging)
 
 	if err := room.Join(peer); err != nil {
 		uc.logging.Error("error joining room", "error", err)

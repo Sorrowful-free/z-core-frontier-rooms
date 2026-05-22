@@ -18,7 +18,9 @@ type Room struct {
 	incoming chan events.RoomEvent
 	logger   logging.Logger
 
-	done chan struct{}
+	done     chan struct{}
+	stopOnce sync.Once
+	wg       sync.WaitGroup
 }
 
 func NewRoom(id domain.RoomID, handler realtime.RoomHandler, logger logging.Logger) *Room {
@@ -48,6 +50,7 @@ func (r *Room) GetPeers() []realtime.Peer {
 }
 
 func (r *Room) Start() error {
+	r.wg.Add(1)
 	go processRoomEvents(r)
 	if err := r.handler.OnStart(r); err != nil {
 		r.Stop()
@@ -57,9 +60,14 @@ func (r *Room) Start() error {
 }
 
 func (r *Room) Stop() error {
-	close(r.done)
-	close(r.incoming)
-	return r.handler.OnStop(r)
+	var err error
+	r.stopOnce.Do(func() {
+		close(r.done)
+		r.wg.Wait()
+		close(r.incoming)
+		err = r.handler.OnStop(r)
+	})
+	return err
 }
 
 func (r *Room) Join(peer realtime.Peer) error {
@@ -89,15 +97,22 @@ func (r *Room) Send(peerEvent events.PeerEvent) error {
 	if !ok {
 		return fmt.Errorf("peer not found: %s", peerEvent.PeerID)
 	}
-	peer.GetIncoming() <- peerEvent
+
+	if err := peer.Deliver(peerEvent); err != nil {
+		return err
+	}
 	return nil
 }
 
-func (r *Room) GetIncoming() chan<- events.RoomEvent {
-	return r.incoming
+func (r *Room) Deliver(roomEvent events.RoomEvent) error {
+	if !r.tryDeliver(roomEvent) {
+		return fmt.Errorf("room stopped: %s", r.id)
+	}
+	return nil
 }
 
 func processRoomEvents(room *Room) {
+	defer room.wg.Done()
 	for {
 		select {
 		case <-room.done:
@@ -110,5 +125,14 @@ func processRoomEvents(room *Room) {
 				room.logger.Error("error processing room event", "error", err)
 			}
 		}
+	}
+}
+
+func (r *Room) tryDeliver(ev events.RoomEvent) bool {
+	select {
+	case <-r.done:
+		return false
+	case r.incoming <- ev:
+		return true
 	}
 }

@@ -16,9 +16,9 @@ func NewPeerFactory(logger logging.Logger) *PeerFactory {
 		logger: logger,
 	}
 }
-func (f *PeerFactory) CreatePeer(id domain.PeerID, connection transport.Connection, logger logging.Logger) realtime.Peer {
+func (f *PeerFactory) CreatePeer(id domain.PeerID, connection transport.Connection, room realtime.Room, logger logging.Logger) realtime.Peer {
 	if logger == nil {
 		logger = f.logger
 	}
-	return NewPeer(id, connection, logger)
+	return NewPeer(id, connection, room, logger)
 }

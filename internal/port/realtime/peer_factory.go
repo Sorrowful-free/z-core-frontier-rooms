@@ -7,5 +7,5 @@ import (
 )
 
 type PeerFactory interface {
-	CreatePeer(id domain.PeerID, connection transport.Connection, logger logging.Logger) Peer
+	CreatePeer(id domain.PeerID, connection transport.Connection, room Room, logger logging.Logger) Peer
 }

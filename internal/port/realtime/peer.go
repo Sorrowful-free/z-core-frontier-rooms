@@ -13,5 +13,5 @@ type Peer interface {
 	Start() error
 	Stop() error
 
-	GetIncoming() chan<- events.PeerEvent
+	Deliver(peerEvent events.PeerEvent) error
 }

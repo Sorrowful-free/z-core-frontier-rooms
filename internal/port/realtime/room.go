@@ -16,5 +16,5 @@ type Room interface {
 	Leave(peer Peer) error
 
 	Send(peerEvent events.PeerEvent) error
-	GetIncoming() chan<- events.RoomEvent
+	Deliver(roomEvent events.RoomEvent) error
 }

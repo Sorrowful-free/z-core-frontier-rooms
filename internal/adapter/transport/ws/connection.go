@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
@@ -24,7 +25,7 @@ func NewWsConnection(conn *websocket.Conn) *WsConnection {
 func (c *WsConnection) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
-		c.closeInternal()
+		close(c.closed)
 		err = c.conn.Close()
 	})
 	return err
@@ -38,8 +39,12 @@ func (c *WsConnection) Send(frame domain.Frame) error {
 func (c *WsConnection) Receive() (domain.Frame, error) {
 	_, payload, err := c.conn.ReadMessage()
 	if err != nil {
-		c.closeInternal()
+		c.Close()
 		return domain.Frame{}, err
+	}
+
+	if len(payload) == 0 {
+		return domain.Frame{}, errors.New("ws: empty payload")
 	}
 	return domain.Frame{OpCode: domain.OpCode(payload[0]), Delivery: domain.DeliveryDefault, Payload: domain.Payload(payload[1:])}, nil
 }
@@ -47,8 +52,4 @@ func (c *WsConnection) Receive() (domain.Frame, error) {
 // Wait blocks until the read loop exits (client disconnect or Close).
 func (c *WsConnection) Wait() {
 	<-c.closed
-}
-
-func (c *WsConnection) closeInternal() {
-	close(c.closed)
 }
