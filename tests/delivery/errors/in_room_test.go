@@ -1,0 +1,31 @@
+package errors_test
+
+import (
+	"errors"
+	"testing"
+
+	deliveryerrors "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/errors"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
+)
+
+func TestInRoomErrorOpCode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want domain.OpCode
+	}{
+		{"in-room internal", domain.ErrInRoomInternal, domain.OpInRoomInternal},
+		{"unknown defaults in-room internal", errors.New("other"), domain.OpInRoomInternal},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := deliveryerrors.InRoomErrorOpCode(tt.err); got != tt.want {
+				t.Fatalf("InRoomErrorOpCode() = %#x, want %#x", got, tt.want)
+			}
+		})
+	}
+}

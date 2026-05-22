@@ -18,4 +18,7 @@ const (
 
 	OpInternal        OpCode = 0x50
 	OpPeerStartFailed OpCode = 0x51
+
+	// In-room (0x60–0x6F) — после admit; расширять по мере появления сценариев.
+	OpInRoomInternal OpCode = 0x60
 )

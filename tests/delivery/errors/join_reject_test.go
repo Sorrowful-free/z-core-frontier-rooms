@@ -1,15 +1,15 @@
-package joinerror_test
+package errors_test
 
 import (
 	"errors"
 	"fmt"
 	"testing"
 
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/joinerror"
+	deliveryerrors "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/errors"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
 
-func TestOpCode(t *testing.T) {
+func TestJoinRejectOpCode(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -41,8 +41,8 @@ func TestOpCode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := joinerror.OpCode(tt.err); got != tt.want {
-				t.Fatalf("OpCode() = %#x, want %#x", got, tt.want)
+			if got := deliveryerrors.JoinRejectOpCode(tt.err); got != tt.want {
+				t.Fatalf("JoinRejectOpCode() = %#x, want %#x", got, tt.want)
 			}
 		})
 	}

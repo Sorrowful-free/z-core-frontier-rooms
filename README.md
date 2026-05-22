@@ -15,7 +15,7 @@
 | `adapter/transport` | WebSocket; ENet (CGO + build tag `enet`) |
 | Use case `Create` / `Delete` / `GetList` | Реализованы; HTTP handlers — **заглушки** (use case не вызываются) |
 | Use case `IssueTicket` | Реализован; в `cmd` подключён; **HTTP-маршрута пока нет** |
-| Use case `JoinRoom` | Data plane: validate ticket → peer → `room.Join` → `Start`; WS + ENet в `cmd`; при ошибке join — OpCode на wire (`delivery/joinerror`) |
+| Use case `JoinRoom` | Data plane: validate ticket → peer → `room.Join` → `Start`; WS + ENet в `cmd`; при ошибке join — OpCode на wire (`delivery/errors`) |
 | Use case `LeaveRoom` | `GetPeer` → `room.Leave` → `peer.Stop`; вызывается при disconnect WS/ENet |
 | `delivery/http` | Маршруты REST; тела/JSON — TODO |
 | `delivery/ws` | `GET /ws` (upgrade), `JoinRoom` + `LeaveRoom` |
@@ -96,9 +96,9 @@ WebSocket — на **том же** `*fiber.App` (HTTP upgrade). ENet — **от�
 5. peer.Start()
 ```
 
-При ошибке на шаге 5: `room.Leave(peer)`, `peer.Stop()`. При любой ошибке join delivery шлёт **один binary-кадр** с OpCode ошибки (`joinerror.Send`), затем закрывает transport (`defer Close` на WS, `sess.close` на ENet). До `peer.Start()` use case **не** вызывает `peer.Stop()` — только откат membership в `Room`.
+При ошибке на шаге 5: `room.Leave(peer)`, `peer.Stop()`. При любой ошибке join delivery шлёт **один binary-кадр** с OpCode ошибки (`deliveryerrors.SendJoinReject`), затем закрывает transport (`defer Close` на WS, `sess.close` на ENet). До `peer.Start()` use case **не** вызывает `peer.Stop()` — только откат membership в `Room`.
 
-Ошибки join оборачивают sentinel из `domain/join_errors.go` (`%w`); маппинг в OpCode — **только** в `internal/delivery/joinerror` (чеклист — [.cursor/rules/join-error-opcodes.mdc](.cursor/rules/join-error-opcodes.mdc)).
+Ошибки join оборачивают sentinel из `domain/join_errors.go` (`%w`); маппинг в OpCode — **только** в `internal/delivery/errors` (чеклист — [.cursor/rules/join-error-opcodes.mdc](.cursor/rules/join-error-opcodes.mdc)).
 
 Возвращает `(RoomSummary, PeerID, error)` — `PeerID` нужен для `LeaveRoom` при disconnect.
 
@@ -165,9 +165,16 @@ WebSocket — на **том же** `*fiber.App` (HTTP upgrade). ENet — **от�
 | `OpInternal` | `0x50` | Прочая ошибка сервера при join |
 | `OpPeerStartFailed` | `0x51` | Не удалось `peer.Start()` |
 
-Зарезервировано: `0x01–0x3F` — игровой трафик / relay; `0x60–0x6F` — ошибки **внутри комнаты** (отдельная задача).
+**In-room (`0x60–0x6F`)** — после admit; маппер `InRoomErrorOpCode` / `SendInRoomError`:
 
-Источник констант: `internal/domain/opcodes.go`. Маппер: `internal/delivery/joinerror`.
+| OpCode | Hex | Смысл (черновик) |
+|--------|-----|------------------|
+| `OpInRoomInternal` | `0x60` | Прочая ошибка в сессии (пока default) |
+
+Зарезервировано: `0x01–0x3F` — игровой трафик / relay.
+
+Источник: `internal/domain/opcodes.go`, `join_errors.go`, `room_errors.go`.  
+Мапперы: `internal/delivery/errors` — `join_reject.go`, `in_room.go`, `wire.go` (импорт: `deliveryerrors ".../delivery/errors"`).
 
 ## API и endpoints
 
@@ -231,7 +238,8 @@ internal/
     http/rooms.go
     ws/rooms.go
     enet/                       — handler, config, run_cgo / run_stub
-    joinerror/                  — OpCode(err), Send перед close
+    errors/                     — wire OpCode: join_reject (0x40+), in_room (0x60+)
+    ws/rooms.go, enet/          — транспорт → JoinRoom use case
 tests/                          — см. tests/README.md
 ```
 

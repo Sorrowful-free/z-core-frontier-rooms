@@ -6,7 +6,7 @@
 
 ```text
 tests/
-  delivery/joinerror/   — маппинг join-ошибок → OpCode
+  delivery/errors/      — join_reject, in_room, wire helpers
   adapter/admission/    — ticket Issue/Validate
   adapter/realtime/     — Room Join, handler без deadlock
   adapter/registry/     — RoomRegistry
@@ -33,7 +33,7 @@ go test -race ./tests/...
 
 | Пакет | Что даёт |
 |-------|----------|
-| `tests/delivery/joinerror` | Все sentinel + wrapped → `OpCode`; регрессии при новых ошибках |
+| `tests/delivery/errors` | `JoinRejectOpCode`, `InRoomErrorOpCode`, диапазоны `Is*OpCode` |
 | `tests/adapter/admission` | Round-trip ticket, invalid/expired token, invalid credentials |
 | `tests/adapter/realtime` | `OnJoin` вызывает `room.Send` без deadlock; откат map при `ErrJoinDenied` |
 | `tests/adapter/registry` | `GetRoom` → `errors.Is(ErrRoomNotFound)` |
@@ -46,6 +46,6 @@ go test -race ./tests/...
 4. **`delivery/ws`** — `app.Test`: невалидный token → ответный opcode в записи conn (mock transport) — после стабилизации тестового harness.
 5. **Интеграция** — create room → issue ticket → join (опционально, дороже в поддержке).
 
-При добавлении join-ошибки — кейс в `op_code_test.go` (см. [.cursor/rules/join-error-opcodes.mdc](../.cursor/rules/join-error-opcodes.mdc)).
+При добавлении join-ошибки — кейс в `join_reject_test.go` (см. [.cursor/rules/join-error-opcodes.mdc](../.cursor/rules/join-error-opcodes.mdc)).
 
 Подробнее о слоях, OpCode и use case — [README.md](../README.md) в корне репозитория.

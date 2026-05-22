@@ -6,7 +6,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/joinerror"
+	deliveryerrors "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/errors"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	libenet "github.com/codecat/go-enet"
 )
@@ -66,7 +66,7 @@ func (h *RoomsHandler) run(ctx context.Context) error {
 				data := append([]byte(nil), packet.GetData()...)
 				packet.Destroy()
 				if err := h.admit(ctx, sess, data); err != nil {
-					joinerror.Send(sess.conn, err)
+					deliveryerrors.SendJoinReject(sess.conn, err)
 					_ = sess.close()
 					sess.clearPeerData()
 					mu.Lock()
@@ -114,7 +114,7 @@ func (h *RoomsHandler) admit(ctx context.Context, sess *peerSession, token []byt
 
 	summary, peerID, err := h.joinRoomUseCase.JoinRoom(ctx, sess.conn, token)
 	if err != nil {
-		h.logger.Error("enet join room failed", "error", err, "enet_peer_id", sess.id, "op", joinerror.OpCode(err))
+		h.logger.Error("enet join room failed", "error", err, "enet_peer_id", sess.id, "op", deliveryerrors.JoinRejectOpCode(err))
 		return err
 	}
 

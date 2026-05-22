@@ -3,7 +3,7 @@ package ws
 import (
 	"context"
 
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/joinerror"
+	deliveryerrors "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/errors"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/ws"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
@@ -53,8 +53,8 @@ func (h *RoomsHandler) handleConnect(c *websocket.Conn) {
 
 	summary, peerID, err := h.joinRoomUseCase.JoinRoom(h.ctx, connection, token)
 	if err != nil {
-		joinerror.Send(connection, err)
-		h.logger.Error("websocket join room failed", "error", err, "op", joinerror.OpCode(err))
+		deliveryerrors.SendJoinReject(connection, err)
+		h.logger.Error("websocket join room failed", "error", err, "op", deliveryerrors.JoinRejectOpCode(err))
 		return
 	}
 

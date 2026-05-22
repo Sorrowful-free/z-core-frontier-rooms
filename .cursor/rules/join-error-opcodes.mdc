@@ -1,37 +1,33 @@
 ---
-description: Join/realtime ошибки — sentinel в domain, OpCode в joinerror, чеклист при новых кодах
+description: Data plane OpCode — domain + delivery/errors (join 0x40–0x5F, in-room 0x60+)
 globs: internal/**/*.go
 alwaysApply: false
 ---
 
-# Join-ошибки и OpCode (data plane)
+# Wire OpCode (data plane, `delivery/errors`)
 
-## Слои
+Импорт с алиасом: `deliveryerrors ".../internal/delivery/errors"` (имя пакета `errors`).
 
-1. **`internal/domain/join_errors.go`** — sentinel (`ErrInvalidToken`, `ErrJoinDenied`, …).
-2. **`internal/domain/opcodes.go`** — байт `OpCode` для wire (группы `0x40` join, `0x50` internal, `0x60+` in-room — отдельно).
-3. **`internal/delivery/joinerror`** — единственный маппер `OpCode(err)` + `Send(conn, err)` перед закрытием transport.
-4. **Источник ошибки** — оборачивать `%w` доменным sentinel (registry, `room.Join`, use case).
-5. **Не** слать текст клиенту; UI-строки только на клиенте по opcode.
+## Файлы `internal/delivery/errors`
 
-## Чеклист при новой ошибке join/admit
+| Файл | Диапазон | API |
+|------|----------|-----|
+| `join_reject.go` | `0x40–0x5F` | `JoinRejectOpCode`, `SendJoinReject` |
+| `in_room.go` | `0x60–0x6F` | `InRoomErrorOpCode`, `SendInRoomError` |
+| `wire.go` | — | `IsJoinRejectOpCode`, `IsInRoomErrorOpCode` |
 
-- [ ] Константа `Err…` в `domain/join_errors.go` (или переиспользован существующий).
-- [ ] Константа `Op…` в `domain/opcodes.go` в нужной группе; не занимать `0x60+` без задачи in-room.
-- [ ] Ветка `case errors.Is(err, domain.Err…):` в `delivery/joinerror/join_error.go`.
-- [ ] Table-driven кейс в `tests/delivery/joinerror/op_code_test.go`.
-- [ ] Строка в README (таблица OpCode) для клиента.
-- [ ] Возврат из adapter/use case: `fmt.Errorf("…: %w", domain.Err…, err)` — не голый `errors.New` без связи с mapper.
+Домен: `opcodes.go`, `join_errors.go`, `room_errors.go`.
 
-## Пример
+## Чеклист join (`0x40–0x5F`)
 
-```go
-// adapter
-return fmt.Errorf("registry: %w", domain.ErrRoomNotFound)
+- [ ] `join_errors.go` + `opcodes.go`
+- [ ] `join_reject.go` + `tests/delivery/errors/join_reject_test.go`
+- [ ] README
 
-// joinerror/join_error.go
-case errors.Is(err, domain.ErrRoomNotFound):
-    return domain.OpRoomNotFound
-```
+## Чеклист in-room (`0x60–0x6F`)
 
-HTTP-ошибки control plane — отдельный маппинг в `delivery/http` (status), не смешивать с join opcodes.
+- [ ] `room_errors.go` + `opcodes.go`
+- [ ] `in_room.go` + `tests/delivery/errors/in_room_test.go`
+- [ ] README
+
+HTTP — `delivery/http`, не этот пакет.
