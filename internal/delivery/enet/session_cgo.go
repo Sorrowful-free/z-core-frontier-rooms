@@ -14,6 +14,8 @@ type peerSession struct {
 	incoming chan domain.Frame
 	conn     *enetconn.EnetConnection
 	admitted bool
+	roomID   domain.RoomID
+	peerID   domain.PeerID
 }
 
 func newPeerSession(peer libenet.Peer, queueCap int) *peerSession {

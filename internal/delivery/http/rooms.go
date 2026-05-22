@@ -7,21 +7,20 @@ import (
 )
 
 type RoomsHandler struct {
-	createUseCase  *room.CreateUseCase
-	joinUseCase    *room.JoinUseCase
-	deleteUseCase  *room.DeleteUseCase
-	getListUseCase *room.GetListUseCase
-
-	logger logging.Logger
+	createUseCase      *room.CreateUseCase
+	issueTicketUseCase *room.IssueTicketUseCase
+	deleteUseCase      *room.DeleteUseCase
+	getListUseCase     *room.GetListUseCase
+	logger             logging.Logger
 }
 
-func NewRoomsHandler(createUseCase *room.CreateUseCase, joinUseCase *room.JoinUseCase, deleteUseCase *room.DeleteUseCase, getListUseCase *room.GetListUseCase, logger logging.Logger) *RoomsHandler {
+func NewRoomsHandler(createUseCase *room.CreateUseCase, issueTicketUseCase *room.IssueTicketUseCase, deleteUseCase *room.DeleteUseCase, getListUseCase *room.GetListUseCase, logger logging.Logger) *RoomsHandler {
 	return &RoomsHandler{
-		createUseCase:  createUseCase,
-		joinUseCase:    joinUseCase,
-		deleteUseCase:  deleteUseCase,
-		getListUseCase: getListUseCase,
-		logger:         logger,
+		createUseCase:      createUseCase,
+		issueTicketUseCase: issueTicketUseCase,
+		deleteUseCase:      deleteUseCase,
+		getListUseCase:     getListUseCase,
+		logger:             logger,
 	}
 }
 

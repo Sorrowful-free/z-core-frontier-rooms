@@ -7,20 +7,22 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
 )
 
-// RoomsHandler — inbound ENet: host loop, ticket в первом пакете, ConnectUseCase.
+// RoomsHandler — inbound ENet: host loop, ticket в первом пакете, JoinRoom / LeaveRoom use cases.
 type RoomsHandler struct {
-	connectUseCase *room.ConnectUseCase
-	ctx            context.Context
-	logger         logging.Logger
-	cfg            Config
+	ctx              context.Context
+	joinRoomUseCase  *room.JoinRoomUseCase
+	leaveRoomUseCase *room.LeaveRoomUseCase
+	logger           logging.Logger
+	cfg              Config
 }
 
-func NewRoomsHandler(connectUseCase *room.ConnectUseCase, ctx context.Context, cfg Config, logger logging.Logger) *RoomsHandler {
+func NewRoomsHandler(ctx context.Context, joinRoomUseCase *room.JoinRoomUseCase, leaveRoomUseCase *room.LeaveRoomUseCase, cfg Config, logger logging.Logger) *RoomsHandler {
 	return &RoomsHandler{
-		connectUseCase: connectUseCase,
-		ctx:            ctx,
-		logger:         logger,
-		cfg:            cfg,
+		ctx:              ctx,
+		joinRoomUseCase:  joinRoomUseCase,
+		leaveRoomUseCase: leaveRoomUseCase,
+		logger:           logger,
+		cfg:              cfg,
 	}
 }
 

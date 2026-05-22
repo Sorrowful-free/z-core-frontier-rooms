@@ -48,20 +48,22 @@ func run() error {
 	admission := admissionadapter.NewAdmission([]byte("dev-secret-change-me"), time.Hour, "")
 
 	createUseCase := room.NewCreateUseCase(roomRegistry, zaplog.NewFrom(z, "create use case"))
-	connectUseCase := room.NewConnectUseCase(admission, peerFactory, roomRegistry, zaplog.NewFrom(z, "connect use case"))
-	joinUseCase := room.NewJoinUseCase(admission, zaplog.NewFrom(z, "join use case"))
+	issueTicketUseCase := room.NewIssueTicketUseCase(admission, zaplog.NewFrom(z, "issue ticket use case"))
+	joinRoomUseCase := room.NewJoinRoomUseCase(admission, peerFactory, roomRegistry, zaplog.NewFrom(z, "join room use case"))
+	leaveRoomUseCase := room.NewLeaveRoomUseCase(roomRegistry, zaplog.NewFrom(z, "leave room use case"))
 	deleteUseCase := room.NewDeleteUseCase(roomRegistry, zaplog.NewFrom(z, "delete use case"))
 	getListUseCase := room.NewGetListUseCase(roomRegistry, zaplog.NewFrom(z, "get list use case"))
 
-	roomsHandler := http.NewRoomsHandler(createUseCase, joinUseCase, deleteUseCase, getListUseCase, zaplog.NewFrom(z, "rooms handler"))
+	roomsHandler := http.NewRoomsHandler(createUseCase, issueTicketUseCase, deleteUseCase, getListUseCase, zaplog.NewFrom(z, "rooms handler"))
 	roomsHandler.RegisterRoutes(fiberApp)
 
-	wsHandler := deliveryws.NewRoomsHandler(connectUseCase, ctx, zaplog.NewFrom(z, "ws rooms handler"))
+	wsHandler := deliveryws.NewRoomsHandler(ctx, joinRoomUseCase, leaveRoomUseCase, zaplog.NewFrom(z, "ws rooms handler"))
 	wsHandler.RegisterRoutes(fiberApp)
 
 	enetHandler := deliveryenet.NewRoomsHandler(
-		connectUseCase,
 		ctx,
+		joinRoomUseCase,
+		leaveRoomUseCase,
 		deliveryenet.DefaultConfig(),
 		zaplog.NewFrom(z, "enet rooms handler"),
 	)

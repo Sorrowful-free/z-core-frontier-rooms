@@ -14,6 +14,9 @@ type Room interface {
 
 	Join(peer Peer) error
 	Leave(peer Peer) error
+	Replace(peer Peer) error
+	HasPeer(peerID domain.PeerID) bool
+	GetPeer(peerID domain.PeerID) (Peer, error)
 
 	Send(peerEvent events.PeerEvent) error
 	Deliver(roomEvent events.RoomEvent) error

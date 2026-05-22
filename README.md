@@ -1,108 +1,137 @@
 # z-core-frontier-rooms
 
-Сервис игровых комнат: **control plane** по HTTP ([Fiber](https://gofiber.io/) v3) и **data plane** по WebSocket и ENet. Ниже — **текущее** состояние кода и границы слоёв.
+Сервис игровых комнат: **control plane** по HTTP ([Fiber](https://gofiber.io/) v3) и **data plane** по WebSocket и ENet.
+
+Документ отражает **текущее** состояние репозитория (имена use case, wiring в `cmd`, известные пробелы).
 
 ## Статус
 
 | Область | Состояние |
 |--------|-----------|
-| Домен, порты, `adapter/realtime` (Room, Peer, RelayHandler) | Черновик реализован |
-| `adapter/registry` (`RoomRegistry`) | In-memory реализация (`CreateRoom`, `GetRoom`, `DeleteRoom`, `GetList`) |
-| Use case `Connect` | Реализован, **не** подключён в `cmd` / `delivery/ws` |
-| Use case `Create` / `Delete` / `GetList` | Реализованы, подключены к HTTP (handlers — заглушки) |
-| Use case `Join` | Реализован (`Admission.Issue` → token), в `cmd` передан `nil` admission; handler `JoinRoom` есть, маршрут **не** зарегистрирован |
-| Порт `Admission` | Интерфейс; реализаций нет |
-| `delivery/http` | `RoomsHandler`, маршруты REST (см. ниже) |
-| `delivery/ws` | `RoomsHandler` + DI `ConnectUseCase`; `RegisterRoutes` и wiring в `cmd` — нет |
-| `delivery/enet` | Заготовка пакета |
-| `cmd/rooms` | Fiber + registry + HTTP routes → `Listen(":3000")` |
-| Graceful shutdown, конфиг порта, ENet-слушатель | TODO |
+| `domain/`, `port/` | Типы, события, интерфейсы без зависимостей от инфраструктуры |
+| `adapter/realtime` | `Room`, `Peer`, фабрики; `RelayRoomHandler` — временная заглушка relay |
+| `adapter/registry` | In-memory `RoomRegistry` |
+| `adapter/admission` | HMAC-SHA256 ticket, TTL (`Issue` / `Validate`) |
+| `adapter/transport` | WebSocket; ENet (CGO + build tag `enet`) |
+| Use case `Create` / `Delete` / `GetList` | Реализованы; HTTP handlers — **заглушки** (use case не вызываются) |
+| Use case `IssueTicket` | Реализован; в `cmd` подключён; **HTTP-маршрута пока нет** |
+| Use case `JoinRoom` | Data plane: validate ticket → peer → `room.Join` → `Start`; WS + ENet в `cmd` |
+| Use case `LeaveRoom` | `GetPeer` → `room.Leave` → `peer.Stop`; вызывается при disconnect WS/ENet |
+| `delivery/http` | Маршруты REST; тела/JSON — TODO |
+| `delivery/ws` | `GET /ws` (upgrade), `JoinRoom` + `LeaveRoom` |
+| `delivery/enet` | Host loop в goroutine; первый пакет = ticket; без `enet`+cgo — stub с warn |
+| `cmd/rooms` | Fiber `:3000`, ENet `DefaultConfig()` (порт **7777**), zap middleware |
+| Конфиг (env), graceful shutdown, health | TODO |
 
-Сборка и `go run` поднимают HTTP на порту **3000**; обработчики пока не вызывают use case и не отдают JSON.
+Сборка по умолчанию: `go build ./cmd/rooms` — HTTP + WS. ENet host **активен в runtime** только при сборке с `-tags enet` и `CGO_ENABLED=1`.
 
 ## Назначение
 
-- Хранить и отдавать **комнаты** (`Room`) с набором подключённых **пиров** (`Peer`).
-- **Допуск** в комнату: выдача ticket (HTTP / `Join`) и проверка при подключении по realtime-транспорту (`Connect`).
-- **Relay** кадров между пирами в одной комнате (через `RoomHandler` / `RelayHandler`).
-- Единый контракт транспорта (`transport.Connection`) для WebSocket и ENet; различия протокола — только в `delivery`.
+- Хранить **комнаты** (`Room`) и подключённых **пиров** (`Peer`).
+- **Допуск:** выдача ticket (control plane, `IssueTicket`) и вход по realtime (`JoinRoom`).
+- **Выход:** снятие пира с комнаты (`LeaveRoom`) при отключении транспорта.
+- **Relay** кадров между пирами — через `RoomHandler` / `RelayRoomHandler` (черновик).
+- Единый контракт `transport.Connection` для WS и ENet; протокол — только в `delivery`.
+
+## Терминология (use case)
+
+| Use case | Плоскость | Смысл |
+|----------|-----------|--------|
+| **`IssueTicket`** | Control (HTTP, планируется) | `admission.Issue` → бинарный ticket |
+| **`JoinRoom`** | Data (WS / ENet) | `Validate` → peer → membership → `peer.Start()` |
+| **`LeaveRoom`** | Data (при disconnect) | `room.Leave` + `peer.Stop()` |
+
+Слово *connect* в коде относится к **транспорту** (`transport.Connection`, upgrade WS, ENet `EventConnect`), а не к отдельному use case.
 
 ## Архитектура (слои)
 
 ```text
-cmd/rooms              — composition root: fiber.New(), DI, RegisterRoutes, Listen
+cmd/rooms                 — composition root: DI, Fiber, ENet Listen()
 
-delivery/http          — REST control plane (RoomsHandler)
-delivery/ws            — WebSocket upgrade → ConnectUseCase [в разработке]
-delivery/enet          — ENet inbound → ConnectUseCase [заготовка]
+delivery/http             — REST control plane
+delivery/ws               — WebSocket → JoinRoom / LeaveRoom
+delivery/enet             — ENet host loop → JoinRoom / LeaveRoom
 
-usecase/room/          — Create, Delete, GetList, Join, Connect
+usecase/room/             — Create, Delete, GetList, IssueTicket, JoinRoom, LeaveRoom
 
-port/                  — admission, registry, realtime, transport, logging
-domain/                — типы и события без зависимостей от инфраструктуры
-adapter/               — realtime, registry, transport (ws/enet), logging
+port/                     — admission, registry, realtime, transport, logging
+domain/                   — типы и события
+adapter/                  — admission, realtime, registry, transport, logging
 ```
 
-Зависимости направлены внутрь: `delivery` → `usecase` → `port` ← `adapter`; `domain` не импортирует остальные слои.
+Зависимости: `delivery` → `usecase` → `port` ← `adapter`; `domain` ни от кого не зависит.
 
 ### Composition root (`cmd/rooms`)
 
-Один экземпляр `*fiber.App` создаётся в `main` (отдельного `Server` в `delivery/http` нет):
-
 ```text
-fiber.New()
-  → logger, roomFactory, relayRoomHandlerFactory, roomRegistry
-  → CreateUseCase, JoinUseCase (admission=nil), DeleteUseCase, GetListUseCase
+fiber.New() + zap middleware
+  → roomFactory, relayRoomHandlerFactory, roomRegistry, peerFactory
+  → admission (dev secret в коде, TTL 1h)
+  → Create, IssueTicket, JoinRoom, LeaveRoom, Delete, GetList
   → http.RoomsHandler.RegisterRoutes(app)
-  → (план) ws.RoomsHandler.RegisterRoutes(app) — тот же app
+  → ws.RoomsHandler.RegisterRoutes(app)
+  → enet.RoomsHandler.Listen()   // goroutine, отдельный порт
   → app.Listen(":3000")
 ```
 
-WebSocket планируется на **том же** Fiber-приложении (HTTP upgrade). ENet — отдельный слушатель, не Fiber.
+WebSocket — на **том же** `*fiber.App` (HTTP upgrade). ENet — **отдельный** UDP host, не Fiber.
+
+### Поток выдачи ticket (control plane)
+
+`internal/usecase/room/issue_ticket.go` — `IssueTicket` → `admission.Issue`.
+
+Клиент получает ticket (пока только программно / будущий HTTP). Затем подключается по WS или ENet.
+
+**Пробел:** `IssueTicketUseCase` есть в DI HTTP handler, но маршрут и вызов `IssueTicket` в `delivery/http` **не реализованы**. Метод `JoinRoom` в HTTP — заглушка без регистрации в `RegisterRoutes`.
 
 ### Поток входа в комнату (data plane)
 
-Реализован в `internal/usecase/room/connect.go`. `delivery/ws` или `delivery/enet` после handshake передаёт `token` и `transport.Connection`.
+`internal/usecase/room/join_room.go` — `JoinRoom(ctx, connection, token)`.
 
 ```text
 1. admission.Validate(ctx, token) → domain.Claims
 2. roomRegistry.GetRoom(claims.RoomID)
-3. peerFactory.CreatePeer(claims.PeerID, connection, logger)
-4. room.Join(peer)
+3. peerFactory.CreatePeer(claims.PeerID, connection, room, logger)
+4. room.Replace(peer) если peer уже в комнате, иначе room.Join(peer)
 5. peer.Start()
 ```
 
-При ошибке на шагах 4–5 use case откатывает peer (`peer.Stop()`, `room.Leave`). Закрытие сокета при ошибке из `Connect` — ответственность inbound-адаптера.
+При ошибке на шаге 5: `room.Leave(peer)`, `peer.Stop()`. Закрытие сокета при ошибке до успешного join — ответственность `delivery`.
+
+Возвращает `(RoomSummary, PeerID, error)` — `PeerID` нужен для `LeaveRoom` при disconnect.
 
 | Слой | Роль |
 |------|------|
-| `delivery/ws`, `delivery/enet` | Протокол транспорта, извлечение ticket, вызов `Connect`, закрытие соединения при ошибке |
-| `Admission` | `Issue` / `Validate` ticket, без знания WS/ENet |
-| `ConnectUseCase` | validate → комната → peer → join → start |
-| `adapter/realtime` | Room, Peer, relay через `RelayHandler` |
-| `adapter/transport/ws` | `WsConnection` над `gofiber/contrib/v3/websocket` |
+| `delivery/ws`, `delivery/enet` | Транспорт, извлечение token, `JoinRoom`, при отключении — `LeaveRoom` |
+| `JoinRoomUseCase` | validate → комната → peer → join/replace → start |
+| `LeaveRoomUseCase` | get peer → leave → stop |
+| `Admission` | `Issue` / `Validate`, без знания WS/ENet |
+| `adapter/realtime` | `Room`, `Peer`, `RoomHandler` |
 
-### Поток выдачи ticket (control plane)
+### Поток выхода (data plane)
 
-`internal/usecase/room/join.go` — `Join` → `admission.Issue` → `[]byte` (ticket для клиента).
+`internal/usecase/room/leave_room.go` — `LeaveRoom(ctx, roomID, peerID)`.
 
-Планируется HTTP-handler `JoinRoom` (объявлен в `delivery/http`, маршрут в `RegisterRoutes` пока не добавлен). Клиент затем подключается по WS, например `GET /ws?token=...` → `ConnectUseCase`.
+- **WebSocket:** после `connection.Wait()` (клиент отключился) → `LeaveRoom`.
+- **ENet:** `EventDisconnect`, если сессия была admitted → `LeaveRoom`, затем `sess.close()`.
 
 ### Допуск (Admission)
 
-`internal/port/admission/admission.go`:
+Порт: `internal/port/admission/admission.go`.  
+Реализация: `internal/adapter/admission` (HMAC-SHA256, фиксированный размер token 33 байта).
 
-- **`Issue`** — control plane: `roomID`, `peerID`, `password` → ticket (`[]byte`).
-- **`Validate`** — data plane: `token []byte` → `domain.Claims` или ошибка.
+- **`Issue`** — `roomID`, `peerID`, `password` → `[]byte` ticket.
+- **`Validate`** — `token` → `domain.Claims` или ошибка (`ErrInvalidToken`, `ErrExpiredToken`, …).
 
 `domain.Claims`: `RoomID`, `PeerID`, `IssuedAt`, `ExpiresAt`.
 
+В `main` секрет зашит как `dev-secret-change-me` (только для разработки).
+
 ### Realtime
 
-- **`Room`** — жизненный цикл, `Join` / `Leave`, события пиров.
-- **`Peer`** — `transport.Connection`, приём/отправка кадров.
-- **`RoomHandler`** — хуки; **`RelayHandler`** ретранслирует кадры между пирами.
-- Фабрики — `internal/adapter/realtime/`.
+- **`Room`** — lifecycle, `Join` / `Leave` / `Replace`, `GetPeer`, `Deliver` / `Send`.
+- **`Peer`** — чтение/запись кадров через `transport.Connection`.
+- **`RoomHandler`** — хуки; **`RelayRoomHandler`** — временный relay между пирами.
 
 ### Реестр комнат
 
@@ -111,61 +140,90 @@ WebSocket планируется на **том же** Fiber-приложении
 
 ### Транспорт
 
-`internal/port/transport/connection.go` — `Send` / `GetIncoming` / `Close` над `domain.Frame`.
+`internal/port/transport/connection.go` — `Send`, `Receive`, `Close` над `domain.Frame`.
 
 | Адаптер | Пакет |
 |---------|--------|
-| WebSocket | `internal/adapter/transport/ws/` (`NewWsConnection`) |
-| ENet | `internal/adapter/transport/enet/` (CGO / stub без CGO) |
+| WebSocket | `internal/adapter/transport/ws/` |
+| ENet | `internal/adapter/transport/enet/` (`connection_cgo.go` / stub) |
 
-### Delivery
+## API и endpoints
 
-| Пакет | Состояние |
-|-------|-----------|
-| `internal/delivery/http` | `RoomsHandler`: `RegisterRoutes` на `*fiber.App`; методы — заглушки |
-| `internal/delivery/ws` | Структура handler + `ConnectUseCase`; регистрация маршрутов и `websocket.New` — TODO |
-| `internal/delivery/enet` | Заготовка пакета |
+### HTTP (Fiber), порт `:3000`
 
-## HTTP API (текущие маршруты)
+| Метод | Путь | Handler | Use case | Ответ |
+|-------|------|---------|----------|--------|
+| `POST` | `/rooms` | `CreateRoom` | `Create` | заглушка |
+| `GET` | `/rooms` | `GetListRooms` | `GetList` | заглушка |
+| `DELETE` | `/rooms/:id` | `DeleteRoom` | `Delete` | заглушка |
 
-Базовый URL: `http://localhost:3000` (порт зашит в `cmd/rooms/main.go`).
+Планируется маршрут выдачи ticket (например `POST /rooms/:id/tickets` → `IssueTicket`). Сейчас **не зарегистрирован**.
 
-| Метод | Путь | Handler | Use case |
-|-------|------|---------|----------|
-| `POST` | `/rooms` | `CreateRoom` | `Create` |
-| `GET` | `/rooms` | `GetListRooms` | `GetList` |
-| `DELETE` | `/rooms/:id` | `DeleteRoom` | `Delete` |
+### WebSocket
 
-`JoinRoom` (use case `Join`) в коде есть, в `RegisterRoutes` **не** объявлен.
+| Метод | Путь | Параметры | Поведение |
+|-------|------|-----------|-----------|
+| `GET` | `/ws` | `token` (query) | Upgrade → `JoinRoom` → ожидание disconnect → `LeaveRoom` |
+
+**Ограничение:** ticket бинарный (33 байта); передача в query string без base64/hex **может ломать** валидацию. Для продакшена — кодирование ticket или другой канал (header / первое binary-сообщение).
+
+### ENet
+
+| Параметр | Значение по умолчанию (`DefaultConfig`) |
+|----------|----------------------------------------|
+| Порт | `7777` |
+| Первый пакет после connect | сырой `token` (`admit`) |
+| После admit | binary-кадры (`OpCode` + payload) |
+
+Сборка с ENet:
+
+```bash
+CGO_ENABLED=1 go build -tags enet -o bin/rooms ./cmd/rooms
+```
+
+Без тега/cgo: `Listen()` пишет warn и не поднимает host.
 
 ## Структура репозитория
 
 ```text
-cmd/rooms/                    — точка входа, Fiber, DI, Listen
+cmd/rooms/                      — точка входа
 internal/
-  domain/                     — RoomID, PeerID, Frame, Claims, events
-  port/                       — admission, registry, realtime, transport, logging
-  usecase/room/               — Create, Delete, GetList, Join, Connect; RoomSummary
+  domain/                       — RoomID, PeerID, Frame, Claims, events
+  port/                         — admission, registry, realtime, transport, logging
+  usecase/room/
+    create.go, delete.go, get_list.go
+    issue_ticket.go             — IssueTicketUseCase
+    join_room.go                — JoinRoomUseCase
+    leave_room.go               — LeaveRoomUseCase
+    room_summary.go, peer_summary.go
   adapter/
-    realtime/                 — Room, Peer, factories, RelayHandler
-    registry/                 — RoomRegistry (in-memory)
+    admission/                  — HMAC ticket
+    realtime/                   — Room, Peer, RelayRoomHandler
+    registry/
     transport/ws|enet/
-    logging/stdlib/
+    logging/stdlib|zap/
   delivery/
-    http/rooms.go             — RoomsHandler, RegisterRoutes
-    ws/rooms.go               — RoomsHandler (Connect), wiring TODO
-    enet/                     — заготовка
-tests/                        — тесты (зеркало слоёв), см. tests/README.md
+    http/rooms.go
+    ws/rooms.go
+    enet/                       — handler, config, run_cgo / run_stub
+tests/                          — см. tests/README.md
 ```
 
 ## Требования
 
 - Go 1.25+
+- ENet (опционально): CGO, `github.com/codecat/go-enet`, build tag `enet`
 
 ## Сборка
 
 ```bash
 go build -o bin/rooms ./cmd/rooms
+```
+
+С ENet:
+
+```bash
+CGO_ENABLED=1 go build -tags enet -o bin/rooms-enet ./cmd/rooms
 ```
 
 ## Запуск
@@ -174,15 +232,10 @@ go build -o bin/rooms ./cmd/rooms
 go run ./cmd/rooms
 ```
 
-Сервис слушает **`:3000`**. Ответы REST пока не реализованы (handlers возвращают пустой успех).
+- HTTP + WebSocket: `http://localhost:3000`
+- ENet (если собран с `enet`+cgo): UDP порт **7777**
 
-Планируется дополнить:
-
-- переменные окружения и конфигурация порта;
-- регистрация WebSocket на том же Fiber `app`;
-- отдельный слушатель ENet;
-- graceful shutdown;
-- health-check.
+REST handlers пока не вызывают use case и не отдают JSON.
 
 ## Тесты
 
@@ -192,19 +245,23 @@ go run ./cmd/rooms
 go test ./tests/...
 ```
 
-Подробнее — [tests/README.md](tests/README.md). Пока тестовых пакетов с кодом нет, только описание структуры.
+См. [tests/README.md](tests/README.md). Пакетов с тестовым кодом пока нет.
 
 ## Соглашения проекта
 
-- HTTP — только [Fiber](https://gofiber.io/) v3; один `*fiber.App` в `cmd` для REST и WS upgrade.
+- HTTP — только [Fiber](https://gofiber.io/) v3; один `*fiber.App` для REST и WS upgrade.
 - Handlers в `delivery` тонкие: парсинг → use case → JSON / маппинг ошибок.
 - Тесты — только под `tests/`, внешние пакеты `*_test`.
 - Правила для агентов — [.cursor/rules/go-standards.mdc](.cursor/rules/go-standards.mdc).
 
 ## TODO (ближайшее)
 
-- Реализация `Admission`
-- HTTP: тела запросов/ответов, вызов use case, маршрут Join
-- WS: `RegisterRoutes`, `websocket.New`, wiring `ConnectUseCase` + `peerFactory` в `cmd`
-- ENet delivery и слушатель
-- Конфиг, graceful shutdown
+- HTTP: JSON request/response, вызов use case, маршрут `IssueTicket` (убрать/переименовать заглушку `JoinRoom` в http)
+- Кодирование ticket для клиента (base64url) и контракт API
+- Конфигурация: порт HTTP/ENet, секрет admission из env
+- Graceful shutdown: отмена `ctx`, остановка Fiber и ENet
+- Health-check
+- Доменные ошибки и маппинг в HTTP status
+- Идемпотентный `LeaveRoom`, если peer уже снят с комнаты
+- Замена `RelayRoomHandler` на целевую логику комнаты
+- Тесты: `adapter/admission`, `JoinRoom` / `LeaveRoom`, registry

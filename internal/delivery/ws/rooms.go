@@ -11,16 +11,18 @@ import (
 )
 
 type RoomsHandler struct {
-	connectUseCase *room.ConnectUseCase
-	ctx            context.Context
-	logger         logging.Logger
+	ctx              context.Context
+	joinRoomUseCase  *room.JoinRoomUseCase
+	leaveRoomUseCase *room.LeaveRoomUseCase
+	logger           logging.Logger
 }
 
-func NewRoomsHandler(connectUseCase *room.ConnectUseCase, ctx context.Context, logger logging.Logger) *RoomsHandler {
+func NewRoomsHandler(ctx context.Context, joinRoomUseCase *room.JoinRoomUseCase, leaveRoomUseCase *room.LeaveRoomUseCase, logger logging.Logger) *RoomsHandler {
 	return &RoomsHandler{
-		connectUseCase: connectUseCase,
-		ctx:            ctx,
-		logger:         logger,
+		ctx:              ctx,
+		joinRoomUseCase:  joinRoomUseCase,
+		leaveRoomUseCase: leaveRoomUseCase,
+		logger:           logger,
 	}
 }
 
@@ -46,10 +48,15 @@ func (h *RoomsHandler) handleConnect(c *websocket.Conn) {
 	connection := wsconn.NewWsConnection(c)
 	defer func() { _ = connection.Close() }()
 
-	if _, err := h.connectUseCase.Connect(h.ctx, connection, token); err != nil {
-		h.logger.Error("websocket connect failed", "error", err)
+	summary, peerID, err := h.joinRoomUseCase.JoinRoom(h.ctx, connection, token)
+	if err != nil {
+		h.logger.Error("websocket join room failed", "error", err)
 		return
 	}
 
 	connection.Wait()
+
+	if err := h.leaveRoomUseCase.LeaveRoom(h.ctx, summary.ID, peerID); err != nil {
+		h.logger.Error("websocket leave room failed", "error", err, "roomID", summary.ID, "peerID", peerID)
+	}
 }

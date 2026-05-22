@@ -76,6 +76,7 @@ func (r *Room) Join(peer realtime.Peer) error {
 	if err := r.handler.OnJoin(peer); err != nil {
 		return err
 	}
+
 	r.peers[peer.GetID()] = peer
 	return nil
 }
@@ -90,9 +91,60 @@ func (r *Room) Leave(peer realtime.Peer) error {
 	return nil
 }
 
+func (r *Room) Replace(peer realtime.Peer) error {
+	r.mutex.Lock()
+	old, ok := r.peers[peer.GetID()]
+	if !ok {
+		r.mutex.Unlock()
+		return fmt.Errorf("peer not found: %s", peer.GetID())
+	}
+	if err := r.handler.OnLeave(old); err != nil {
+		r.mutex.Unlock()
+		return err
+	}
+	if err := r.handler.OnJoin(peer); err != nil {
+		r.mutex.Unlock()
+		return err
+	}
+	r.peers[peer.GetID()] = peer
+	r.mutex.Unlock()
+
+	if err := old.Stop(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *Room) HasPeer(peerID domain.PeerID) bool {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+	_, ok := r.peers[peerID]
+	return ok
+}
+
+func (r *Room) GetPeer(peerID domain.PeerID) (realtime.Peer, error) {
+	r.mutex.RLock()
+	defer r.mutex.RUnlock()
+	peer, ok := r.peers[peerID]
+	if !ok {
+		return nil, fmt.Errorf("peer not found: %s", peerID)
+	}
+	return peer, nil
+}
+
 func (r *Room) Send(peerEvent events.PeerEvent) error {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
+
+	if !peerEvent.PeerID.IsValid() {
+		for _, peer := range r.peers {
+			if err := peer.Deliver(peerEvent); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	peer, ok := r.peers[peerEvent.PeerID]
 	if !ok {
 		return fmt.Errorf("peer not found: %s", peerEvent.PeerID)

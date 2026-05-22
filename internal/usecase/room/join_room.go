@@ -3,6 +3,7 @@ package room
 import (
 	"context"
 
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/admission"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
@@ -10,15 +11,15 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport"
 )
 
-type ConnectUseCase struct {
+type JoinRoomUseCase struct {
 	admission    admission.Admission
 	peerFactory  realtime.PeerFactory
 	roomRegistry registry.RoomRegistry
 	logging      logging.Logger
 }
 
-func NewConnectUseCase(admission admission.Admission, peerFactory realtime.PeerFactory, roomRegistry registry.RoomRegistry, logging logging.Logger) *ConnectUseCase {
-	return &ConnectUseCase{
+func NewJoinRoomUseCase(admission admission.Admission, peerFactory realtime.PeerFactory, roomRegistry registry.RoomRegistry, logging logging.Logger) *JoinRoomUseCase {
+	return &JoinRoomUseCase{
 		admission:    admission,
 		peerFactory:  peerFactory,
 		roomRegistry: roomRegistry,
@@ -26,31 +27,37 @@ func NewConnectUseCase(admission admission.Admission, peerFactory realtime.PeerF
 	}
 }
 
-func (uc *ConnectUseCase) Connect(ctx context.Context, connection transport.Connection, token []byte) (RoomSummary, error) {
+func (uc *JoinRoomUseCase) JoinRoom(ctx context.Context, connection transport.Connection, token []byte) (RoomSummary, domain.PeerID, error) {
 	claims, err := uc.admission.Validate(ctx, token)
 	if err != nil {
-		return EmptyRoomSummary, err
+		return EmptyRoomSummary, domain.PeerIDInvalid, err
 	}
 
 	room, err := uc.roomRegistry.GetRoom(ctx, claims.RoomID)
 	if err != nil {
-		return EmptyRoomSummary, err
+		return EmptyRoomSummary, domain.PeerIDInvalid, err
 	}
 
 	peer := uc.peerFactory.CreatePeer(claims.PeerID, connection, room, uc.logging)
 
-	if err := room.Join(peer); err != nil {
+	if room.HasPeer(claims.PeerID) {
+		if err := room.Replace(peer); err != nil {
+			uc.logging.Error("error replacing peer", "error", err)
+			return EmptyRoomSummary, domain.PeerIDInvalid, err
+		}
+		uc.logging.Info("peer replaced", "peerID", claims.PeerID)
+	} else if err := room.Join(peer); err != nil {
 		uc.logging.Error("error joining room", "error", err)
-		return EmptyRoomSummary, err
+		return EmptyRoomSummary, domain.PeerIDInvalid, err
 	}
 
 	if err := peer.Start(); err != nil {
 		room.Leave(peer)
 		peer.Stop()
 		uc.logging.Error("error starting peer", "error", err)
-		return EmptyRoomSummary, err
+		return EmptyRoomSummary, domain.PeerIDInvalid, err
 	}
 
 	roomSummary := NewRoomSummaryFromRoom(room)
-	return *roomSummary, nil
+	return *roomSummary, claims.PeerID, nil
 }

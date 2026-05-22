@@ -93,6 +93,11 @@ func (h *RoomsHandler) run(ctx context.Context) error {
 			delete(sessions, id)
 			mu.Unlock()
 			if ok {
+				if sess.admitted && sess.roomID.IsValid() && sess.peerID.IsValid() {
+					if err := h.leaveRoomUseCase.LeaveRoom(ctx, sess.roomID, sess.peerID); err != nil {
+						h.logger.Error("enet leave room failed", "error", err, "enet_peer_id", id, "roomID", sess.roomID, "peerID", sess.peerID)
+					}
+				}
 				_ = sess.close()
 				sess.clearPeerData()
 				h.logger.Info("enet peer disconnected", "enet_peer_id", id, "data", ev.GetData())
@@ -107,12 +112,15 @@ func (h *RoomsHandler) admit(ctx context.Context, sess *peerSession, token []byt
 		return errEmptyToken
 	}
 
-	if _, err := h.connectUseCase.Connect(ctx, sess.conn, token); err != nil {
-		h.logger.Error("enet connect failed", "error", err, "enet_peer_id", sess.id)
+	summary, peerID, err := h.joinRoomUseCase.JoinRoom(ctx, sess.conn, token)
+	if err != nil {
+		h.logger.Error("enet join room failed", "error", err, "enet_peer_id", sess.id)
 		return err
 	}
 
 	sess.admitted = true
+	sess.roomID = summary.ID
+	sess.peerID = peerID
 	h.logger.Info("enet peer admitted", "enet_peer_id", sess.id)
 	return nil
 }
