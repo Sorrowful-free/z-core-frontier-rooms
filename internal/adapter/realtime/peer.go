@@ -61,17 +61,17 @@ func (p *Peer) GetIncoming() chan<- events.PeerEvent {
 
 func processIncomingEvents(peer *Peer) {
 	for {
+		frame, err := peer.connection.Receive()
+		if err != nil {
+			return
+		}
 		select {
+		case peer.incoming <- events.PeerEvent{
+			PeerID: peer.id,
+			Frame:  frame,
+		}:
 		case <-peer.done:
 			return
-		case frame, ok := <-peer.connection.GetIncoming():
-			if !ok {
-				return
-			}
-			peer.incoming <- events.PeerEvent{
-				PeerID: peer.id,
-				Frame:  frame,
-			}
 		}
 	}
 }

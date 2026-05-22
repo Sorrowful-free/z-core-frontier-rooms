@@ -3,6 +3,8 @@
 package enet
 
 import (
+	"io"
+
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
 
@@ -10,14 +12,25 @@ type EnetConnection struct {
 	incoming chan domain.Frame
 }
 
-func (c *EnetConnection) Close() error {
+func NewEnetConnection(_ any, incoming chan domain.Frame) *EnetConnection {
+	return &EnetConnection{incoming: incoming}
+}
+
+func (c *EnetConnection) Send(_ domain.Frame) error {
 	return nil
 }
 
-func (c *EnetConnection) GetIncoming() chan<- domain.Frame {
-	return c.incoming
+func (c *EnetConnection) Receive() (domain.Frame, error) {
+	frame, ok := <-c.incoming
+	if !ok {
+		return domain.Frame{}, io.EOF
+	}
+	return frame, nil
 }
 
-func (c *EnetConnection) Send(frame domain.Frame) error {
+func (c *EnetConnection) Close() error {
+	if c.incoming != nil {
+		close(c.incoming)
+	}
 	return nil
 }

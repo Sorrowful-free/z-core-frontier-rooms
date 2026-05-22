@@ -4,6 +4,6 @@ import "github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 
 type Connection interface {
 	Send(frame domain.Frame) error
-	GetIncoming() <-chan domain.Frame
+	Receive() (domain.Frame, error)
 	Close() error
 }
