@@ -59,9 +59,9 @@ func (p *Peer) Stop() error {
 	var err error
 	p.stopOnce.Do(func() {
 		close(p.done)
+		err = p.connection.Close()
 		p.wg.Wait()
 		close(p.outbound)
-		err = p.connection.Close()
 	})
 	return err
 }

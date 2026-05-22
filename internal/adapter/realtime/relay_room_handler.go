@@ -39,7 +39,8 @@ func (h *RelayRoomHandler) OnLeave(peer realtime.Peer) error {
 func (h *RelayRoomHandler) OnMessage(roomEvent events.RoomEvent) error {
 	room := h.room
 	room.Send(events.PeerEvent{
-		Frame: roomEvent.Frame,
+		ExcludePeerID: roomEvent.PeerID,
+		Frame:         roomEvent.Frame,
 	})
 	return nil
 }
