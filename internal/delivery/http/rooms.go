@@ -29,7 +29,8 @@ func (h *RoomsHandler) CreateRoom(c *fiber.Ctx) error {
 	return nil
 }
 
-func (h *RoomsHandler) JoinRoom(c *fiber.Ctx) error {
+func (h *RoomsHandler) IssueTicket(c *fiber.Ctx) error {
+
 	return nil
 }
 
@@ -38,11 +39,13 @@ func (h *RoomsHandler) DeleteRoom(c *fiber.Ctx) error {
 }
 
 func (h *RoomsHandler) GetListRooms(c *fiber.Ctx) error {
+
 	return nil
 }
 
 func (h *RoomsHandler) RegisterRoutes(app *fiber.App) {
 	app.Post("/rooms", h.CreateRoom)
+	app.Post("/rooms/:id/tickets", h.IssueTicket)
 	app.Delete("/rooms/:id", h.DeleteRoom)
 	app.Get("/rooms", h.GetListRooms)
 }

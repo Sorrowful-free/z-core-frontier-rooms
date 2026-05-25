@@ -35,3 +35,36 @@ func JoinRejectOpCode(err error) domain.OpCode {
 func SendJoinReject(conn transport.Connection, err error) {
 	sendErrorFrame(conn, JoinRejectOpCode(err))
 }
+
+func sendErrorFrame(conn transport.Connection, op domain.OpCode) {
+	_ = conn.Send(domain.Frame{
+		OpCode:   op,
+		Delivery: domain.DeliveryReliable,
+		Payload:  nil,
+	})
+}
+
+// IsJoinRejectOpCode reports whether op belongs to the join/admit reject range (0x40–0x5F).
+func IsJoinRejectOpCode(op domain.OpCode) bool {
+	return op >= 0x40 && op <= 0x5F
+}
+
+// IsInRoomErrorOpCode reports whether op belongs to the in-room error range (0x60–0x6F).
+func IsInRoomErrorOpCode(op domain.OpCode) bool {
+	return op >= 0x60 && op <= 0x6F
+}
+
+// InRoomErrorOpCode maps in-room errors to wire OpCode (0x60–0x6F, empty payload).
+func InRoomErrorOpCode(err error) domain.OpCode {
+	switch {
+	case stderrors.Is(err, domain.ErrInRoomInternal):
+		return domain.OpInRoomInternal
+	default:
+		return domain.OpInRoomInternal
+	}
+}
+
+// SendInRoomError sends one in-room error frame; connection may stay open.
+func SendInRoomError(conn transport.Connection, err error) {
+	sendErrorFrame(conn, InRoomErrorOpCode(err))
+}
