@@ -207,6 +207,32 @@ func TestHTTP_CreateAssignsDistinctRoomIDs(t *testing.T) {
 	}
 }
 
+func TestHTTP_InvalidRoomIDPath(t *testing.T) {
+	t.Parallel()
+
+	env := newTestEnv(t)
+
+	cases := []struct {
+		name string
+		path string
+	}{
+		{name: "zero", path: "/rooms/0/tickets"},
+		{name: "overflow uint32", path: "/rooms/4294967296/tickets"},
+		{name: "negative", path: "/rooms/-1/tickets"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			resp, body := env.do(t, http.MethodPost, tc.path, map[string]any{})
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400, body = %s", resp.StatusCode, body)
+			}
+			assertErrorCode(t, body, "invalid_room_id")
+		})
+	}
+}
+
 func TestHTTP_DeleteNotFound(t *testing.T) {
 	t.Parallel()
 

@@ -52,7 +52,8 @@ func (h *RoomsHandler) CreateRoom(c fiber.Ctx) error {
 func (h *RoomsHandler) IssueTicket(c fiber.Ctx) error {
 	roomID, err := parseRoomIDParam(c, "id")
 	if err != nil {
-		return writeAPIError(c, fiber.StatusBadRequest, codeInvalidRoomID, err.Error())
+		status, code := roomIDParseAPIError(err)
+		return writeAPIError(c, status, code, err.Error())
 	}
 
 	var req issueTicketRequest
@@ -72,7 +73,8 @@ func (h *RoomsHandler) IssueTicket(c fiber.Ctx) error {
 func (h *RoomsHandler) DeleteRoom(c fiber.Ctx) error {
 	roomID, err := parseRoomIDParam(c, "id")
 	if err != nil {
-		return writeAPIError(c, fiber.StatusBadRequest, codeInvalidRoomID, err.Error())
+		status, code := roomIDParseAPIError(err)
+		return writeAPIError(c, status, code, err.Error())
 	}
 
 	password := ""

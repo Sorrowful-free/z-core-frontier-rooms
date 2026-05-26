@@ -3,6 +3,7 @@ package admission_test
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -56,6 +57,26 @@ func TestValidateExpiredToken(t *testing.T) {
 	_, err = a.Validate(ctx, token)
 	if !errors.Is(err, domain.ErrExpiredToken) {
 		t.Fatalf("err = %v, want ErrExpiredToken", err)
+	}
+}
+
+func TestIssueValidateMaxUint32IDs(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	a := admission.NewAdmission([]byte("test-secret"), time.Hour, "")
+
+	token, err := a.Issue(ctx, domain.RoomID(math.MaxUint32), domain.PeerID(math.MaxUint32), "")
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+
+	claims, err := a.Validate(ctx, token)
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if claims.RoomID != domain.RoomID(math.MaxUint32) || claims.PeerID != domain.PeerID(math.MaxUint32) {
+		t.Fatalf("claims = %+v", claims)
 	}
 }
 

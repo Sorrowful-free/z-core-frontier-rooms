@@ -104,14 +104,17 @@ func (a *Admission) verify(token []byte) (domain.RoomID, domain.PeerID, time.Tim
 		return 0, 0, time.Time{}, time.Time{}, ErrInvalidToken
 	}
 
-	roomID := domain.RoomID(binary.BigEndian.Uint64(token[1:9]))
-	peerID := domain.PeerID(binary.BigEndian.Uint64(token[9:17]))
+	roomID, err := domain.RoomIDFromUint64(binary.BigEndian.Uint64(token[1:9]))
+	if err != nil {
+		return 0, 0, time.Time{}, time.Time{}, ErrInvalidToken
+	}
+	peerID, err := domain.PeerIDFromUint64(binary.BigEndian.Uint64(token[9:17]))
+	if err != nil {
+		return 0, 0, time.Time{}, time.Time{}, ErrInvalidToken
+	}
 	issuedAt := time.Unix(int64(binary.BigEndian.Uint64(token[17:25])), 0)
 	expiresAt := time.Unix(int64(binary.BigEndian.Uint64(token[25:33])), 0)
 
-	if !roomID.IsValid() || !peerID.IsValid() {
-		return 0, 0, time.Time{}, time.Time{}, ErrInvalidToken
-	}
 	return roomID, peerID, issuedAt, expiresAt, nil
 }
 
