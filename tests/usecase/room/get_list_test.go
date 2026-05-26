@@ -20,6 +20,7 @@ func TestGetList_Empty(t *testing.T) {
 	logger := mocks.NewMockLogger(ctrl)
 
 	registry.EXPECT().GetList(gomock.Any()).Return(nil, nil)
+	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewGetListUseCase(registry, logger)
 	list, err := uc.GetList(context.Background())
@@ -41,8 +42,9 @@ func TestGetList_ReturnsSummaries(t *testing.T) {
 
 	const roomID = domain.RoomID(5)
 	registry.EXPECT().GetList(gomock.Any()).Return([]realtime.Room{room}, nil)
-	room.EXPECT().GetID().Return(roomID)
 	room.EXPECT().GetPeers().Return(nil)
+	room.EXPECT().GetID().Return(roomID)
+	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewGetListUseCase(registry, logger)
 	list, err := uc.GetList(context.Background())

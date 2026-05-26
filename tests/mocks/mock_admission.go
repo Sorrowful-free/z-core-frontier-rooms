@@ -12,6 +12,7 @@ package mocks
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	domain "github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	gomock "go.uber.org/mock/gomock"
@@ -76,6 +77,44 @@ func (c *MockAdmissionIssueCall) Do(f func(context.Context, domain.RoomID, domai
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
 func (c *MockAdmissionIssueCall) DoAndReturn(f func(context.Context, domain.RoomID, domain.PeerID, string) ([]byte, error)) *MockAdmissionIssueCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
+// TTL mocks base method.
+func (m *MockAdmission) TTL() time.Duration {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "TTL")
+	ret0, _ := ret[0].(time.Duration)
+	return ret0
+}
+
+// TTL indicates an expected call of TTL.
+func (mr *MockAdmissionMockRecorder) TTL() *MockAdmissionTTLCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TTL", reflect.TypeOf((*MockAdmission)(nil).TTL))
+	return &MockAdmissionTTLCall{Call: call}
+}
+
+// MockAdmissionTTLCall wrap *gomock.Call
+type MockAdmissionTTLCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockAdmissionTTLCall) Return(arg0 time.Duration) *MockAdmissionTTLCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockAdmissionTTLCall) Do(f func() time.Duration) *MockAdmissionTTLCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockAdmissionTTLCall) DoAndReturn(f func() time.Duration) *MockAdmissionTTLCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

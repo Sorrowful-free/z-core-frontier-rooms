@@ -7,5 +7,5 @@ import (
 )
 
 type RoomFactory interface {
-	CreateRoom(ctx context.Context, id domain.RoomID) (Room, error)
+	CreateRoom(ctx context.Context, id domain.RoomID, capacity int) (Room, error)
 }

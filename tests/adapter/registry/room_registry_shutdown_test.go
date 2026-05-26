@@ -13,7 +13,7 @@ func TestShutdownStopsAllRooms(t *testing.T) {
 	reg := newTestRegistry(t)
 
 	const roomID = domain.RoomID(42)
-	room, err := reg.CreateRoom(context.Background(), roomID)
+	room, err := reg.CreateRoom(context.Background(), roomID, 8)
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

@@ -13,4 +13,6 @@ var (
 	ErrJoinDenied         = errors.New("join denied")
 	ErrReplaceFailed      = errors.New("replace failed")
 	ErrPeerStartFailed    = errors.New("peer start failed")
+	ErrRoomFull           = errors.New("room full")
+	ErrPeerAlreadyInRoom  = errors.New("peer already in room")
 )

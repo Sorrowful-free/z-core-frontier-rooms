@@ -32,7 +32,7 @@ func NewRoomRegistry(lifecycle context.Context, roomFactory realtime.RoomFactory
 	}
 }
 
-func (r *RoomRegistry) CreateRoom(ctx context.Context, id domain.RoomID) (realtime.Room, error) {
+func (r *RoomRegistry) CreateRoom(ctx context.Context, id domain.RoomID, capacity int) (realtime.Room, error) {
 
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -45,7 +45,7 @@ func (r *RoomRegistry) CreateRoom(ctx context.Context, id domain.RoomID) (realti
 		return nil, fmt.Errorf("%w: %d", domain.ErrRoomAlreadyExists, id)
 	}
 
-	room, err := r.roomFactory.CreateRoom(r.lifecycle, id)
+	room, err := r.roomFactory.CreateRoom(r.lifecycle, id, capacity)
 	if err != nil {
 		return nil, err
 	}

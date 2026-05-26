@@ -16,6 +16,7 @@ func TestLeaveRoom_Success(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	registry := mocks.NewMockRoomRegistry(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
 	logger := mocks.NewMockLogger(ctrl)
 	room := mocks.NewMockRoom(ctrl)
 	peer := mocks.NewMockPeer(ctrl)
@@ -29,9 +30,10 @@ func TestLeaveRoom_Success(t *testing.T) {
 	room.EXPECT().GetPeer(peerID).Return(peer, nil)
 	room.EXPECT().Leave(peer).Return(nil)
 	peer.EXPECT().Stop().Return(nil)
+	reservation.EXPECT().Revoke(gomock.Any(), roomID, peerID).Return(nil)
 	logger.EXPECT().Info(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
 
-	uc := useroom.NewLeaveRoomUseCase(registry, logger)
+	uc := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
 	if err := uc.LeaveRoom(context.Background(), roomID, peerID); err != nil {
 		t.Fatalf("LeaveRoom: %v", err)
 	}
@@ -42,13 +44,14 @@ func TestLeaveRoom_RoomNotFound(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	registry := mocks.NewMockRoomRegistry(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
 	logger := mocks.NewMockLogger(ctrl)
 
 	registry.EXPECT().
 		GetRoom(gomock.Any(), domain.RoomID(1)).
 		Return(nil, domain.ErrRoomNotFound)
 
-	uc := useroom.NewLeaveRoomUseCase(registry, logger)
+	uc := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
 	err := uc.LeaveRoom(context.Background(), domain.RoomID(1), domain.PeerID(2))
 	if !errors.Is(err, domain.ErrRoomNotFound) {
 		t.Fatalf("err = %v, want ErrRoomNotFound", err)
@@ -60,6 +63,7 @@ func TestLeaveRoom_PeerNotFound(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	registry := mocks.NewMockRoomRegistry(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
 	logger := mocks.NewMockLogger(ctrl)
 	room := mocks.NewMockRoom(ctrl)
 
@@ -71,7 +75,7 @@ func TestLeaveRoom_PeerNotFound(t *testing.T) {
 	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
 	room.EXPECT().GetPeer(peerID).Return(nil, errors.New("peer not found"))
 
-	uc := useroom.NewLeaveRoomUseCase(registry, logger)
+	uc := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
 	if err := uc.LeaveRoom(context.Background(), roomID, peerID); err == nil {
 		t.Fatal("LeaveRoom: want error")
 	}

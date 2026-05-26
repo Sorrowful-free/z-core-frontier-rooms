@@ -14,6 +14,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/registry"
+	reservationadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/ws"
 	deliveryenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/enet"
@@ -56,12 +57,13 @@ func run() error {
 	enetConnectionFactory := enet.NewEnetConnectionFactory(zaplog.NewFrom(z, "enet connection factory"))
 
 	admission := admissionadapter.NewAdmission([]byte("dev-secret-change-me"), time.Hour, "")
+	reservation := reservationadapter.NewReservation(zaplog.NewFrom(z, "reservation"))
 
-	createUseCase := room.NewCreateUseCase(roomRegistry, zaplog.NewFrom(z, "create use case"))
-	issueTicketUseCase := room.NewIssueTicketUseCase(admission, zaplog.NewFrom(z, "issue ticket use case"))
-	joinRoomUseCase := room.NewJoinRoomUseCase(admission, peerFactory, roomRegistry, zaplog.NewFrom(z, "join room use case"))
-	leaveRoomUseCase := room.NewLeaveRoomUseCase(roomRegistry, zaplog.NewFrom(z, "leave room use case"))
-	deleteUseCase := room.NewDeleteUseCase(roomRegistry, zaplog.NewFrom(z, "delete use case"))
+	createUseCase := room.NewCreateUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "create use case"))
+	issueTicketUseCase := room.NewIssueTicketUseCase(roomRegistry, admission, reservation, zaplog.NewFrom(z, "issue ticket use case"))
+	joinRoomUseCase := room.NewJoinRoomUseCase(admission, peerFactory, roomRegistry, reservation, zaplog.NewFrom(z, "join room use case"))
+	leaveRoomUseCase := room.NewLeaveRoomUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "leave room use case"))
+	deleteUseCase := room.NewDeleteUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "delete use case"))
 	getListUseCase := room.NewGetListUseCase(roomRegistry, zaplog.NewFrom(z, "get list use case"))
 
 	roomsHandler := http.NewRoomsHandler(createUseCase, issueTicketUseCase, deleteUseCase, getListUseCase, zaplog.NewFrom(z, "rooms handler"))

@@ -6,6 +6,7 @@
 package mocks
 
 //go:generate go tool mockgen -typed -destination=mock_admission.go -package=mocks github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/admission Admission
+//go:generate go tool mockgen -typed -destination=mock_reservation.go -package=mocks github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/reservation Reservation
 //go:generate go tool mockgen -typed -destination=mock_room_registry.go -package=mocks github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/registry RoomRegistry
 //go:generate go tool mockgen -typed -destination=mock_connection.go -package=mocks github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport Connection
 //go:generate go tool mockgen -typed -destination=mock_logger.go -package=mocks github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging Logger

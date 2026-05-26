@@ -10,6 +10,18 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
 
+type discardLogger struct{}
+
+func (discardLogger) Error(string, ...any) {}
+func (discardLogger) Info(string, ...any)  {}
+func (discardLogger) Debug(string, ...any) {}
+func (discardLogger) Warn(string, ...any)  {}
+func (discardLogger) Fatal(string, ...any) {}
+
+func newTestReservation() *adapterreservation.Reservation {
+	return adapterreservation.NewReservation(discardLogger{})
+}
+
 func TestReserveAdmitRevoke_ReleasesSlot(t *testing.T) {
 	t.Parallel()
 
@@ -18,7 +30,7 @@ func TestReserveAdmitRevoke_ReleasesSlot(t *testing.T) {
 		peerID = domain.PeerID(10)
 	)
 	ctx := context.Background()
-	res := adapterreservation.NewReservation()
+	res := newTestReservation()
 
 	if err := res.RegisterRoom(ctx, roomID, 1); err != nil {
 		t.Fatalf("RegisterRoom: %v", err)
@@ -48,7 +60,7 @@ func TestReserve_ExpiredRemovedOnNextReserve(t *testing.T) {
 		active  = domain.PeerID(21)
 	)
 	ctx := context.Background()
-	res := adapterreservation.NewReservation()
+	res := newTestReservation()
 
 	if err := res.RegisterRoom(ctx, roomID, 2); err != nil {
 		t.Fatalf("RegisterRoom: %v", err)
@@ -79,7 +91,7 @@ func TestAdmit_IdempotentWhenAlreadyAdmitted(t *testing.T) {
 		peerID = domain.PeerID(30)
 	)
 	ctx := context.Background()
-	res := adapterreservation.NewReservation()
+	res := newTestReservation()
 
 	if err := res.RegisterRoom(ctx, roomID, 1); err != nil {
 		t.Fatalf("RegisterRoom: %v", err)
@@ -105,7 +117,7 @@ func TestAdmit_ExpiredReservation(t *testing.T) {
 		peerID = domain.PeerID(40)
 	)
 	ctx := context.Background()
-	res := adapterreservation.NewReservation()
+	res := newTestReservation()
 
 	if err := res.RegisterRoom(ctx, roomID, 1); err != nil {
 		t.Fatalf("RegisterRoom: %v", err)
@@ -133,7 +145,7 @@ func TestSweep_DoesNotRemoveAdmitted(t *testing.T) {
 		overflow  = domain.PeerID(52)
 	)
 	ctx := context.Background()
-	res := adapterreservation.NewReservation()
+	res := newTestReservation()
 
 	if err := res.RegisterRoom(ctx, roomID, 2); err != nil {
 		t.Fatalf("RegisterRoom: %v", err)
@@ -162,7 +174,7 @@ func TestRevoke_IdempotentWhenPeerMissing(t *testing.T) {
 		peerID = domain.PeerID(60)
 	)
 	ctx := context.Background()
-	res := adapterreservation.NewReservation()
+	res := newTestReservation()
 
 	if err := res.RegisterRoom(ctx, roomID, 1); err != nil {
 		t.Fatalf("RegisterRoom: %v", err)
@@ -187,7 +199,7 @@ func TestRevoke_RoomNotRegistered(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	res := adapterreservation.NewReservation()
+	res := newTestReservation()
 
 	err := res.Revoke(ctx, domain.RoomID(99), domain.PeerID(1))
 	if !errors.Is(err, domain.ErrReservationNotFound) {

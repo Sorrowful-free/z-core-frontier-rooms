@@ -41,6 +41,10 @@ func NewAdmission(secret []byte, ttl time.Duration, password string) *Admission 
 	}
 }
 
+func (a *Admission) TTL() time.Duration {
+	return a.ttl
+}
+
 func (a *Admission) Issue(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, password string) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

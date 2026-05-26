@@ -17,6 +17,7 @@ type Room struct {
 	handler  policy.RoomPolicy
 	mutex    sync.RWMutex
 	peers    map[domain.PeerID]realtime.Peer
+	capacity int
 	incoming chan events.RoomEvent
 	logger   logging.Logger
 
@@ -26,13 +27,14 @@ type Room struct {
 	wg       sync.WaitGroup
 }
 
-func NewRoom(ctx context.Context, id domain.RoomID, handler policy.RoomPolicy, logger logging.Logger) *Room {
+func NewRoom(ctx context.Context, id domain.RoomID, handler policy.RoomPolicy, capacity int, logger logging.Logger) *Room {
 	ctx, cancel := context.WithCancel(ctx)
 	return &Room{
 		id:       id,
 		handler:  handler,
 		mutex:    sync.RWMutex{},
 		peers:    make(map[domain.PeerID]realtime.Peer),
+		capacity: capacity,
 		incoming: make(chan events.RoomEvent),
 		logger:   logger,
 		ctx:      ctx,
@@ -83,6 +85,10 @@ func (r *Room) Join(peer realtime.Peer) error {
 	peerID := peer.GetID()
 
 	r.mutex.Lock()
+	if len(r.peers) >= r.capacity {
+		r.mutex.Unlock()
+		return fmt.Errorf("%w: %d", domain.ErrRoomFull, r.id)
+	}
 	r.peers[peerID] = peer
 	r.mutex.Unlock()
 

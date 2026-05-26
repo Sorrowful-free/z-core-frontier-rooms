@@ -35,14 +35,17 @@ func TestCreateRoomDuplicateID(t *testing.T) {
 	t.Parallel()
 
 	reg := newTestRegistry(t)
-	const id = domain.RoomID(7)
+	const (
+		id       = domain.RoomID(7)
+		capacity = 8
+	)
 
-	if _, err := reg.CreateRoom(context.Background(), id); err != nil {
+	if _, err := reg.CreateRoom(context.Background(), id, capacity); err != nil {
 		t.Fatalf("first CreateRoom: %v", err)
 	}
 	t.Cleanup(func() { _ = reg.DeleteRoom(context.Background(), id) })
 
-	_, err := reg.CreateRoom(context.Background(), id)
+	_, err := reg.CreateRoom(context.Background(), id, capacity)
 	if !errors.Is(err, domain.ErrRoomAlreadyExists) {
 		t.Fatalf("second CreateRoom err = %v, want ErrRoomAlreadyExists", err)
 	}

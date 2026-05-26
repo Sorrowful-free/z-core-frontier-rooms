@@ -21,11 +21,11 @@ func NewRoomFactory(logger logging.Logger, policyFactory policy.RoomPolicyFactor
 	}
 }
 
-func (f *RoomFactory) CreateRoom(ctx context.Context, id domain.RoomID) (realtime.Room, error) {
+func (f *RoomFactory) CreateRoom(ctx context.Context, id domain.RoomID, capacity int) (realtime.Room, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
 	policy := f.policyFactory.CreateRoomPolicy()
-	return NewRoom(ctx, id, policy, f.logger), nil
+	return NewRoom(ctx, id, policy, capacity, f.logger), nil
 }

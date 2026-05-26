@@ -16,16 +16,22 @@ func TestCreate_Success(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	registry := mocks.NewMockRoomRegistry(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
 	logger := mocks.NewMockLogger(ctrl)
 	room := mocks.NewMockRoom(ctrl)
 
-	const roomID = domain.RoomID(10)
-	registry.EXPECT().CreateRoom(gomock.Any(), roomID).Return(room, nil)
-	room.EXPECT().GetID().Return(roomID)
+	const (
+		roomID   = domain.RoomID(10)
+		capacity = 8
+	)
+	reservation.EXPECT().RegisterRoom(gomock.Any(), roomID, capacity).Return(nil)
+	registry.EXPECT().CreateRoom(gomock.Any(), roomID, capacity).Return(room, nil)
 	room.EXPECT().GetPeers().Return(nil)
+	room.EXPECT().GetID().Return(roomID)
+	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
-	uc := useroom.NewCreateUseCase(registry, logger)
-	summary, err := uc.Create(context.Background(), roomID)
+	uc := useroom.NewCreateUseCase(registry, reservation, logger)
+	summary, err := uc.Create(context.Background(), roomID, capacity)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -39,13 +45,14 @@ func TestCreate_CancelledContext(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	registry := mocks.NewMockRoomRegistry(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
 	logger := mocks.NewMockLogger(ctrl)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	uc := useroom.NewCreateUseCase(registry, logger)
-	_, err := uc.Create(ctx, domain.RoomID(1))
+	uc := useroom.NewCreateUseCase(registry, reservation, logger)
+	_, err := uc.Create(ctx, domain.RoomID(1), 4)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
@@ -56,14 +63,23 @@ func TestCreate_RegistryError(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 	registry := mocks.NewMockRoomRegistry(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
 	logger := mocks.NewMockLogger(ctrl)
 
-	registry.EXPECT().
-		CreateRoom(gomock.Any(), domain.RoomID(1)).
-		Return(nil, domain.ErrRoomAlreadyExists)
+	const (
+		roomID   = domain.RoomID(1)
+		capacity = 4
+	)
 
-	uc := useroom.NewCreateUseCase(registry, logger)
-	_, err := uc.Create(context.Background(), domain.RoomID(1))
+	reservation.EXPECT().RegisterRoom(gomock.Any(), roomID, capacity).Return(nil)
+	registry.EXPECT().
+		CreateRoom(gomock.Any(), roomID, capacity).
+		Return(nil, domain.ErrRoomAlreadyExists)
+	reservation.EXPECT().UnregisterRoom(gomock.Any(), roomID).Return(nil)
+	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
+
+	uc := useroom.NewCreateUseCase(registry, reservation, logger)
+	_, err := uc.Create(context.Background(), roomID, capacity)
 	if !errors.Is(err, domain.ErrRoomAlreadyExists) {
 		t.Fatalf("err = %v, want ErrRoomAlreadyExists", err)
 	}

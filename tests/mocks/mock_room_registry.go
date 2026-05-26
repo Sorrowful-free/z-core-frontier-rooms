@@ -43,18 +43,18 @@ func (m *MockRoomRegistry) EXPECT() *MockRoomRegistryMockRecorder {
 }
 
 // CreateRoom mocks base method.
-func (m *MockRoomRegistry) CreateRoom(ctx context.Context, id domain.RoomID) (realtime.Room, error) {
+func (m *MockRoomRegistry) CreateRoom(ctx context.Context, id domain.RoomID, capacity int) (realtime.Room, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateRoom", ctx, id)
+	ret := m.ctrl.Call(m, "CreateRoom", ctx, id, capacity)
 	ret0, _ := ret[0].(realtime.Room)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateRoom indicates an expected call of CreateRoom.
-func (mr *MockRoomRegistryMockRecorder) CreateRoom(ctx, id any) *MockRoomRegistryCreateRoomCall {
+func (mr *MockRoomRegistryMockRecorder) CreateRoom(ctx, id, capacity any) *MockRoomRegistryCreateRoomCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRoom", reflect.TypeOf((*MockRoomRegistry)(nil).CreateRoom), ctx, id)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRoom", reflect.TypeOf((*MockRoomRegistry)(nil).CreateRoom), ctx, id, capacity)
 	return &MockRoomRegistryCreateRoomCall{Call: call}
 }
 
@@ -70,13 +70,13 @@ func (c *MockRoomRegistryCreateRoomCall) Return(arg0 realtime.Room, arg1 error) 
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockRoomRegistryCreateRoomCall) Do(f func(context.Context, domain.RoomID) (realtime.Room, error)) *MockRoomRegistryCreateRoomCall {
+func (c *MockRoomRegistryCreateRoomCall) Do(f func(context.Context, domain.RoomID, int) (realtime.Room, error)) *MockRoomRegistryCreateRoomCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockRoomRegistryCreateRoomCall) DoAndReturn(f func(context.Context, domain.RoomID) (realtime.Room, error)) *MockRoomRegistryCreateRoomCall {
+func (c *MockRoomRegistryCreateRoomCall) DoAndReturn(f func(context.Context, domain.RoomID, int) (realtime.Room, error)) *MockRoomRegistryCreateRoomCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

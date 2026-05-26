@@ -33,5 +33,7 @@ func (uc *GetListUseCase) GetList(ctx context.Context) ([]RoomSummary, error) {
 	for i, room := range rooms {
 		roomSummaries[i] = *NewRoomSummaryFromRoom(room)
 	}
+
+	uc.logging.Info("get list: get list success", "roomSummaries", roomSummaries)
 	return roomSummaries, nil
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 )
 
 type reservationState int
@@ -27,14 +28,16 @@ type roomSlot struct {
 }
 
 type Reservation struct {
-	rooms map[domain.RoomID]roomSlot
-	mutex sync.Mutex
+	rooms  map[domain.RoomID]roomSlot
+	mutex  sync.Mutex
+	logger logging.Logger
 }
 
-func NewReservation() *Reservation {
+func NewReservation(logger logging.Logger) *Reservation {
 	return &Reservation{
-		rooms: make(map[domain.RoomID]roomSlot),
-		mutex: sync.Mutex{},
+		rooms:  make(map[domain.RoomID]roomSlot),
+		mutex:  sync.Mutex{},
+		logger: logger,
 	}
 }
 
