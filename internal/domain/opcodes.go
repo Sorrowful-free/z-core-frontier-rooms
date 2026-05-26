@@ -4,8 +4,9 @@ package domain
 //   0x01–0x3F — игровой трафик / relay (зарезервировано)
 //   0x40–0x4F — ошибки join / admit (клиент мапит код → UI)
 //   0x50–0x5F — внутренние ошибки сервера при join
-//   0x60–0x6F — ошибки внутри комнаты (отдельная задача)
-// Payload для кодов ошибок join: пустой.
+//   0x60–0x6F — ошибки внутри комнаты (после admit)
+//   0x70–0x7F — ошибки reservation (бронь / admit слота)
+// Payload для кодов ошибок (join, reservation, in-room): пустой.
 
 const (
 	OpEmptyToken    OpCode = 0x40
@@ -21,4 +22,14 @@ const (
 
 	// In-room (0x60–0x6F) — после admit; расширять по мере появления сценариев.
 	OpInRoomInternal OpCode = 0x60
+
+	// Reservation (0x70–0x7F) — control plane / join admit по слоту.
+	OpReservationNotFound        OpCode = 0x70
+	OpReservationFull            OpCode = 0x71
+	OpReservationSlotHeld        OpCode = 0x72
+	OpReservationNotReserved     OpCode = 0x73
+	OpReservationExpired         OpCode = 0x74
+	OpReservationAlreadyAdmitted OpCode = 0x75
+	OpPeerAlreadyInRoom          OpCode = 0x76
+	OpReservationInternal        OpCode = 0x7F
 )

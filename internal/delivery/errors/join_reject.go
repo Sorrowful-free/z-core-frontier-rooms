@@ -7,8 +7,11 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport"
 )
 
-// JoinRejectOpCode maps join/admit errors to wire OpCode (0x40–0x5F, empty payload).
+// JoinRejectOpCode maps join/admit errors to wire OpCode (0x40–0x5F, 0x70–0x7F, empty payload).
 func JoinRejectOpCode(err error) domain.OpCode {
+	if op, ok := mapReservationRejectOpCode(err); ok {
+		return op
+	}
 	switch {
 	case stderrors.Is(err, domain.ErrEmptyToken):
 		return domain.OpEmptyToken

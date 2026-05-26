@@ -2,7 +2,7 @@ package domain
 
 import "errors"
 
-// Sentinel-ошибки внутри комнаты (после admit); маппинг — delivery/errors/in_room.go.
+// Sentinel-ошибки reservation; маппинг — delivery/errors/reservation_reject.go (OpCode 0x70–0x7F).
 
 var (
 	ErrReservationInternal        = errors.New("reservation: internal")

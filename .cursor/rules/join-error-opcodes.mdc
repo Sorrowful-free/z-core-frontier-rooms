@@ -12,9 +12,10 @@ alwaysApply: false
 
 | Файл | Диапазон | API |
 |------|----------|-----|
-| `join_reject.go` | `0x40–0x5F` | `JoinRejectOpCode`, `SendJoinReject` |
+| `join_reject.go` | `0x40–0x5F` (+ reservation via join) | `JoinRejectOpCode`, `SendJoinReject` |
+| `reservation_reject.go` | `0x70–0x7F` | `ReservationRejectOpCode`, `SendReservationReject` |
 | `in_room.go` | `0x60–0x6F` | `InRoomErrorOpCode`, `SendInRoomError` |
-| `wire.go` | — | `IsJoinRejectOpCode`, `IsInRoomErrorOpCode` |
+| `wire.go` | — | `IsJoinRejectOpCode`, `IsReservationRejectOpCode`, `IsInRoomErrorOpCode` |
 
 Домен: `opcodes.go`, `join_errors.go`, `room_errors.go`.
 
@@ -22,6 +23,12 @@ alwaysApply: false
 
 - [ ] `join_errors.go` + `opcodes.go`
 - [ ] `join_reject.go` + `tests/delivery/errors/join_reject_test.go`
+- [ ] README
+
+## Чеклист reservation (`0x70–0x7F`)
+
+- [x] `reservation_error.go` + `opcodes.go`
+- [x] `reservation_reject.go` + `tests/delivery/errors/reservation_reject_test.go`
 - [ ] README
 
 ## Чеклист in-room (`0x60–0x6F`)
