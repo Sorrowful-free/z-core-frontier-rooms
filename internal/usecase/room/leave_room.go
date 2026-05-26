@@ -2,6 +2,7 @@ package room
 
 import (
 	"context"
+	"errors"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
@@ -52,6 +53,10 @@ func (uc *LeaveRoomUseCase) LeaveRoom(ctx context.Context, roomID domain.RoomID,
 	}
 
 	if err := uc.reservation.Revoke(ctx, roomID, peerID); err != nil {
+		if errors.Is(err, domain.ErrReservationNotFound) {
+			uc.logging.Warn("leave room: reservation already gone", "roomID", roomID, "peerID", peerID)
+			return nil
+		}
 		uc.logging.Error("leave room: reservation revoke failed", "error", err, "roomID", roomID, "peerID", peerID)
 		return err
 	}

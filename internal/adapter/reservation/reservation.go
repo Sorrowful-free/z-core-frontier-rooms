@@ -149,6 +149,34 @@ func (r *Reservation) Admit(ctx context.Context, roomID domain.RoomID, peerID do
 	return nil
 }
 
+func (r *Reservation) State(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) (domain.ReservationSlot, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.ReservationSlotNone, err
+	}
+
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	room, ok := r.rooms[roomID]
+	if !ok {
+		return domain.ReservationSlotNone, reservationErrRoom(domain.ErrReservationNotFound, roomID)
+	}
+
+	peer, ok := room.peers[peerID]
+	if !ok {
+		return domain.ReservationSlotNone, nil
+	}
+
+	switch peer.state {
+	case reservationStateReserved:
+		return domain.ReservationSlotReserved, nil
+	case reservationStateAdmitted:
+		return domain.ReservationSlotAdmitted, nil
+	default:
+		return domain.ReservationSlotNone, nil
+	}
+}
+
 func (r *Reservation) Revoke(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) error {
 	if err := ctx.Err(); err != nil {
 		return err

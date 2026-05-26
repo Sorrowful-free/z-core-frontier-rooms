@@ -9,6 +9,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/admission"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/registry"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/reservation"
 )
@@ -17,10 +18,10 @@ import (
 //   - нет peer в room и нет слота в reservation → Reserve + Issue;
 //   - peer в room → ErrPeerAlreadyInRoom (Join/Replace, не новый ticket);
 //   - слот reserved или admitted → ErrTicketSlotHeld;
+//   - orphan admitted (слот есть, peer не в room) → Revoke + один повтор Reserve;
 //   - capacity в reservation → ErrReservationFull;
 //   - комната не в registry → ErrRoomNotFound;
 //   - комната не в reservation store → ErrReservationNotFound.
-
 type IssueTicketUseCase struct {
 	roomRegistry registry.RoomRegistry
 	admission    admission.Admission
@@ -38,7 +39,6 @@ func NewIssueTicketUseCase(roomRegistry registry.RoomRegistry, admission admissi
 }
 
 func (uc *IssueTicketUseCase) IssueTicket(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, password string) ([]byte, error) {
-
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -55,9 +55,9 @@ func (uc *IssueTicketUseCase) IssueTicket(ctx context.Context, roomID domain.Roo
 	}
 
 	expiresAt := time.Now().Add(uc.admission.TTL())
-	if err := uc.reservation.Reserve(ctx, roomID, peerID, expiresAt); err != nil {
+	if err := uc.reserveForIssue(ctx, room, roomID, peerID, expiresAt); err != nil {
 		uc.logger.Error("issue ticket: reserve failed", "error", err, "roomID", roomID, "peerID", peerID)
-		return nil, mapIssueReserveError(err)
+		return nil, err
 	}
 
 	token, err := uc.admission.Issue(ctx, roomID, peerID, password)
@@ -68,6 +68,42 @@ func (uc *IssueTicketUseCase) IssueTicket(ctx context.Context, roomID domain.Roo
 
 	uc.logger.Info("issue ticket: success", "roomID", roomID, "peerID", peerID)
 	return token, nil
+}
+
+func (uc *IssueTicketUseCase) reserveForIssue(
+	ctx context.Context,
+	room realtime.Room,
+	roomID domain.RoomID,
+	peerID domain.PeerID,
+	expiresAt time.Time,
+) error {
+	err := uc.reservation.Reserve(ctx, roomID, peerID, expiresAt)
+	if err == nil {
+		return nil
+	}
+
+	mapped := mapIssueReserveError(err)
+	if !errors.Is(mapped, domain.ErrTicketSlotHeld) || room.HasPeer(peerID) {
+		return mapped
+	}
+
+	state, stateErr := uc.reservation.State(ctx, roomID, peerID)
+	if stateErr != nil {
+		return errors.Join(mapped, stateErr)
+	}
+	if state != domain.ReservationSlotAdmitted {
+		return mapped
+	}
+
+	uc.logger.Warn("issue ticket: revoking orphan admitted slot", "roomID", roomID, "peerID", peerID)
+	if revokeErr := uc.reservation.Revoke(ctx, roomID, peerID); revokeErr != nil {
+		return errors.Join(mapped, revokeErr)
+	}
+
+	if err := uc.reservation.Reserve(ctx, roomID, peerID, expiresAt); err != nil {
+		return mapIssueReserveError(err)
+	}
+	return nil
 }
 
 func mapIssueReserveError(err error) error {

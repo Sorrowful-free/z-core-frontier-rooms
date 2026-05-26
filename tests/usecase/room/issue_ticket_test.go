@@ -144,11 +144,14 @@ func TestIssueTicket_SlotHeld(t *testing.T) {
 	)
 
 	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
-	room.EXPECT().HasPeer(peerID).Return(false)
+	room.EXPECT().HasPeer(peerID).Return(false).Times(2)
 	admission.EXPECT().TTL().Return(time.Hour)
 	reservation.EXPECT().
 		Reserve(gomock.Any(), roomID, peerID, gomock.Any()).
 		Return(domain.ErrReservationAlreadyExists)
+	reservation.EXPECT().
+		State(gomock.Any(), roomID, peerID).
+		Return(domain.ReservationSlotReserved, nil)
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewIssueTicketUseCase(registry, admission, reservation, logger)
@@ -158,6 +161,54 @@ func TestIssueTicket_SlotHeld(t *testing.T) {
 	}
 	if !errors.Is(err, domain.ErrReservationAlreadyExists) {
 		t.Fatalf("err = %v, want wrapped ErrReservationAlreadyExists", err)
+	}
+}
+
+func TestIssueTicket_OrphanAdmittedCleanup(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	registry := mocks.NewMockRoomRegistry(ctrl)
+	admission := mocks.NewMockAdmission(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
+	logger := mocks.NewMockLogger(ctrl)
+	room := mocks.NewMockRoom(ctrl)
+
+	const (
+		roomID   = domain.RoomID(1)
+		peerID   = domain.PeerID(2)
+		password = "secret"
+	)
+	wantToken := []byte("ticket-after-orphan-cleanup")
+
+	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
+	room.EXPECT().HasPeer(peerID).Return(false).Times(2)
+	admission.EXPECT().TTL().Return(time.Hour)
+	gomock.InOrder(
+		reservation.EXPECT().
+			Reserve(gomock.Any(), roomID, peerID, gomock.Any()).
+			Return(domain.ErrReservationAlreadyAdmitted),
+		reservation.EXPECT().
+			State(gomock.Any(), roomID, peerID).
+			Return(domain.ReservationSlotAdmitted, nil),
+		reservation.EXPECT().Revoke(gomock.Any(), roomID, peerID).Return(nil),
+		reservation.EXPECT().
+			Reserve(gomock.Any(), roomID, peerID, gomock.Any()).
+			Return(nil),
+	)
+	admission.EXPECT().
+		Issue(gomock.Any(), roomID, peerID, password).
+		Return(wantToken, nil)
+	logger.EXPECT().Warn(gomock.Any(), gomock.Any()).AnyTimes()
+	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
+
+	uc := useroom.NewIssueTicketUseCase(registry, admission, reservation, logger)
+	token, err := uc.IssueTicket(context.Background(), roomID, peerID, password)
+	if err != nil {
+		t.Fatalf("IssueTicket: %v", err)
+	}
+	if string(token) != string(wantToken) {
+		t.Fatalf("token = %q, want %q", token, wantToken)
 	}
 }
 

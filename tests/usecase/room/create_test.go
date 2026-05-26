@@ -84,3 +84,35 @@ func TestCreate_RegistryError(t *testing.T) {
 		t.Fatalf("err = %v, want ErrRoomAlreadyExists", err)
 	}
 }
+
+func TestCreate_RegistryErrorJoinsUnregisterError(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	registry := mocks.NewMockRoomRegistry(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
+	logger := mocks.NewMockLogger(ctrl)
+
+	const (
+		roomID   = domain.RoomID(1)
+		capacity = 4
+	)
+
+	reservation.EXPECT().RegisterRoom(gomock.Any(), roomID, capacity).Return(nil)
+	registry.EXPECT().
+		CreateRoom(gomock.Any(), roomID, capacity).
+		Return(nil, domain.ErrRoomAlreadyExists)
+	reservation.EXPECT().
+		UnregisterRoom(gomock.Any(), roomID).
+		Return(domain.ErrReservationNotFound)
+	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
+
+	uc := useroom.NewCreateUseCase(registry, reservation, logger)
+	_, err := uc.Create(context.Background(), roomID, capacity)
+	if !errors.Is(err, domain.ErrRoomAlreadyExists) {
+		t.Fatalf("err = %v, want ErrRoomAlreadyExists", err)
+	}
+	if !errors.Is(err, domain.ErrReservationNotFound) {
+		t.Fatalf("err = %v, want joined ErrReservationNotFound", err)
+	}
+}

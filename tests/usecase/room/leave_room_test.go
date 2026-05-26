@@ -80,3 +80,33 @@ func TestLeaveRoom_PeerNotFound(t *testing.T) {
 		t.Fatal("LeaveRoom: want error")
 	}
 }
+
+func TestLeaveRoom_RevokeNotFoundStillSuccess(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	registry := mocks.NewMockRoomRegistry(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
+	logger := mocks.NewMockLogger(ctrl)
+	room := mocks.NewMockRoom(ctrl)
+	peer := mocks.NewMockPeer(ctrl)
+
+	const (
+		roomID = domain.RoomID(1)
+		peerID = domain.PeerID(2)
+	)
+
+	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
+	room.EXPECT().GetPeer(peerID).Return(peer, nil)
+	room.EXPECT().Leave(peer).Return(nil)
+	peer.EXPECT().Stop().Return(nil)
+	reservation.EXPECT().
+		Revoke(gomock.Any(), roomID, peerID).
+		Return(domain.ErrReservationNotFound)
+	logger.EXPECT().Warn(gomock.Any(), gomock.Any()).AnyTimes()
+
+	uc := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
+	if err := uc.LeaveRoom(context.Background(), roomID, peerID); err != nil {
+		t.Fatalf("LeaveRoom: %v", err)
+	}
+}

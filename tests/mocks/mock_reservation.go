@@ -194,6 +194,45 @@ func (c *MockReservationRevokeCall) DoAndReturn(f func(context.Context, domain.R
 	return c
 }
 
+// State mocks base method.
+func (m *MockReservation) State(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) (domain.ReservationSlot, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "State", ctx, roomID, peerID)
+	ret0, _ := ret[0].(domain.ReservationSlot)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// State indicates an expected call of State.
+func (mr *MockReservationMockRecorder) State(ctx, roomID, peerID any) *MockReservationStateCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "State", reflect.TypeOf((*MockReservation)(nil).State), ctx, roomID, peerID)
+	return &MockReservationStateCall{Call: call}
+}
+
+// MockReservationStateCall wrap *gomock.Call
+type MockReservationStateCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockReservationStateCall) Return(arg0 domain.ReservationSlot, arg1 error) *MockReservationStateCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockReservationStateCall) Do(f func(context.Context, domain.RoomID, domain.PeerID) (domain.ReservationSlot, error)) *MockReservationStateCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockReservationStateCall) DoAndReturn(f func(context.Context, domain.RoomID, domain.PeerID) (domain.ReservationSlot, error)) *MockReservationStateCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // UnregisterRoom mocks base method.
 func (m *MockReservation) UnregisterRoom(ctx context.Context, roomID domain.RoomID) error {
 	m.ctrl.T.Helper()

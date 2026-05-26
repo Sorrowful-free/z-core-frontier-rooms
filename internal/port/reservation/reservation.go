@@ -14,4 +14,6 @@ type Reservation interface {
 	Reserve(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, expiresAt time.Time) error
 	Admit(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) error
 	Revoke(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) error
+
+	State(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) (domain.ReservationSlot, error)
 }

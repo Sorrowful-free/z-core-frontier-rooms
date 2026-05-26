@@ -139,10 +139,10 @@ func TestSweep_DoesNotRemoveAdmitted(t *testing.T) {
 	t.Parallel()
 
 	const (
-		roomID    = domain.RoomID(5)
-		admitted  = domain.PeerID(50)
-		reserved  = domain.PeerID(51)
-		overflow  = domain.PeerID(52)
+		roomID   = domain.RoomID(5)
+		admitted = domain.PeerID(50)
+		reserved = domain.PeerID(51)
+		overflow = domain.PeerID(52)
 	)
 	ctx := context.Background()
 	res := newTestReservation()
@@ -204,5 +204,51 @@ func TestRevoke_RoomNotRegistered(t *testing.T) {
 	err := res.Revoke(ctx, domain.RoomID(99), domain.PeerID(1))
 	if !errors.Is(err, domain.ErrReservationNotFound) {
 		t.Fatalf("Revoke err = %v, want ErrReservationNotFound", err)
+	}
+}
+
+func TestState(t *testing.T) {
+	t.Parallel()
+
+	const (
+		roomID = domain.RoomID(7)
+		peerID = domain.PeerID(70)
+	)
+	ctx := context.Background()
+	res := newTestReservation()
+
+	if err := res.RegisterRoom(ctx, roomID, 1); err != nil {
+		t.Fatalf("RegisterRoom: %v", err)
+	}
+
+	state, err := res.State(ctx, roomID, peerID)
+	if err != nil {
+		t.Fatalf("State missing peer: %v", err)
+	}
+	if state != domain.ReservationSlotNone {
+		t.Fatalf("state = %v, want None", state)
+	}
+
+	expires := time.Now().Add(time.Hour)
+	if err := res.Reserve(ctx, roomID, peerID, expires); err != nil {
+		t.Fatalf("Reserve: %v", err)
+	}
+	state, err = res.State(ctx, roomID, peerID)
+	if err != nil {
+		t.Fatalf("State reserved: %v", err)
+	}
+	if state != domain.ReservationSlotReserved {
+		t.Fatalf("state = %v, want Reserved", state)
+	}
+
+	if err := res.Admit(ctx, roomID, peerID); err != nil {
+		t.Fatalf("Admit: %v", err)
+	}
+	state, err = res.State(ctx, roomID, peerID)
+	if err != nil {
+		t.Fatalf("State admitted: %v", err)
+	}
+	if state != domain.ReservationSlotAdmitted {
+		t.Fatalf("state = %v, want Admitted", state)
 	}
 }

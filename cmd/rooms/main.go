@@ -102,8 +102,22 @@ func run() error {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
+	var shutdownErr error
+	summaries, listErr := getListUseCase.GetList(shutdownCtx)
+	if listErr != nil {
+		shutdownErr = errors.Join(shutdownErr, listErr)
+	} else {
+		for _, summary := range summaries {
+			if err := deleteUseCase.Delete(shutdownCtx, summary.ID); err != nil {
+				shutdownErr = errors.Join(shutdownErr, err)
+			}
+		}
+	}
 	if err := roomRegistry.Shutdown(shutdownCtx); err != nil {
-		z.Error("room registry shutdown", zap.Error(err))
+		shutdownErr = errors.Join(shutdownErr, err)
+	}
+	if shutdownErr != nil {
+		z.Error("shutdown cleanup", zap.Error(shutdownErr))
 	}
 	if err := fiberApp.ShutdownWithContext(shutdownCtx); err != nil {
 		z.Error("fiber shutdown", zap.Error(err))
