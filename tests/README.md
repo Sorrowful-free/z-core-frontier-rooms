@@ -7,13 +7,14 @@
 ```text
 tests/
   mocks/                — mockgen из internal/port (gomock), go generate ./tests/mocks/...
-  delivery/errors/      — join_reject, in_room, wire helpers
+  delivery/errors/      — join_reject, reservation_reject, in_room, wire helpers
   adapter/admission/    — ticket Issue/Validate
-  adapter/reservation/  — слоты: Reserve / Admit / Revoke
+  adapter/reservation/  — слоты: Reserve / Admit / Revoke / State
+  adapter/identity/     — Counter: AllocateRoomID / AllocatePeerID, wrap skip 0
   adapter/realtime/     — Room Join, policy без deadlock
   adapter/registry/     — RoomRegistry, Shutdown
-  usecase/room/         — JoinRoom с gomock (Admission, Registry, …)
-  delivery/http/        — (планируется) Fiber после REST
+  usecase/room/         — Create, Delete, GetList, IssueTicket, JoinRoom, LeaveRoom (gomock)
+  delivery/http/        — REST JSON (Fiber app.Test + in-memory adapters)
   integration/          — (планируется) сквозные сценарии
 ```
 
@@ -31,20 +32,20 @@ go test ./tests/...
 go test -race ./tests/...
 ```
 
-## Уже покрыто (80/20, первый срез)
+## Покрытие по пакетам
 
-| Пакет | Что даёт |
+| Пакет | Сценарии |
 |-------|----------|
-| `tests/delivery/errors` | `JoinRejectOpCode`, `InRoomErrorOpCode`, диапазоны `Is*OpCode` |
+| `tests/delivery/errors` | `JoinRejectOpCode`, `ReservationRejectOpCode`, делегирование reservation в join, `InRoomErrorOpCode`, диапазоны `Is*OpCode` |
 | `tests/adapter/admission` | Round-trip ticket, invalid/expired token, invalid credentials |
-| `tests/adapter/realtime` | `OnJoin` вызывает `room.Send` без deadlock; откат map при `ErrJoinDenied` |
-| `tests/adapter/registry` | `GetRoom` → `errors.Is(ErrRoomNotFound)`; `Shutdown` |
-| `tests/adapter/reservation` | lifecycle слотов, expiry sweep, идемпотентный `Revoke` (peer) |
-| `tests/usecase/room` | `JoinRoom`, `Create`, `Delete`, `GetList`, `IssueTicket` (gomock) |
+| `tests/adapter/realtime` | `OnJoin` → `room.Send` без deadlock; откат map при `ErrJoinDenied` |
+| `tests/adapter/registry` | `GetRoom` → `ErrRoomNotFound`; `Shutdown` |
+| `tests/adapter/reservation` | Reserve → Admit → Revoke; expiry sweep; идемпотентный `Revoke`; `State` (none / reserved / admitted) |
+| `tests/adapter/identity` | первый ID = 1; независимые room/peer; ctx cancel; wrap `MaxUint32` → 1; уникальность под конкуренцией |
+| `tests/usecase/room` | **Create** — success, ctx cancel, registry rollback + `errors.Join` на unregister; **Delete** — success, room not found; **GetList**; **IssueTicket** — success, room/peer errors, slot held, orphan admitted cleanup, issue+revoke join; **JoinRoom** — validate error, success, admit/join/revoke откаты; **LeaveRoom** — success, not found, revoke idempotent |
+| `tests/delivery/http` | create → list → delete; issue ticket (base64url); 409/404/400 и коды ошибок |
 
-## Моки (mockgen)
-
-Инструмент: [go.uber.org/mock](https://github.com/uber-go/mock) (`mockgen` + `gomock`). В `go.mod`: `tool go.uber.org/mock/mockgen`, `require go.uber.org/mock`.
+После изменения `internal/port/*` интерфейсов:
 
 ```bash
 go generate ./tests/mocks/...
@@ -52,15 +53,14 @@ go generate ./tests/mocks/...
 
 См. [tests/mocks/README.md](mocks/README.md).
 
-## Следующий приоритет (оставшиеся 20% усилий → много пользы)
+## Следующий приоритет
 
-1. **Интеграция reservation** — `RegisterRoom` в `CreateRoom`, `Reserve`/`Admit`/`Revoke` в Issue/Join/Leave (порт готов, wiring в use case — в работе).
-2. **`usecase/room`** — `LeaveRoom` + reservation, ошибки `Replace`, `Start` failure.
-3. **`adapter/realtime` `Send`** — broadcast с `ExcludePeerID` не доставляет отправителю (stub peers + счётчик `Deliver`).
-4. **`Peer.Stop`** — не зависает: mock `Connection` с блокирующим `Receive`, `Stop` завершается после `Close`.
-5. **`delivery/ws`** — `app.Test`: невалидный token → ответный opcode в записи conn (mock transport) — после стабилизации тестового harness.
-6. **Интеграция** — create room → issue ticket → join (опционально, дороже в поддержке).
+1. **`usecase/room`** — Join: `errors.Join` при fail Revoke после Admit; room not found после validate.
+2. **`adapter/realtime` `Send`** — broadcast с `ExcludePeerID` не доставляет отправителю.
+3. **`Peer.Stop`** — mock `Connection` с блокирующим `Receive`, `Stop` завершается после `Close`.
+4. **`delivery/ws`** — `app.Test`: невалидный token → opcode; join с ticket из HTTP issue.
+5. **Интеграция** — create → issue → join (дороже в поддержке).
 
-При добавлении join-ошибки — кейс в `join_reject_test.go` (см. [.cursor/rules/join-error-opcodes.mdc](../.cursor/rules/join-error-opcodes.mdc)).
+При новой join/reservation-ошибке — кейс в `join_reject_test.go` / `reservation_reject_test.go` (см. [.cursor/rules/join-error-opcodes.mdc](../.cursor/rules/join-error-opcodes.mdc)).
 
 Подробнее о слоях, OpCode и use case — [README.md](../README.md) в корне репозитория.

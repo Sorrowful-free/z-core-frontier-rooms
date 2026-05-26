@@ -8,6 +8,7 @@ import (
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/admission"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/identity"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/registry"
@@ -24,21 +25,23 @@ import (
 //   - комната не в reservation store → ErrReservationNotFound.
 type IssueTicketUseCase struct {
 	roomRegistry registry.RoomRegistry
+	allocator    identity.Allocator
 	admission    admission.Admission
 	reservation  reservation.Reservation
 	logger       logging.Logger
 }
 
-func NewIssueTicketUseCase(roomRegistry registry.RoomRegistry, admission admission.Admission, reservation reservation.Reservation, logger logging.Logger) *IssueTicketUseCase {
+func NewIssueTicketUseCase(roomRegistry registry.RoomRegistry, allocator identity.Allocator, admission admission.Admission, reservation reservation.Reservation, logger logging.Logger) *IssueTicketUseCase {
 	return &IssueTicketUseCase{
 		roomRegistry: roomRegistry,
+		allocator:    allocator,
 		admission:    admission,
 		reservation:  reservation,
 		logger:       logger,
 	}
 }
 
-func (uc *IssueTicketUseCase) IssueTicket(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, password string) ([]byte, error) {
+func (uc *IssueTicketUseCase) IssueTicket(ctx context.Context, roomID domain.RoomID, password string) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -49,9 +52,20 @@ func (uc *IssueTicketUseCase) IssueTicket(ctx context.Context, roomID domain.Roo
 		return nil, err
 	}
 
+	peerID, err := uc.allocator.AllocatePeerID(ctx)
+	if err != nil {
+		uc.logger.Error("issue ticket: allocate peer ID failed", "error", err, "roomID", roomID)
+		return nil, err
+	}
+
 	if room.HasPeer(peerID) {
 		uc.logger.Error("issue ticket: peer already in room", "roomID", roomID, "peerID", peerID)
 		return nil, domain.ErrPeerAlreadyInRoom
+	}
+
+	if err := uc.reservation.VerifyRoomPassword(ctx, roomID, password); err != nil {
+		uc.logger.Error("issue ticket: invalid room password", "error", err, "roomID", roomID, "peerID", peerID)
+		return nil, err
 	}
 
 	expiresAt := time.Now().Add(uc.admission.TTL())

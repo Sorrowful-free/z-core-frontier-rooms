@@ -32,7 +32,7 @@ func TestReserveAdmitRevoke_ReleasesSlot(t *testing.T) {
 	ctx := context.Background()
 	res := newTestReservation()
 
-	if err := res.RegisterRoom(ctx, roomID, 1); err != nil {
+	if err := res.RegisterRoom(ctx, roomID, 1, ""); err != nil {
 		t.Fatalf("RegisterRoom: %v", err)
 	}
 	expires := time.Now().Add(time.Hour)
@@ -62,7 +62,7 @@ func TestReserve_ExpiredRemovedOnNextReserve(t *testing.T) {
 	ctx := context.Background()
 	res := newTestReservation()
 
-	if err := res.RegisterRoom(ctx, roomID, 2); err != nil {
+	if err := res.RegisterRoom(ctx, roomID, 2, ""); err != nil {
 		t.Fatalf("RegisterRoom: %v", err)
 	}
 
@@ -93,7 +93,7 @@ func TestAdmit_IdempotentWhenAlreadyAdmitted(t *testing.T) {
 	ctx := context.Background()
 	res := newTestReservation()
 
-	if err := res.RegisterRoom(ctx, roomID, 1); err != nil {
+	if err := res.RegisterRoom(ctx, roomID, 1, ""); err != nil {
 		t.Fatalf("RegisterRoom: %v", err)
 	}
 	expires := time.Now().Add(time.Hour)
@@ -119,7 +119,7 @@ func TestAdmit_ExpiredReservation(t *testing.T) {
 	ctx := context.Background()
 	res := newTestReservation()
 
-	if err := res.RegisterRoom(ctx, roomID, 1); err != nil {
+	if err := res.RegisterRoom(ctx, roomID, 1, ""); err != nil {
 		t.Fatalf("RegisterRoom: %v", err)
 	}
 
@@ -147,7 +147,7 @@ func TestSweep_DoesNotRemoveAdmitted(t *testing.T) {
 	ctx := context.Background()
 	res := newTestReservation()
 
-	if err := res.RegisterRoom(ctx, roomID, 2); err != nil {
+	if err := res.RegisterRoom(ctx, roomID, 2, ""); err != nil {
 		t.Fatalf("RegisterRoom: %v", err)
 	}
 	future := time.Now().Add(time.Hour)
@@ -176,7 +176,7 @@ func TestRevoke_IdempotentWhenPeerMissing(t *testing.T) {
 	ctx := context.Background()
 	res := newTestReservation()
 
-	if err := res.RegisterRoom(ctx, roomID, 1); err != nil {
+	if err := res.RegisterRoom(ctx, roomID, 1, ""); err != nil {
 		t.Fatalf("RegisterRoom: %v", err)
 	}
 	if err := res.Revoke(ctx, roomID, peerID); err != nil {
@@ -217,7 +217,7 @@ func TestState(t *testing.T) {
 	ctx := context.Background()
 	res := newTestReservation()
 
-	if err := res.RegisterRoom(ctx, roomID, 1); err != nil {
+	if err := res.RegisterRoom(ctx, roomID, 1, ""); err != nil {
 		t.Fatalf("RegisterRoom: %v", err)
 	}
 
@@ -250,5 +250,33 @@ func TestState(t *testing.T) {
 	}
 	if state != domain.ReservationSlotAdmitted {
 		t.Fatalf("state = %v, want Admitted", state)
+	}
+}
+
+func TestVerifyRoomPassword(t *testing.T) {
+	t.Parallel()
+
+	const roomID = domain.RoomID(8)
+	ctx := context.Background()
+	res := newTestReservation()
+
+	if err := res.RegisterRoom(ctx, roomID, 1, "secret"); err != nil {
+		t.Fatalf("RegisterRoom: %v", err)
+	}
+	if err := res.VerifyRoomPassword(ctx, roomID, "secret"); err != nil {
+		t.Fatalf("Verify correct password: %v", err)
+	}
+	if err := res.VerifyRoomPassword(ctx, roomID, "wrong"); !errors.Is(err, domain.ErrInvalidCredentials) {
+		t.Fatalf("Verify wrong password err = %v, want ErrInvalidCredentials", err)
+	}
+
+	if err := res.RegisterRoom(ctx, domain.RoomID(9), 1, ""); err != nil {
+		t.Fatalf("RegisterRoom open: %v", err)
+	}
+	if err := res.VerifyRoomPassword(ctx, domain.RoomID(9), ""); err != nil {
+		t.Fatalf("Verify open room empty password: %v", err)
+	}
+	if err := res.VerifyRoomPassword(ctx, domain.RoomID(9), "anything"); err != nil {
+		t.Fatalf("Verify open room any password: %v", err)
 	}
 }

@@ -81,17 +81,17 @@ func (c *MockReservationAdmitCall) DoAndReturn(f func(context.Context, domain.Ro
 }
 
 // RegisterRoom mocks base method.
-func (m *MockReservation) RegisterRoom(ctx context.Context, roomID domain.RoomID, capacity int) error {
+func (m *MockReservation) RegisterRoom(ctx context.Context, roomID domain.RoomID, capacity int, password string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RegisterRoom", ctx, roomID, capacity)
+	ret := m.ctrl.Call(m, "RegisterRoom", ctx, roomID, capacity, password)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // RegisterRoom indicates an expected call of RegisterRoom.
-func (mr *MockReservationMockRecorder) RegisterRoom(ctx, roomID, capacity any) *MockReservationRegisterRoomCall {
+func (mr *MockReservationMockRecorder) RegisterRoom(ctx, roomID, capacity, password any) *MockReservationRegisterRoomCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegisterRoom", reflect.TypeOf((*MockReservation)(nil).RegisterRoom), ctx, roomID, capacity)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RegisterRoom", reflect.TypeOf((*MockReservation)(nil).RegisterRoom), ctx, roomID, capacity, password)
 	return &MockReservationRegisterRoomCall{Call: call}
 }
 
@@ -107,13 +107,13 @@ func (c *MockReservationRegisterRoomCall) Return(arg0 error) *MockReservationReg
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockReservationRegisterRoomCall) Do(f func(context.Context, domain.RoomID, int) error) *MockReservationRegisterRoomCall {
+func (c *MockReservationRegisterRoomCall) Do(f func(context.Context, domain.RoomID, int, string) error) *MockReservationRegisterRoomCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockReservationRegisterRoomCall) DoAndReturn(f func(context.Context, domain.RoomID, int) error) *MockReservationRegisterRoomCall {
+func (c *MockReservationRegisterRoomCall) DoAndReturn(f func(context.Context, domain.RoomID, int, string) error) *MockReservationRegisterRoomCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
@@ -267,6 +267,44 @@ func (c *MockReservationUnregisterRoomCall) Do(f func(context.Context, domain.Ro
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
 func (c *MockReservationUnregisterRoomCall) DoAndReturn(f func(context.Context, domain.RoomID) error) *MockReservationUnregisterRoomCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
+// VerifyRoomPassword mocks base method.
+func (m *MockReservation) VerifyRoomPassword(ctx context.Context, roomID domain.RoomID, password string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "VerifyRoomPassword", ctx, roomID, password)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// VerifyRoomPassword indicates an expected call of VerifyRoomPassword.
+func (mr *MockReservationMockRecorder) VerifyRoomPassword(ctx, roomID, password any) *MockReservationVerifyRoomPasswordCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "VerifyRoomPassword", reflect.TypeOf((*MockReservation)(nil).VerifyRoomPassword), ctx, roomID, password)
+	return &MockReservationVerifyRoomPasswordCall{Call: call}
+}
+
+// MockReservationVerifyRoomPasswordCall wrap *gomock.Call
+type MockReservationVerifyRoomPasswordCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockReservationVerifyRoomPasswordCall) Return(arg0 error) *MockReservationVerifyRoomPasswordCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockReservationVerifyRoomPasswordCall) Do(f func(context.Context, domain.RoomID, string) error) *MockReservationVerifyRoomPasswordCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockReservationVerifyRoomPasswordCall) DoAndReturn(f func(context.Context, domain.RoomID, string) error) *MockReservationVerifyRoomPasswordCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

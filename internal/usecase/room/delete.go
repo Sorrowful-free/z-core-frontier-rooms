@@ -23,9 +23,14 @@ func NewDeleteUseCase(roomRegistry registry.RoomRegistry, reservation reservatio
 	}
 }
 
-func (uc *DeleteUseCase) Delete(ctx context.Context, roomID domain.RoomID) error {
+func (uc *DeleteUseCase) Delete(ctx context.Context, roomID domain.RoomID, password string) error {
 
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	if err := uc.reservation.VerifyRoomPassword(ctx, roomID, password); err != nil {
+		uc.logging.Error("delete room: invalid password", "error", err, "roomID", roomID)
 		return err
 	}
 
@@ -41,4 +46,15 @@ func (uc *DeleteUseCase) Delete(ctx context.Context, roomID domain.RoomID) error
 
 	uc.logging.Info("delete room: delete room success", "roomID", roomID)
 	return nil
+}
+
+// DeleteForShutdown удаляет комнату без проверки пароля (graceful shutdown процесса).
+func (uc *DeleteUseCase) DeleteForShutdown(ctx context.Context, roomID domain.RoomID) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := uc.roomRegistry.DeleteRoom(ctx, roomID); err != nil {
+		return err
+	}
+	return uc.reservation.UnregisterRoom(ctx, roomID)
 }

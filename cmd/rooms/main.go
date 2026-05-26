@@ -10,6 +10,7 @@ import (
 	"time"
 
 	admissionadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/admission"
+	identityadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/identity"
 	zaplog "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/zap"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy"
@@ -58,9 +59,10 @@ func run() error {
 
 	admission := admissionadapter.NewAdmission([]byte("dev-secret-change-me"), time.Hour, "")
 	reservation := reservationadapter.NewReservation(zaplog.NewFrom(z, "reservation"))
+	allocator := identityadapter.NewCounter()
 
-	createUseCase := room.NewCreateUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "create use case"))
-	issueTicketUseCase := room.NewIssueTicketUseCase(roomRegistry, admission, reservation, zaplog.NewFrom(z, "issue ticket use case"))
+	createUseCase := room.NewCreateUseCase(roomRegistry, allocator, reservation, zaplog.NewFrom(z, "create use case"))
+	issueTicketUseCase := room.NewIssueTicketUseCase(roomRegistry, allocator, admission, reservation, zaplog.NewFrom(z, "issue ticket use case"))
 	joinRoomUseCase := room.NewJoinRoomUseCase(admission, peerFactory, roomRegistry, reservation, zaplog.NewFrom(z, "join room use case"))
 	leaveRoomUseCase := room.NewLeaveRoomUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "leave room use case"))
 	deleteUseCase := room.NewDeleteUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "delete use case"))
@@ -108,7 +110,7 @@ func run() error {
 		shutdownErr = errors.Join(shutdownErr, listErr)
 	} else {
 		for _, summary := range summaries {
-			if err := deleteUseCase.Delete(shutdownCtx, summary.ID); err != nil {
+			if err := deleteUseCase.DeleteForShutdown(shutdownCtx, summary.ID); err != nil {
 				shutdownErr = errors.Join(shutdownErr, err)
 			}
 		}

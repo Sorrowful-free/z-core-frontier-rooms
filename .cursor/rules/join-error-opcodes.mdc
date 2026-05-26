@@ -1,5 +1,5 @@
 ---
-description: Data plane OpCode — domain + delivery/errors (join 0x40–0x5F, in-room 0x60+)
+description: Data plane OpCode — domain + delivery/errors (join 0x40–0x5F, reservation 0x70–0x7F, in-room 0x60+)
 globs: internal/**/*.go
 alwaysApply: false
 ---
@@ -17,24 +17,24 @@ alwaysApply: false
 | `in_room.go` | `0x60–0x6F` | `InRoomErrorOpCode`, `SendInRoomError` |
 | `wire.go` | — | `IsJoinRejectOpCode`, `IsReservationRejectOpCode`, `IsInRoomErrorOpCode` |
 
-Домен: `opcodes.go`, `join_errors.go`, `room_errors.go`.
+Домен: `opcodes.go`, `join_errors.go`, `reservation_error.go`, `room_errors.go`.
 
 ## Чеклист join (`0x40–0x5F`)
 
-- [ ] `join_errors.go` + `opcodes.go`
-- [ ] `join_reject.go` + `tests/delivery/errors/join_reject_test.go`
-- [ ] README
+- [x] `join_errors.go` + `opcodes.go`
+- [x] `join_reject.go` + `tests/delivery/errors/join_reject_test.go`
+- [x] README (таблица join + делегирование reservation)
 
 ## Чеклист reservation (`0x70–0x7F`)
 
 - [x] `reservation_error.go` + `opcodes.go`
 - [x] `reservation_reject.go` + `tests/delivery/errors/reservation_reject_test.go`
-- [ ] README
+- [x] README (таблица `0x70–0x7F`, lifecycle / Issue политика A)
 
 ## Чеклист in-room (`0x60–0x6F`)
 
-- [ ] `room_errors.go` + `opcodes.go`
-- [ ] `in_room.go` + `tests/delivery/errors/in_room_test.go`
-- [ ] README
+- [x] `room_errors.go` + `opcodes.go`
+- [x] `in_room.go` + `tests/delivery/errors/in_room_test.go`
+- [ ] README (расширять по мере сценариев in-room)
 
 HTTP — `delivery/http`, не этот пакет.

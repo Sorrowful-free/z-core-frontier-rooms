@@ -8,8 +8,9 @@ import (
 )
 
 type Reservation interface {
-	RegisterRoom(ctx context.Context, roomID domain.RoomID, capacity int) error
+	RegisterRoom(ctx context.Context, roomID domain.RoomID, capacity int, password string) error
 	UnregisterRoom(ctx context.Context, roomID domain.RoomID) error
+	VerifyRoomPassword(ctx context.Context, roomID domain.RoomID, password string) error
 
 	Reserve(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, expiresAt time.Time) error
 	Admit(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) error

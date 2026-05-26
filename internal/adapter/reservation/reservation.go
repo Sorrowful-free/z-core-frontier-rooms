@@ -24,6 +24,7 @@ type peerSlot struct {
 }
 type roomSlot struct {
 	capacity int
+	password string
 	peers    map[domain.PeerID]peerSlot
 }
 
@@ -41,7 +42,7 @@ func NewReservation(logger logging.Logger) *Reservation {
 	}
 }
 
-func (r *Reservation) RegisterRoom(ctx context.Context, roomID domain.RoomID, capacity int) error {
+func (r *Reservation) RegisterRoom(ctx context.Context, roomID domain.RoomID, capacity int, password string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -56,7 +57,29 @@ func (r *Reservation) RegisterRoom(ctx context.Context, roomID domain.RoomID, ca
 
 	r.rooms[roomID] = roomSlot{
 		capacity: capacity,
+		password: password,
 		peers:    make(map[domain.PeerID]peerSlot),
+	}
+	return nil
+}
+
+func (r *Reservation) VerifyRoomPassword(ctx context.Context, roomID domain.RoomID, password string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	room, ok := r.rooms[roomID]
+	if !ok {
+		return reservationErrRoom(domain.ErrReservationNotFound, roomID)
+	}
+	if room.password == "" {
+		return nil
+	}
+	if room.password != password {
+		return reservationErrRoom(domain.ErrInvalidCredentials, roomID)
 	}
 	return nil
 }
