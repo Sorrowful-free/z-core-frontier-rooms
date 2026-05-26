@@ -21,6 +21,11 @@ func NewIssueTicketUseCase(admission admission.Admission, logger logging.Logger)
 }
 
 func (uc *IssueTicketUseCase) IssueTicket(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, password string) ([]byte, error) {
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	token, err := uc.admission.Issue(ctx, roomID, peerID, password)
 	if err != nil {
 		return nil, err

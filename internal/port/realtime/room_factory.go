@@ -1,7 +1,11 @@
 package realtime
 
-import "github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
+import (
+	"context"
+
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
+)
 
 type RoomFactory interface {
-	CreateRoom(id domain.RoomID, handler RoomHandler) Room
+	CreateRoom(ctx context.Context, id domain.RoomID) (Room, error)
 }

@@ -20,6 +20,11 @@ func NewGetListUseCase(roomRegistry registry.RoomRegistry, logging logging.Logge
 }
 
 func (uc *GetListUseCase) GetList(ctx context.Context) ([]RoomSummary, error) {
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	rooms, err := uc.roomRegistry.GetList(ctx)
 	if err != nil {
 		return nil, err

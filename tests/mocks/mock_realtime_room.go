@@ -10,6 +10,7 @@
 package mocks
 
 import (
+	context "context"
 	reflect "reflect"
 
 	domain "github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
@@ -40,6 +41,44 @@ func NewMockRoom(ctrl *gomock.Controller) *MockRoom {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockRoom) EXPECT() *MockRoomMockRecorder {
 	return m.recorder
+}
+
+// Context mocks base method.
+func (m *MockRoom) Context() context.Context {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Context")
+	ret0, _ := ret[0].(context.Context)
+	return ret0
+}
+
+// Context indicates an expected call of Context.
+func (mr *MockRoomMockRecorder) Context() *MockRoomContextCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Context", reflect.TypeOf((*MockRoom)(nil).Context))
+	return &MockRoomContextCall{Call: call}
+}
+
+// MockRoomContextCall wrap *gomock.Call
+type MockRoomContextCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockRoomContextCall) Return(arg0 context.Context) *MockRoomContextCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockRoomContextCall) Do(f func() context.Context) *MockRoomContextCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockRoomContextCall) DoAndReturn(f func() context.Context) *MockRoomContextCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
 }
 
 // Deliver mocks base method.

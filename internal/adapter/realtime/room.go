@@ -1,6 +1,7 @@
 package realtime
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -8,22 +9,25 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/policy"
 )
 
 type Room struct {
 	id       domain.RoomID
-	handler  realtime.RoomHandler
+	handler  policy.RoomPolicy
 	mutex    sync.RWMutex
 	peers    map[domain.PeerID]realtime.Peer
 	incoming chan events.RoomEvent
 	logger   logging.Logger
 
-	done     chan struct{}
+	ctx      context.Context
+	cancel   context.CancelFunc
 	stopOnce sync.Once
 	wg       sync.WaitGroup
 }
 
-func NewRoom(id domain.RoomID, handler realtime.RoomHandler, logger logging.Logger) *Room {
+func NewRoom(ctx context.Context, id domain.RoomID, handler policy.RoomPolicy, logger logging.Logger) *Room {
+	ctx, cancel := context.WithCancel(ctx)
 	return &Room{
 		id:       id,
 		handler:  handler,
@@ -31,8 +35,13 @@ func NewRoom(id domain.RoomID, handler realtime.RoomHandler, logger logging.Logg
 		peers:    make(map[domain.PeerID]realtime.Peer),
 		incoming: make(chan events.RoomEvent),
 		logger:   logger,
-		done:     make(chan struct{}),
+		ctx:      ctx,
+		cancel:   cancel,
 	}
+}
+
+func (r *Room) Context() context.Context {
+	return r.ctx
 }
 
 func (r *Room) GetID() domain.RoomID {
@@ -62,7 +71,7 @@ func (r *Room) Start() error {
 func (r *Room) Stop() error {
 	var err error
 	r.stopOnce.Do(func() {
-		close(r.done)
+		r.cancel()
 		r.wg.Wait()
 		close(r.incoming)
 		err = r.handler.OnStop(r)
@@ -92,7 +101,7 @@ func (r *Room) Leave(peer realtime.Peer) error {
 	r.mutex.Lock()
 	if _, ok := r.peers[peerID]; !ok {
 		r.mutex.Unlock()
-		return fmt.Errorf("peer not found: %s", peerID)
+		return fmt.Errorf("peer not found: %d", peerID)
 	}
 	r.mutex.Unlock()
 
@@ -113,7 +122,7 @@ func (r *Room) Replace(peer realtime.Peer) error {
 	old, ok := r.peers[peerID]
 	if !ok {
 		r.mutex.Unlock()
-		return fmt.Errorf("%w: %s", domain.ErrPeerNotFound, peerID)
+		return fmt.Errorf("%w: %d", domain.ErrPeerNotFound, peerID)
 	}
 	r.mutex.Unlock()
 
@@ -146,7 +155,7 @@ func (r *Room) GetPeer(peerID domain.PeerID) (realtime.Peer, error) {
 	defer r.mutex.RUnlock()
 	peer, ok := r.peers[peerID]
 	if !ok {
-		return nil, fmt.Errorf("peer not found: %s", peerID)
+		return nil, fmt.Errorf("peer not found: %d", peerID)
 	}
 	return peer, nil
 }
@@ -171,7 +180,7 @@ func (r *Room) snapshotPeersForSend(target, exclude domain.PeerID) ([]realtime.P
 	if target.IsValid() {
 		peer, ok := r.peers[target]
 		if !ok {
-			return nil, fmt.Errorf("peer not found: %s", target)
+			return nil, fmt.Errorf("peer not found: %d", target)
 		}
 		return []realtime.Peer{peer}, nil
 	}
@@ -188,7 +197,7 @@ func (r *Room) snapshotPeersForSend(target, exclude domain.PeerID) ([]realtime.P
 
 func (r *Room) Deliver(roomEvent events.RoomEvent) error {
 	if !r.tryDeliver(roomEvent) {
-		return fmt.Errorf("room stopped: %s", r.id)
+		return fmt.Errorf("room stopped: %d", r.id)
 	}
 	return nil
 }
@@ -197,7 +206,7 @@ func processRoomEvents(room *Room) {
 	defer room.wg.Done()
 	for {
 		select {
-		case <-room.done:
+		case <-room.ctx.Done():
 			return
 		case roomEvent, ok := <-room.incoming:
 			if !ok {
@@ -212,7 +221,7 @@ func processRoomEvents(room *Room) {
 
 func (r *Room) tryDeliver(ev events.RoomEvent) bool {
 	select {
-	case <-r.done:
+	case <-r.ctx.Done():
 		return false
 	case r.incoming <- ev:
 		return true

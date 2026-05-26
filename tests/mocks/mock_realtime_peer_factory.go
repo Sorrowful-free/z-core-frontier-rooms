@@ -10,6 +10,7 @@
 package mocks
 
 import (
+	context "context"
 	reflect "reflect"
 
 	domain "github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
@@ -44,17 +45,18 @@ func (m *MockPeerFactory) EXPECT() *MockPeerFactoryMockRecorder {
 }
 
 // CreatePeer mocks base method.
-func (m *MockPeerFactory) CreatePeer(id domain.PeerID, connection transport.Connection, room realtime.Room, logger logging.Logger) realtime.Peer {
+func (m *MockPeerFactory) CreatePeer(ctx context.Context, id domain.PeerID, connection transport.Connection, room realtime.Room, logger logging.Logger) (realtime.Peer, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreatePeer", id, connection, room, logger)
+	ret := m.ctrl.Call(m, "CreatePeer", ctx, id, connection, room, logger)
 	ret0, _ := ret[0].(realtime.Peer)
-	return ret0
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // CreatePeer indicates an expected call of CreatePeer.
-func (mr *MockPeerFactoryMockRecorder) CreatePeer(id, connection, room, logger any) *MockPeerFactoryCreatePeerCall {
+func (mr *MockPeerFactoryMockRecorder) CreatePeer(ctx, id, connection, room, logger any) *MockPeerFactoryCreatePeerCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreatePeer", reflect.TypeOf((*MockPeerFactory)(nil).CreatePeer), id, connection, room, logger)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreatePeer", reflect.TypeOf((*MockPeerFactory)(nil).CreatePeer), ctx, id, connection, room, logger)
 	return &MockPeerFactoryCreatePeerCall{Call: call}
 }
 
@@ -64,19 +66,19 @@ type MockPeerFactoryCreatePeerCall struct {
 }
 
 // Return rewrite *gomock.Call.Return
-func (c *MockPeerFactoryCreatePeerCall) Return(arg0 realtime.Peer) *MockPeerFactoryCreatePeerCall {
-	c.Call = c.Call.Return(arg0)
+func (c *MockPeerFactoryCreatePeerCall) Return(arg0 realtime.Peer, arg1 error) *MockPeerFactoryCreatePeerCall {
+	c.Call = c.Call.Return(arg0, arg1)
 	return c
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockPeerFactoryCreatePeerCall) Do(f func(domain.PeerID, transport.Connection, realtime.Room, logging.Logger) realtime.Peer) *MockPeerFactoryCreatePeerCall {
+func (c *MockPeerFactoryCreatePeerCall) Do(f func(context.Context, domain.PeerID, transport.Connection, realtime.Room, logging.Logger) (realtime.Peer, error)) *MockPeerFactoryCreatePeerCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockPeerFactoryCreatePeerCall) DoAndReturn(f func(domain.PeerID, transport.Connection, realtime.Room, logging.Logger) realtime.Peer) *MockPeerFactoryCreatePeerCall {
+func (c *MockPeerFactoryCreatePeerCall) DoAndReturn(f func(context.Context, domain.PeerID, transport.Connection, realtime.Room, logging.Logger) (realtime.Peer, error)) *MockPeerFactoryCreatePeerCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

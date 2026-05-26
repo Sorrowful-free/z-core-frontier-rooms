@@ -21,6 +21,11 @@ func NewCreateUseCase(roomRegistry registry.RoomRegistry, logging logging.Logger
 }
 
 func (uc *CreateUseCase) Create(ctx context.Context, roomID domain.RoomID) (RoomSummary, error) {
+
+	if err := ctx.Err(); err != nil {
+		return EmptyRoomSummary, err
+	}
+
 	room, err := uc.roomRegistry.CreateRoom(ctx, roomID)
 	if err != nil {
 		return EmptyRoomSummary, err

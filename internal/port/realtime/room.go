@@ -1,11 +1,15 @@
 package realtime
 
 import (
+	"context"
+
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 )
 
 type Room interface {
+	Context() context.Context
+
 	GetID() domain.RoomID
 	GetPeers() []Peer
 

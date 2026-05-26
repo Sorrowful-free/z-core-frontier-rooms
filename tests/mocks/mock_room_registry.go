@@ -196,3 +196,41 @@ func (c *MockRoomRegistryGetRoomCall) DoAndReturn(f func(context.Context, domain
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
+
+// Shutdown mocks base method.
+func (m *MockRoomRegistry) Shutdown(ctx context.Context) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Shutdown", ctx)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Shutdown indicates an expected call of Shutdown.
+func (mr *MockRoomRegistryMockRecorder) Shutdown(ctx any) *MockRoomRegistryShutdownCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Shutdown", reflect.TypeOf((*MockRoomRegistry)(nil).Shutdown), ctx)
+	return &MockRoomRegistryShutdownCall{Call: call}
+}
+
+// MockRoomRegistryShutdownCall wrap *gomock.Call
+type MockRoomRegistryShutdownCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockRoomRegistryShutdownCall) Return(arg0 error) *MockRoomRegistryShutdownCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockRoomRegistryShutdownCall) Do(f func(context.Context) error) *MockRoomRegistryShutdownCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockRoomRegistryShutdownCall) DoAndReturn(f func(context.Context) error) *MockRoomRegistryShutdownCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}

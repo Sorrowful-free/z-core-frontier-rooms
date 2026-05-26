@@ -21,5 +21,10 @@ func NewDeleteUseCase(roomRegistry registry.RoomRegistry, logging logging.Logger
 }
 
 func (uc *DeleteUseCase) Delete(ctx context.Context, roomID domain.RoomID) error {
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	return uc.roomRegistry.DeleteRoom(ctx, roomID)
 }

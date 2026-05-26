@@ -29,6 +29,11 @@ func NewJoinRoomUseCase(admission admission.Admission, peerFactory realtime.Peer
 }
 
 func (uc *JoinRoomUseCase) JoinRoom(ctx context.Context, connection transport.Connection, token []byte) (RoomSummary, domain.PeerID, error) {
+
+	if err := ctx.Err(); err != nil {
+		return EmptyRoomSummary, domain.PeerIDInvalid, err
+	}
+
 	claims, err := uc.admission.Validate(ctx, token)
 	if err != nil {
 		return EmptyRoomSummary, domain.PeerIDInvalid, err
@@ -39,7 +44,10 @@ func (uc *JoinRoomUseCase) JoinRoom(ctx context.Context, connection transport.Co
 		return EmptyRoomSummary, domain.PeerIDInvalid, err
 	}
 
-	peer := uc.peerFactory.CreatePeer(claims.PeerID, connection, room, uc.logging)
+	peer, err := uc.peerFactory.CreatePeer(room.Context(), claims.PeerID, connection, room, uc.logging)
+	if err != nil {
+		return EmptyRoomSummary, domain.PeerIDInvalid, err
+	}
 
 	if room.HasPeer(claims.PeerID) {
 		if err := room.Replace(peer); err != nil {

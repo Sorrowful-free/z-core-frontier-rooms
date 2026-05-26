@@ -1,6 +1,7 @@
 package realtime_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -10,15 +11,16 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
+	portpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/policy"
 )
 
 func TestJoinCallsSendFromOnJoinWithoutDeadlock(t *testing.T) {
 	t.Parallel()
 
 	logger := stdlib.New("test")
-	handler := &sendOnJoinHandler{}
-	room := adapterrealtime.NewRoom(domain.RoomID(1), handler, logger)
-	handler.room = room
+	policy := &sendOnJoinPolicy{}
+	room := adapterrealtime.NewRoom(context.Background(), domain.RoomID(1), policy, logger)
+	policy.room = room
 
 	if err := room.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -48,8 +50,8 @@ func TestJoinRollbackOnHandlerError(t *testing.T) {
 	t.Parallel()
 
 	logger := stdlib.New("test")
-	handler := &failOnJoinHandler{err: domain.ErrJoinDenied}
-	room := adapterrealtime.NewRoom(domain.RoomID(1), handler, logger)
+	policy := &failOnJoinPolicy{err: domain.ErrJoinDenied}
+	room := adapterrealtime.NewRoom(context.Background(), domain.RoomID(1), policy, logger)
 
 	if err := room.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -66,35 +68,38 @@ func TestJoinRollbackOnHandlerError(t *testing.T) {
 	}
 }
 
-type sendOnJoinHandler struct {
+type sendOnJoinPolicy struct {
 	room realtime.Room
 }
 
-func (h *sendOnJoinHandler) OnStart(realtime.Room) error { return nil }
-func (h *sendOnJoinHandler) OnStop(realtime.Room) error  { return nil }
-func (h *sendOnJoinHandler) OnLeave(realtime.Peer) error { return nil }
-func (h *sendOnJoinHandler) OnMessage(events.RoomEvent) error {
+func (p *sendOnJoinPolicy) OnStart(room realtime.Room) error {
+	p.room = room
+	return nil
+}
+func (p *sendOnJoinPolicy) OnStop(realtime.Room) error  { return nil }
+func (p *sendOnJoinPolicy) OnLeave(realtime.Peer) error { return nil }
+func (p *sendOnJoinPolicy) OnMessage(events.RoomEvent) error {
 	return nil
 }
 
-func (h *sendOnJoinHandler) OnJoin(peer realtime.Peer) error {
-	return h.room.Send(events.PeerEvent{
+func (p *sendOnJoinPolicy) OnJoin(peer realtime.Peer) error {
+	return p.room.Send(events.PeerEvent{
 		ExcludePeerID: peer.GetID(),
 		Frame:         domain.Frame{OpCode: 0x01},
 	})
 }
 
-type failOnJoinHandler struct {
+type failOnJoinPolicy struct {
 	err error
 }
 
-func (h *failOnJoinHandler) OnStart(realtime.Room) error { return nil }
-func (h *failOnJoinHandler) OnStop(realtime.Room) error  { return nil }
-func (h *failOnJoinHandler) OnLeave(realtime.Peer) error { return nil }
-func (h *failOnJoinHandler) OnMessage(events.RoomEvent) error {
+func (p *failOnJoinPolicy) OnStart(realtime.Room) error { return nil }
+func (p *failOnJoinPolicy) OnStop(realtime.Room) error  { return nil }
+func (p *failOnJoinPolicy) OnLeave(realtime.Peer) error { return nil }
+func (p *failOnJoinPolicy) OnMessage(events.RoomEvent) error {
 	return nil
 }
-func (h *failOnJoinHandler) OnJoin(realtime.Peer) error { return h.err }
+func (p *failOnJoinPolicy) OnJoin(realtime.Peer) error { return p.err }
 
 type stubPeer struct {
 	id domain.PeerID
@@ -110,4 +115,4 @@ func (p *stubPeer) Deliver(events.PeerEvent) error {
 }
 
 var _ realtime.Peer = (*stubPeer)(nil)
-var _ realtime.RoomHandler = (*sendOnJoinHandler)(nil)
+var _ portpolicy.RoomPolicy = (*sendOnJoinPolicy)(nil)

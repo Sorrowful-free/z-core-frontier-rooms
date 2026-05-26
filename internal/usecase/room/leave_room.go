@@ -22,6 +22,11 @@ func NewLeaveRoomUseCase(roomRegistry registry.RoomRegistry, logging logging.Log
 }
 
 func (uc *LeaveRoomUseCase) LeaveRoom(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) error {
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	room, err := uc.roomRegistry.GetRoom(ctx, roomID)
 	if err != nil {
 		return err

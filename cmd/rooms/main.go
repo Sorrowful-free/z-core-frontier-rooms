@@ -2,13 +2,17 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	admissionadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/admission"
 	zaplog "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/zap"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/registry"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/ws"
@@ -36,16 +40,17 @@ func run() error {
 	}
 	defer func() { _ = z.Sync() }()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	appCtx, appCancel := context.WithCancel(context.Background())
+	defer appCancel()
 
 	fiberApp := fiber.New()
 	fiberApp.Use(fibzap.New(fibzap.Config{Logger: z}))
 
-	roomFactory := realtime.NewRoomFactory(zaplog.NewFrom(z, "rooms factory"))
-	roomHandlerFactory := realtime.NewRelayRoomHandlerFactory(zaplog.NewFrom(z, "rooms handler factory"))
-	roomRegistry := registry.NewRoomRegistry(roomFactory, roomHandlerFactory, zaplog.NewFrom(z, "rooms registry"))
+	roomPolicyFactory := policy.NewRelayRoomPolicyFactory(zaplog.NewFrom(z, "rooms policy factory"))
+	roomFactory := realtime.NewRoomFactory(zaplog.NewFrom(z, "rooms factory"), roomPolicyFactory)
 	peerFactory := realtime.NewPeerFactory(zaplog.NewFrom(z, "peer factory"))
+
+	roomRegistry := registry.NewRoomRegistry(appCtx, roomFactory, zaplog.NewFrom(z, "rooms registry"))
 
 	wsConnectionFactory := ws.NewWsConnectionFactory(zaplog.NewFrom(z, "ws connection factory"))
 	enetConnectionFactory := enet.NewEnetConnectionFactory(zaplog.NewFrom(z, "enet connection factory"))
@@ -62,18 +67,51 @@ func run() error {
 	roomsHandler := http.NewRoomsHandler(createUseCase, issueTicketUseCase, deleteUseCase, getListUseCase, zaplog.NewFrom(z, "rooms handler"))
 	roomsHandler.RegisterRoutes(fiberApp)
 
-	wsHandler := deliveryws.NewRoomsHandler(ctx, joinRoomUseCase, leaveRoomUseCase, wsConnectionFactory, zaplog.NewFrom(z, "ws rooms handler"))
+	wsHandler := deliveryws.NewRoomsHandler(appCtx, joinRoomUseCase, leaveRoomUseCase, wsConnectionFactory, zaplog.NewFrom(z, "ws rooms handler"))
 	wsHandler.RegisterRoutes(fiberApp)
 
 	enetHandler := deliveryenet.NewRoomsHandler(
-		ctx,
+		appCtx,
 		joinRoomUseCase,
 		leaveRoomUseCase,
 		enetConnectionFactory,
 		deliveryenet.DefaultConfig(),
 		zaplog.NewFrom(z, "enet rooms handler"),
 	)
-
 	enetHandler.Listen()
-	return fiberApp.Listen(":3000")
+
+	listenErr := make(chan error, 1)
+	go func() {
+		listenErr <- fiberApp.Listen(":3000")
+	}()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
+	select {
+	case sig := <-sigCh:
+		z.Info("shutdown signal received", zap.String("signal", sig.String()))
+	case err := <-listenErr:
+		if err != nil && !errors.Is(err, fiber.ErrServiceUnavailable) {
+			return err
+		}
+	}
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+
+	if err := roomRegistry.Shutdown(shutdownCtx); err != nil {
+		z.Error("room registry shutdown", zap.Error(err))
+	}
+	if err := fiberApp.ShutdownWithContext(shutdownCtx); err != nil {
+		z.Error("fiber shutdown", zap.Error(err))
+	}
+	appCancel()
+
+	if err := <-listenErr; err != nil && !errors.Is(err, fiber.ErrServiceUnavailable) {
+		return err
+	}
+
+	z.Info("shutdown complete")
+	return nil
 }

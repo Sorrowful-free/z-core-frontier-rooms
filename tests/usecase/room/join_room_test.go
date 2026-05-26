@@ -65,7 +65,8 @@ func TestJoinRoom_Success(t *testing.T) {
 
 	admission.EXPECT().Validate(gomock.Any(), token).Return(claims, nil)
 	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
-	peerFactory.EXPECT().CreatePeer(peerID, conn, room, logger).Return(peer)
+	room.EXPECT().Context().Return(context.Background()).AnyTimes()
+	peerFactory.EXPECT().CreatePeer(gomock.Any(), peerID, conn, room, logger).Return(peer, nil)
 	room.EXPECT().HasPeer(peerID).Return(false)
 	room.EXPECT().Join(peer).Return(nil)
 	peer.EXPECT().Start().Return(nil)

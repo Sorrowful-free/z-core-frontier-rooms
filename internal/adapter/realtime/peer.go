@@ -1,6 +1,7 @@
 package realtime
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -20,19 +21,22 @@ type Peer struct {
 	outbound   chan events.PeerEvent
 	logger     logging.Logger
 
-	done     chan struct{}
+	ctx      context.Context
+	cancel   context.CancelFunc
 	stopOnce sync.Once
 	wg       sync.WaitGroup
 }
 
-func NewPeer(id domain.PeerID, connection transport.Connection, room realtime.Room, logger logging.Logger) *Peer {
+func NewPeer(ctx context.Context, id domain.PeerID, connection transport.Connection, room realtime.Room, logger logging.Logger) *Peer {
+	ctx, cancel := context.WithCancel(ctx)
 	return &Peer{
 		id:         id,
 		connection: connection,
 		room:       room,
 		outbound:   make(chan events.PeerEvent),
 		logger:     logger,
-		done:       make(chan struct{}),
+		ctx:        ctx,
+		cancel:     cancel,
 	}
 }
 
@@ -58,7 +62,7 @@ func (p *Peer) Start() error {
 func (p *Peer) Stop() error {
 	var err error
 	p.stopOnce.Do(func() {
-		close(p.done)
+		p.cancel()
 		err = p.connection.Close()
 		p.wg.Wait()
 		close(p.outbound)
@@ -68,7 +72,7 @@ func (p *Peer) Stop() error {
 
 func (p *Peer) Deliver(peerEvent events.PeerEvent) error {
 	if !p.tryDeliver(peerEvent) {
-		return fmt.Errorf("peer stopped: %s", p.id)
+		return fmt.Errorf("peer stopped: %d", p.id)
 	}
 	return nil
 }
@@ -94,7 +98,7 @@ func processOutgoingEvents(peer *Peer) {
 	defer peer.wg.Done()
 	for {
 		select {
-		case <-peer.done:
+		case <-peer.ctx.Done():
 			return
 		case peerEvent, ok := <-peer.outbound:
 			if !ok {
@@ -109,7 +113,7 @@ func processOutgoingEvents(peer *Peer) {
 
 func (p *Peer) tryDeliver(ev events.PeerEvent) bool {
 	select {
-	case <-p.done:
+	case <-p.ctx.Done():
 		return false
 	case p.outbound <- ev:
 		return true
