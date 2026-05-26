@@ -9,8 +9,9 @@
 | Область | Состояние |
 |--------|-----------|
 | `domain/`, `port/` | Типы, события, интерфейсы без зависимостей от инфраструктуры |
-| `adapter/realtime` | `Room`, `Peer`, фабрики; `RelayRoomHandler` — временная заглушка relay |
-| `adapter/registry` | In-memory `RoomRegistry` |
+| `adapter/realtime` | `Room`, `Peer`, фабрики; `port/realtime/policy` + `RelayRoomPolicy` (relay) |
+| `adapter/registry` | In-memory `RoomRegistry`, lifecycle-`ctx`, `Shutdown` |
+| `adapter/reservation` | In-memory слоты: `RegisterRoom` / `Reserve` / `Admit` / `Revoke` |
 | `adapter/admission` | HMAC-SHA256 ticket, TTL (`Issue` / `Validate`) |
 | `adapter/transport` | WebSocket; ENet (CGO + build tag `enet`) |
 | Use case `Create` / `Delete` / `GetList` | Реализованы; HTTP handlers — **заглушки** (use case не вызываются) |
@@ -20,8 +21,9 @@
 | `delivery/http` | Маршруты REST; тела/JSON — TODO |
 | `delivery/ws` | `GET /ws` (upgrade), `JoinRoom` + `LeaveRoom` |
 | `delivery/enet` | Host loop в goroutine; первый пакет = ticket; без `enet`+cgo — stub с warn |
-| `cmd/rooms` | Fiber `:3000`, ENet `DefaultConfig()` (порт **7777**), zap middleware |
-| Конфиг (env), graceful shutdown, health | TODO |
+| `cmd/rooms` | Fiber `:3000`, ENet `DefaultConfig()` (порт **7777**), zap middleware, SIGINT shutdown |
+| Конфиг (env), health | TODO |
+| Reservation ↔ use case / registry | Порт и adapter готовы; **wiring** в Create/Issue/Join/Leave — в работе |
 
 Сборка по умолчанию: `go build ./cmd/rooms` — HTTP + WS. ENet host **активен в runtime** только при сборке с `-tags enet` и `CGO_ENABLED=1`.
 
@@ -30,16 +32,17 @@
 - Хранить **комнаты** (`Room`) и подключённых **пиров** (`Peer`).
 - **Допуск:** выдача ticket (control plane, `IssueTicket`) и вход по realtime (`JoinRoom`).
 - **Выход:** снятие пира с комнаты (`LeaveRoom`) при отключении транспорта.
-- **Relay** кадров между пирами — через `RoomHandler` / `RelayRoomHandler` (черновик).
+- **Relay** кадров между пирами — через `RoomPolicy` / `RelayRoomPolicy` (черновик).
+- **Бронирование слотов** — `port/reservation` (отдельно от HMAC ticket); лимит мест и TTL брони до join.
 - Единый контракт `transport.Connection` для WS и ENet; протокол — только в `delivery`.
 
 ## Терминология (use case)
 
 | Use case | Плоскость | Смысл |
 |----------|-----------|--------|
-| **`IssueTicket`** | Control (HTTP, планируется) | `admission.Issue` → бинарный ticket |
-| **`JoinRoom`** | Data (WS / ENet) | `Validate` → peer → membership → `peer.Start()` |
-| **`LeaveRoom`** | Data (при disconnect) | `room.Leave` + `peer.Stop()` |
+| **`IssueTicket`** | Control (HTTP, планируется) | `reservation.Reserve` → `admission.Issue` (wiring TODO) |
+| **`JoinRoom`** | Data (WS / ENet) | `Validate` → `reservation.Admit` → peer → membership → `peer.Start()` (Admit TODO) |
+| **`LeaveRoom`** | Data (при disconnect) | `room.Leave` + `peer.Stop` + `reservation.Revoke` (Revoke TODO) |
 
 Слово *connect* в коде относится к **транспорту** (`transport.Connection`, upgrade WS, ENet `EventConnect`), а не к отдельному use case.
 
@@ -54,9 +57,9 @@ delivery/enet             — ENet host loop → JoinRoom / LeaveRoom
 
 usecase/room/             — Create, Delete, GetList, IssueTicket, JoinRoom, LeaveRoom
 
-port/                     — admission, registry, realtime, transport, logging
-domain/                   — типы и события
-adapter/                  — admission, realtime, registry, transport, logging
+port/                     — admission, registry, reservation, realtime, transport, logging
+domain/                   — типы, события, reservation_errors
+adapter/                  — admission, reservation, realtime, registry, transport, logging
 ```
 
 Зависимости: `delivery` → `usecase` → `port` ← `adapter`; `domain` ни от кого не зависит.
@@ -65,8 +68,9 @@ adapter/                  — admission, realtime, registry, transport, logging
 
 ```text
 fiber.New() + zap middleware
-  → roomFactory, relayRoomHandlerFactory, roomRegistry, peerFactory
+  → roomPolicyFactory, roomFactory, roomRegistry (app lifecycle ctx), peerFactory
   → admission (dev secret в коде, TTL 1h)
+  → reservation (in-memory; DI в use case — TODO)
   → Create, IssueTicket, JoinRoom, LeaveRoom, Delete, GetList
   → http.RoomsHandler.RegisterRoutes(app)
   → ws.RoomsHandler.RegisterRoutes(app)
@@ -78,7 +82,12 @@ WebSocket — на **том же** `*fiber.App` (HTTP upgrade). ENet — **от�
 
 ### Поток выдачи ticket (control plane)
 
-`internal/usecase/room/issue_ticket.go` — `IssueTicket` → `admission.Issue`.
+`internal/usecase/room/issue_ticket.go` — сейчас только `admission.Issue`; целевая цепочка:
+
+```text
+reservation.Reserve(roomID, peerID, expiresAt)  // слот + TTL брони
+admission.Issue(...)                             // подписанный ticket
+```
 
 Клиент получает ticket (пока только программно / будущий HTTP). Затем подключается по WS или ENet.
 
@@ -91,9 +100,10 @@ WebSocket — на **том же** `*fiber.App` (HTTP upgrade). ENet — **от�
 ```text
 1. admission.Validate(ctx, token) → domain.Claims
 2. roomRegistry.GetRoom(claims.RoomID)
-3. peerFactory.CreatePeer(claims.PeerID, connection, room, logger)
-4. room.Replace(peer) если peer уже в комнате, иначе room.Join(peer)
-5. peer.Start()
+3. reservation.Admit(claims.RoomID, claims.PeerID)   // reserved → admitted (TODO в use case)
+4. peerFactory.CreatePeer(room.Context(), …)
+5. room.Replace(peer) если peer уже в комнате, иначе room.Join(peer)
+6. peer.Start()
 ```
 
 При ошибке на шаге 5: `room.Leave(peer)`, `peer.Stop()`. При любой ошибке join delivery шлёт **один binary-кадр** с OpCode ошибки (`deliveryerrors.SendJoinReject`), затем закрывает transport (`defer Close` на WS, `sess.close` на ENet). До `peer.Start()` use case **не** вызывает `peer.Stop()` — только откат membership в `Room`.
@@ -106,9 +116,10 @@ WebSocket — на **том же** `*fiber.App` (HTTP upgrade). ENet — **от�
 |------|------|
 | `delivery/ws`, `delivery/enet` | Транспорт, извлечение token, `JoinRoom`, при отключении — `LeaveRoom` |
 | `JoinRoomUseCase` | validate → комната → peer → join/replace → start |
-| `LeaveRoomUseCase` | get peer → leave → stop |
-| `Admission` | `Issue` / `Validate`, без знания WS/ENet |
-| `adapter/realtime` | `Room`, `Peer`, `RoomHandler` |
+| `LeaveRoomUseCase` | get peer → leave → stop (+ `Revoke` TODO) |
+| `Admission` | `Issue` / `Validate` (криптография ticket) |
+| `Reservation` | слоты и capacity; отдельно от Admission |
+| `adapter/realtime` | `Room`, `Peer`, `RoomPolicy` |
 
 ### Поток выхода (data plane)
 
@@ -116,6 +127,29 @@ WebSocket — на **том же** `*fiber.App` (HTTP upgrade). ENet — **от�
 
 - **WebSocket:** после `connection.Wait()` (клиент отключился) → `LeaveRoom`.
 - **ENet:** `EventDisconnect`, если сессия была admitted → `LeaveRoom`, затем `sess.close()`.
+
+Целевой вызов `reservation.Revoke(roomID, peerID)` после `room.Leave` (wiring TODO).
+
+### Бронирование слотов (Reservation)
+
+Порт: `internal/port/reservation/reservation.go`.  
+Реализация: `internal/adapter/reservation` (in-memory).
+
+| Метод | Кто вызывает (цель) | Смысл |
+|-------|---------------------|--------|
+| `RegisterRoom` / `UnregisterRoom` | HTTP Create / Delete комнаты | capacity, lifecycle комнаты в учёте |
+| `Reserve` | `IssueTicket` | бронь слота до join, `expiresAt` = TTL ticket |
+| `Admit` | `JoinRoom` после `Validate` | `reserved` → `admitted` (слот остаётся в лимите) |
+| `Revoke` | `LeaveRoom` | освободить слот |
+
+Поведение `Revoke`:
+
+- **peer нет в map** → `nil` (идемпотентный disconnect / повторный Leave);
+- **комната не зарегистрирована** → `ErrReservationNotFound` (строго: control plane должен был вызвать `RegisterRoom`).
+
+Просроченные `reserved` снимаются при следующем `Reserve` (lazy sweep) по `expiresAt`. `admitted` sweep не трогает.
+
+Ошибки: `internal/domain/reservation_error.go` (`ErrReservationFull`, `ErrReservationExpired`, …). Маппинг в join OpCode — при wiring.
 
 ### Допуск (Admission)
 
@@ -133,12 +167,14 @@ WebSocket — на **том же** `*fiber.App` (HTTP upgrade). ENet — **от�
 
 - **`Room`** — lifecycle, `Join` / `Leave` / `Replace`, `GetPeer`, `Deliver` / `Send`.
 - **`Peer`** — чтение/запись кадров через `transport.Connection`.
-- **`RoomHandler`** — хуки; **`RelayRoomHandler`** — временный relay между пирами.
+- **`RoomPolicy`** (`port/realtime/policy`) — хуки комнаты; **`RelayRoomPolicy`** — временный relay.
+- `RoomFactory` создаёт policy внутри adapter (не в port `RoomFactory`).
 
 ### Реестр комнат
 
 - Порт: `internal/port/registry/room_registry.go`
-- Реализация: `internal/adapter/registry/room_registry.go` (in-memory `map[RoomID]Room`)
+- Реализация: `internal/adapter/registry/room_registry.go` (in-memory `map[RoomID]Room`, lifecycle-`ctx` для комнат)
+- `Shutdown` — остановка всех комнат при завершении процесса
 
 ### Транспорт
 
@@ -221,7 +257,7 @@ CGO_ENABLED=1 go build -tags enet -o bin/rooms ./cmd/rooms
 cmd/rooms/                      — точка входа
 internal/
   domain/                       — RoomID, PeerID, Frame, Claims, events
-  port/                         — admission, registry, realtime, transport, logging
+  port/                         — admission, registry, reservation, realtime, transport, logging
   usecase/room/
     create.go, delete.go, get_list.go
     issue_ticket.go             — IssueTicketUseCase
@@ -230,7 +266,8 @@ internal/
     room_summary.go, peer_summary.go
   adapter/
     admission/                  — HMAC ticket
-    realtime/                   — Room, Peer, RelayRoomHandler
+    reservation/                — in-memory слоты
+    realtime/                   — Room, Peer; policy/ (RelayRoomPolicy)
     registry/
     transport/ws|enet/
     logging/stdlib|zap/
@@ -294,9 +331,9 @@ go test -race ./tests/...
 - HTTP: JSON request/response, вызов use case, маршрут `IssueTicket` (убрать/переименовать заглушку `JoinRoom` в http)
 - Кодирование ticket для клиента (base64url) и контракт API
 - Конфигурация: порт HTTP/ENet, секрет admission из env
-- Graceful shutdown: отмена `ctx`, остановка Fiber и ENet
 - Health-check
+- Reservation: wiring в registry (`RegisterRoom`/`UnregisterRoom`) и use cases
 - Доменные ошибки и маппинг в HTTP status (control plane; data plane join — см. OpCode выше)
-- Идемпотентный `LeaveRoom`, если peer уже снят с комнаты
-- Замена `RelayRoomHandler` на целевую логику комнаты
-- Тесты: `adapter/admission`, `JoinRoom` / `LeaveRoom`, registry
+- Идемпотентный `LeaveRoom` в realtime, если peer уже снят с `Room`
+- Замена `RelayRoomPolicy` на целевую логику комнаты
+- OpCode для `ErrReservationFull` / `ErrReservationExpired` при join
