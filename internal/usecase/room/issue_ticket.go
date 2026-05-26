@@ -3,6 +3,7 @@ package room
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
@@ -11,6 +12,14 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/registry"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/reservation"
 )
+
+// Политика IssueTicket (A — строгая):
+//   - нет peer в room и нет слота в reservation → Reserve + Issue;
+//   - peer в room → ErrPeerAlreadyInRoom (Join/Replace, не новый ticket);
+//   - слот reserved или admitted → ErrTicketSlotHeld;
+//   - capacity в reservation → ErrReservationFull;
+//   - комната не в registry → ErrRoomNotFound;
+//   - комната не в reservation store → ErrReservationNotFound.
 
 type IssueTicketUseCase struct {
 	roomRegistry registry.RoomRegistry
@@ -48,7 +57,7 @@ func (uc *IssueTicketUseCase) IssueTicket(ctx context.Context, roomID domain.Roo
 	expiresAt := time.Now().Add(uc.admission.TTL())
 	if err := uc.reservation.Reserve(ctx, roomID, peerID, expiresAt); err != nil {
 		uc.logger.Error("issue ticket: reserve failed", "error", err, "roomID", roomID, "peerID", peerID)
-		return nil, err
+		return nil, mapIssueReserveError(err)
 	}
 
 	token, err := uc.admission.Issue(ctx, roomID, peerID, password)
@@ -59,6 +68,16 @@ func (uc *IssueTicketUseCase) IssueTicket(ctx context.Context, roomID domain.Roo
 
 	uc.logger.Info("issue ticket: success", "roomID", roomID, "peerID", peerID)
 	return token, nil
+}
+
+func mapIssueReserveError(err error) error {
+	switch {
+	case errors.Is(err, domain.ErrReservationAlreadyExists),
+		errors.Is(err, domain.ErrReservationAlreadyAdmitted):
+		return fmt.Errorf("%w: %w", domain.ErrTicketSlotHeld, err)
+	default:
+		return err
+	}
 }
 
 func (uc *IssueTicketUseCase) revokeIssueReservation(

@@ -15,4 +15,6 @@ var (
 	ErrPeerStartFailed    = errors.New("peer start failed")
 	ErrRoomFull           = errors.New("room full")
 	ErrPeerAlreadyInRoom  = errors.New("peer already in room")
+	// ErrTicketSlotHeld — слот peer уже занят в reservation (reserved или admitted); повторный Issue запрещён (политика A).
+	ErrTicketSlotHeld = errors.New("ticket slot held")
 )
