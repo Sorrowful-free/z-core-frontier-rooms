@@ -11,16 +11,14 @@ func TestInputState_valuePatch_roundTrip(t *testing.T) {
 	t.Parallel()
 
 	cur := &state.InputState{
-		PeerID: domain.PeerID(1),
 		Values: *state.NewMapState[state.ValueId, state.ValueState](),
 	}
-	cur.Values.Items[state.ValueId(1)] = state.ValueState{ID: state.ValueId(1), Value: []byte{1}}
+	cur.Values.Items[state.ValueId(1)] = state.ValueState([]byte{1})
 
 	next := &state.InputState{
-		PeerID: domain.PeerID(1),
 		Values: *state.NewMapState[state.ValueId, state.ValueState](),
 	}
-	next.Values.Items[state.ValueId(1)] = state.ValueState{ID: state.ValueId(1), Value: []byte{1, 2}}
+	next.Values.Items[state.ValueId(1)] = state.ValueState([]byte{1, 2})
 
 	patch, err := cur.MakePatch(next)
 	if err != nil {
@@ -43,28 +41,24 @@ func TestEntityState_ownerAndComponentValue_roundTrip(t *testing.T) {
 	t.Parallel()
 
 	cur := &state.EntityState{
-		ID:    state.EntityID(10),
-		Owner: domain.PeerID(1),
+		Owner:      domain.PeerID(1),
 		Components: *state.NewMapState[state.ComponentID, state.ComponentState](),
 	}
 	cur.Components.Items[state.ComponentID(3)] = state.ComponentState{
-		ID:     state.ComponentID(3),
 		Values: *state.NewMapState[state.ValueId, state.ValueState](),
 	}
 	cur.Components.Items[state.ComponentID(3)].Values.Items[state.ValueId(1)] =
-		state.ValueState{ID: state.ValueId(1), Value: []byte{0}}
+		state.ValueState([]byte{0})
 
 	next := &state.EntityState{
-		ID:    state.EntityID(10),
-		Owner: domain.PeerID(2),
+		Owner:      domain.PeerID(2),
 		Components: *state.NewMapState[state.ComponentID, state.ComponentState](),
 	}
 	next.Components.Items[state.ComponentID(3)] = state.ComponentState{
-		ID:     state.ComponentID(3),
 		Values: *state.NewMapState[state.ValueId, state.ValueState](),
 	}
 	next.Components.Items[state.ComponentID(3)].Values.Items[state.ValueId(1)] =
-		state.ValueState{ID: state.ValueId(1), Value: []byte{1}}
+		state.ValueState([]byte{1})
 
 	patch, err := cur.MakePatch(next)
 	if err != nil {

@@ -21,7 +21,7 @@ func writeRpcID(buf *bytes.Buffer, id state.RpcID) error {
 func readRpcID(buf *bytes.Buffer) (state.RpcID, error) {
 	var id state.RpcID
 	if err := binary.Read(buf, binary.BigEndian, &id); err != nil {
-		return state.RpcIDInvalid, err
+		return state.RpcIDNone, err
 	}
 	return id, nil
 }
@@ -53,7 +53,7 @@ func (c *RpcStateCodec) Encode(rpc *state.RpcState) ([]byte, error) {
 	}, RpcStateMaxValues); err != nil {
 		return nil, err
 	}
-	if err := writePeerID(buf, *rpc.PeerID); err != nil {
+	if err := writePeerID(buf, rpc.PeerID); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -72,7 +72,7 @@ func (c *RpcStateCodec) Decode(data []byte) (*state.RpcState, error) {
 	values, err := readMapState(buf, func(buf *bytes.Buffer) (state.ValueId, error) {
 		return readValueID(buf)
 	}, func(buf *bytes.Buffer) (*state.ValueState, error) {
-		readValueState(buf)
+		return readValueState(buf)
 	}, RpcStateMaxValues)
 	if err != nil {
 		return nil, err

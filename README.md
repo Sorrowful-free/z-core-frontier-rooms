@@ -9,7 +9,7 @@
 | Область | Состояние |
 |--------|-----------|
 | `domain/`, `port/` | Типы, события, интерфейсы без зависимостей от инфраструктуры |
-| `adapter/realtime` | `Room`, `Peer`, фабрики; `port/realtime/policy` + `RelayRoomPolicy` (relay) |
+| `adapter/realtime` | `Room`, `Peer`, фабрики; state wire codec (`adapter/realtime/codec`); `RelayRoomPolicy` (relay) |
 | `adapter/registry` | In-memory `RoomRegistry`, lifecycle-`ctx`, `Shutdown` |
 | `adapter/reservation` | In-memory слоты: `RegisterRoom` / `Reserve` / `Admit` / `Revoke` |
 | `adapter/admission` | HMAC-SHA256 ticket, TTL (`Issue` / `Validate`) |
@@ -227,9 +227,15 @@ HTTP control plane реализован в `delivery/http` (см. таблицу
 |--------|-----|------------------|
 | `OpInRoomInternal` | `0x60` | Прочая ошибка в сессии (пока default) |
 
-Зарезервировано: `0x01–0x3F` — игровой трафик / relay.
+| `OpCodeFullState` | `0x03` | Room snapshot (см. [docs/wire-state-codec.md](docs/wire-state-codec.md)) |
+| `OpCodePatchState` | `0x04` | Room patch |
+| `OpCodeFullInput` | `0x05` | Input map (без `peer_id` в payload) |
+| `OpCodePatchInput` | `0x06` | Input patch |
+| `OpCodeRpc` | `0x07` | RPC |
 
-Источник: `internal/domain/opcodes.go`, `join_errors.go`, `room_errors.go`.  
+**State wire (payload layout):** [docs/wire-state-codec.md](docs/wire-state-codec.md) — BE, map, flags, лимиты; реализация `internal/adapter/realtime/codec/`.
+
+Источник OpCode: `internal/domain/state/opcodes.go`; join/reservation — `join_errors.go`, `room_errors.go`.  
 Мапперы: `internal/delivery/errors` — `join_reject.go`, `reservation_reject.go`, `in_room.go`, `wire.go` (импорт: `deliveryerrors ".../delivery/errors"`).
 
 ## API и endpoints
@@ -358,5 +364,5 @@ go test -race ./tests/...
 - Health-check
 - Доменные ошибки и маппинг в HTTP status (control plane; data plane — OpCode выше)
 - Идемпотентный `LeaveRoom` в realtime, если peer уже снят с `Room`
-- Замена `RelayRoomPolicy` на целевую логику комнаты
+- Замена `RelayRoomPolicy` на целевую логику комнаты (decode → `RoomState` / apply patch)
 - Ping/idle eviction для зомби `admitted` (сейчас — события + orphan cleanup в Issue)

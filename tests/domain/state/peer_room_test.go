@@ -10,8 +10,8 @@ import (
 func TestPeerState_MakePatch_apply_roundTrip(t *testing.T) {
 	t.Parallel()
 
-	cur := &state.PeerState{ID: domain.PeerID(1), NickName: "a", Ping: 10}
-	next := &state.PeerState{ID: domain.PeerID(1), NickName: "b", Ping: 10}
+	cur := &state.PeerState{NickName: "a", Ping: 10}
+	next := &state.PeerState{NickName: "b", Ping: 10}
 
 	patch, err := cur.MakePatch(next)
 	if err != nil {
@@ -58,7 +58,7 @@ func TestRoomState_addPeer_roundTrip(t *testing.T) {
 
 	cur := state.NewRoomState(domain.RoomID(1), 4, "")
 	next := state.NewRoomState(domain.RoomID(1), 4, "")
-	next.Peers.Items[domain.PeerID(2)] = state.PeerState{ID: domain.PeerID(2), NickName: "p2", Ping: 5}
+	next.Peers.Items[domain.PeerID(2)] = state.PeerState{NickName: "p2", Ping: 5}
 
 	patch, err := cur.MakePatch(next)
 	if err != nil {
@@ -79,7 +79,8 @@ func TestRoomState_addPeer_roundTrip(t *testing.T) {
 		t.Fatal("peer 2 not in room after apply")
 	}
 	got := cur.Peers.Items[domain.PeerID(2)]
-	if !got.Equals(&state.PeerState{ID: domain.PeerID(2), NickName: "p2", Ping: 5}) {
+	want := state.PeerState{NickName: "p2", Ping: 5}
+	if !got.Equals(&want) {
 		t.Fatalf("peer = %#v", got)
 	}
 }
@@ -88,9 +89,8 @@ func TestRoomState_ApplyPatch_capacity(t *testing.T) {
 	t.Parallel()
 
 	cur := state.NewRoomState(domain.RoomID(1), 4, "x")
-	cap8 := 8
+	cap8 := int8(8)
 	patch := state.RoomStatePatch{
-		ID:       domain.RoomID(1),
 		Capacity: &cap8,
 	}
 

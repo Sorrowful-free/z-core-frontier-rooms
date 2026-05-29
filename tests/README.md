@@ -12,6 +12,7 @@ tests/
   adapter/reservation/  — слоты: Reserve / Admit / Revoke / State
   adapter/identity/     — Counter: AllocateRoomID / AllocatePeerID, wrap skip 0
   adapter/realtime/     — Room Join, policy без deadlock
+  adapter/realtime/codec/ — round-trip state/input/rpc/room wire codec
   adapter/registry/     — RoomRegistry, Shutdown
   usecase/room/         — Create, Delete, GetList, IssueTicket, JoinRoom, LeaveRoom (gomock)
   delivery/http/        — REST JSON (Fiber app.Test + in-memory adapters)
@@ -39,6 +40,7 @@ go test -race ./tests/...
 | `tests/delivery/errors` | `JoinRejectOpCode`, `ReservationRejectOpCode`, делегирование reservation в join, `InRoomErrorOpCode`, диапазоны `Is*OpCode` |
 | `tests/adapter/admission` | Round-trip ticket, invalid/expired token, invalid credentials |
 | `tests/adapter/realtime` | `OnJoin` → `room.Send` без deadlock; откат map при `ErrJoinDenied` |
+| `tests/adapter/realtime/codec` | Round-trip `InputStateCodec`, `RpcStateCodec`, `RoomStateCodec` (full + patch) |
 | `tests/adapter/registry` | `GetRoom` → `ErrRoomNotFound`; `Shutdown` |
 | `tests/adapter/reservation` | Reserve → Admit → Revoke; expiry sweep; идемпотентный `Revoke`; `State` (none / reserved / admitted) |
 | `tests/adapter/identity` | первый ID = 1; независимые room/peer; ctx cancel; wrap `MaxUint32` → 1; уникальность под конкуренцией |

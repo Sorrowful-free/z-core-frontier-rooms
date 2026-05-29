@@ -10,18 +10,16 @@ func TestComponentState_patchSingleValue_roundTrip(t *testing.T) {
 	t.Parallel()
 
 	cur := &state.ComponentState{
-		ID: state.ComponentID(3),
 		Values: *state.NewMapState[state.ValueId, state.ValueState](),
 	}
-	cur.Values.Items[state.ValueId(1)] = state.ValueState{ID: state.ValueId(1), Value: []byte{1, 2}}
-	cur.Values.Items[state.ValueId(2)] = state.ValueState{ID: state.ValueId(2), Value: []byte{9}}
+	cur.Values.Items[state.ValueId(1)] = state.ValueState([]byte{1, 2})
+	cur.Values.Items[state.ValueId(2)] = state.ValueState([]byte{9})
 
 	next := &state.ComponentState{
-		ID: state.ComponentID(3),
 		Values: *state.NewMapState[state.ValueId, state.ValueState](),
 	}
-	next.Values.Items[state.ValueId(1)] = state.ValueState{ID: state.ValueId(1), Value: []byte{1, 2, 3}}
-	next.Values.Items[state.ValueId(2)] = state.ValueState{ID: state.ValueId(2), Value: []byte{9}}
+	next.Values.Items[state.ValueId(1)] = state.ValueState([]byte{1, 2, 3})
+	next.Values.Items[state.ValueId(2)] = state.ValueState([]byte{9})
 
 	patch, err := cur.MakePatch(next)
 	if err != nil {
@@ -44,16 +42,14 @@ func TestComponentState_MakePatch_noChangesReturnsNil(t *testing.T) {
 	t.Parallel()
 
 	c := &state.ComponentState{
-		ID:     state.ComponentID(1),
 		Values: *state.NewMapState[state.ValueId, state.ValueState](),
 	}
-	c.Values.Items[state.ValueId(1)] = state.ValueState{ID: state.ValueId(1), Value: []byte{7}}
+	c.Values.Items[state.ValueId(1)] = state.ValueState([]byte{7})
 
 	other := &state.ComponentState{
-		ID:     state.ComponentID(1),
 		Values: *state.NewMapState[state.ValueId, state.ValueState](),
 	}
-	other.Values.Items[state.ValueId(1)] = state.ValueState{ID: state.ValueId(1), Value: []byte{7}}
+	other.Values.Items[state.ValueId(1)] = state.ValueState([]byte{7})
 
 	patch, err := c.MakePatch(other)
 	if err != nil {

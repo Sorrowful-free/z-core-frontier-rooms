@@ -65,7 +65,7 @@ func writePeerStatePatch(buf *bytes.Buffer, patch *state.PeerStatePatch) error {
 		}
 	}
 	if patch.Ping != nil {
-		if err := binary.Write(buf, binary.BigEndian, patch.Ping); err != nil {
+		if err := binary.Write(buf, binary.BigEndian, *patch.Ping); err != nil {
 			return err
 		}
 	}
