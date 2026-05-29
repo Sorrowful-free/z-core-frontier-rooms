@@ -1,14 +1,12 @@
 package state
 
 import (
-	"fmt"
-
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
 
 type RoomState struct {
 	ID       domain.RoomID
-	Capacity int
+	Capacity int8
 	Password string
 
 	Peers    MapState[domain.PeerID, PeerState]
@@ -17,15 +15,14 @@ type RoomState struct {
 }
 
 type RoomStatePatch struct {
-	ID       domain.RoomID
-	Capacity *int
+	Capacity *int8
 	Password *string
 	Peers    MapStatePatch[domain.PeerID, PeerState, PeerStatePatch]
 	Inputs   MapStatePatch[domain.PeerID, InputState, InputStatePatch]
 	Entities MapStatePatch[EntityID, EntityState, EntityStatePatch]
 }
 
-func NewRoomState(roomID domain.RoomID, capacity int, password string) *RoomState {
+func NewRoomState(roomID domain.RoomID, capacity int8, password string) *RoomState {
 	return &RoomState{
 		ID:       roomID,
 		Capacity: capacity,
@@ -37,9 +34,7 @@ func NewRoomState(roomID domain.RoomID, capacity int, password string) *RoomStat
 }
 
 func (s *RoomState) MakePatch(newRoomState *RoomState) (*RoomStatePatch, error) {
-	patch := &RoomStatePatch{
-		ID: s.ID,
-	}
+	patch := &RoomStatePatch{}
 
 	hasChanges := false
 	if s.Capacity != newRoomState.Capacity {
@@ -103,10 +98,6 @@ func (s *RoomState) MakePatch(newRoomState *RoomState) (*RoomStatePatch, error) 
 }
 
 func (s *RoomState) ApplyPatch(patch RoomStatePatch) error {
-	if !patch.ID.IsValid() || patch.ID != s.ID {
-		return fmt.Errorf("invalid room id: %d", patch.ID)
-	}
-
 	if patch.Capacity != nil && *patch.Capacity != s.Capacity {
 		s.Capacity = *patch.Capacity
 	}

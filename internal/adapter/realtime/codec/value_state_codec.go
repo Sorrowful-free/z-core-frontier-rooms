@@ -9,6 +9,18 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
 )
 
+func writeValueID(buf *bytes.Buffer, id state.ValueId) error {
+	return binary.Write(buf, binary.BigEndian, id)
+}
+
+func readValueID(buf *bytes.Buffer) (state.ValueId, error) {
+	var id state.ValueId
+	if err := binary.Read(buf, binary.BigEndian, &id); err != nil {
+		return state.ValueIdNone, err
+	}
+	return id, nil
+}
+
 func writeValueState(buf *bytes.Buffer, v *state.ValueState) error {
 	valueLen := len(*v)
 	if valueLen > math.MaxUint8 {

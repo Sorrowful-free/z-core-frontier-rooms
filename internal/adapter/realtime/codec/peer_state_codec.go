@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
 )
 
@@ -12,22 +13,29 @@ const (
 	PeerStateFlagsPing
 )
 
-type PeerStateCodec struct {
+func writePeerID(buf *bytes.Buffer, id domain.PeerID) error {
+	return binary.Write(buf, binary.BigEndian, id)
 }
 
-func (c *PeerStateCodec) Encode(peer *state.PeerState) ([]byte, error) {
-	buf := bytes.NewBuffer(make([]byte, 0, 128))
+func readPeerID(buf *bytes.Buffer) (domain.PeerID, error) {
+	var id domain.PeerID
+	if err := binary.Read(buf, binary.BigEndian, &id); err != nil {
+		return domain.PeerIDInvalid, err
+	}
+	return id, nil
+}
+
+func writePeerState(buf *bytes.Buffer, peer *state.PeerState) error {
 	if err := writeString(buf, peer.NickName); err != nil {
-		return nil, err
+		return err
 	}
 	if err := binary.Write(buf, binary.BigEndian, peer.Ping); err != nil {
-		return nil, err
+		return err
 	}
-	return buf.Bytes(), nil
+	return nil
 }
 
-func (c *PeerStateCodec) Decode(data []byte) (*state.PeerState, error) {
-	buf := bytes.NewBuffer(data)
+func readPeerState(buf *bytes.Buffer) (*state.PeerState, error) {
 	nickName, err := readString(buf)
 	if err != nil {
 		return nil, err
@@ -39,8 +47,7 @@ func (c *PeerStateCodec) Decode(data []byte) (*state.PeerState, error) {
 	return &state.PeerState{NickName: nickName, Ping: ping}, nil
 }
 
-func (c *PeerStateCodec) EncodePatch(patch *state.PeerStatePatch) ([]byte, error) {
-	buf := bytes.NewBuffer(make([]byte, 0, 128))
+func writePeerStatePatch(buf *bytes.Buffer, patch *state.PeerStatePatch) error {
 	flags := byte(0)
 	if patch.NickName != nil {
 		flags |= PeerStateFlagsNickName
@@ -50,23 +57,22 @@ func (c *PeerStateCodec) EncodePatch(patch *state.PeerStatePatch) ([]byte, error
 	}
 
 	if err := binary.Write(buf, binary.BigEndian, flags); err != nil {
-		return nil, err
+		return err
 	}
 	if patch.NickName != nil {
 		if err := writeString(buf, *patch.NickName); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	if patch.Ping != nil {
 		if err := binary.Write(buf, binary.BigEndian, patch.Ping); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return buf.Bytes(), nil
+	return nil
 }
 
-func (c *PeerStateCodec) DecodePatch(data []byte) (*state.PeerStatePatch, error) {
-	buf := bytes.NewBuffer(data)
+func readPeerStatePatch(buf *bytes.Buffer) (*state.PeerStatePatch, error) {
 	var flags byte
 	if err := binary.Read(buf, binary.BigEndian, &flags); err != nil {
 		return nil, err

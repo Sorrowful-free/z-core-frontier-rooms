@@ -4,15 +4,14 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"math"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
 )
 
-func writeMapState[K comparable, V any](buf *bytes.Buffer, m *state.MapState[K, V], writeKey func(K, *bytes.Buffer) error, writeValue func(V, *bytes.Buffer) error) error {
+func writeMapState[K comparable, V any](buf *bytes.Buffer, m *state.MapState[K, V], writeKey func(K, *bytes.Buffer) error, writeValue func(*V, *bytes.Buffer) error, maxCount uint16) error {
 	mapLen := len(m.Items)
 
-	if mapLen > math.MaxUint16 {
+	if mapLen > int(maxCount) {
 		return fmt.Errorf("map length too large: %d", mapLen)
 	}
 
@@ -23,19 +22,19 @@ func writeMapState[K comparable, V any](buf *bytes.Buffer, m *state.MapState[K, 
 		if err := writeKey(k, buf); err != nil {
 			return err
 		}
-		if err := writeValue(v, buf); err != nil {
+		if err := writeValue(&v, buf); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func readMapState[K comparable, V any](buf *bytes.Buffer, readKey func(*bytes.Buffer) (K, error), readValue func(*bytes.Buffer) (V, error)) (*state.MapState[K, V], error) {
+func readMapState[K comparable, V any](buf *bytes.Buffer, readKey func(*bytes.Buffer) (K, error), readValue func(*bytes.Buffer) (*V, error), maxCount uint16) (*state.MapState[K, V], error) {
 	mapLen := uint16(0)
 	if err := binary.Read(buf, binary.BigEndian, &mapLen); err != nil {
 		return nil, err
 	}
-	if mapLen > math.MaxUint16 {
+	if mapLen > maxCount {
 		return nil, fmt.Errorf("map length too large: %d", mapLen)
 	}
 	mapState := state.NewMapState[K, V]()
@@ -51,16 +50,16 @@ func readMapState[K comparable, V any](buf *bytes.Buffer, readKey func(*bytes.Bu
 		if _, ok := mapState.Items[key]; ok {
 			return nil, fmt.Errorf("key %v already exists in map", key)
 		}
-		mapState.Items[key] = value
+		mapState.Items[key] = *value
 	}
 	return mapState, nil
 }
 
-func writeMapPatсhState[K comparable, S any, P any](buf *bytes.Buffer, m *state.MapStatePatch[K, S, P], writeKey func(K, *bytes.Buffer) error, writeValue func(S, *bytes.Buffer) error, writePatch func(P, *bytes.Buffer) error) error {
+func writeMapPatсhState[K comparable, S any, P any](buf *bytes.Buffer, m *state.MapStatePatch[K, S, P], writeKey func(K, *bytes.Buffer) error, writeValue func(*S, *bytes.Buffer) error, writePatch func(*P, *bytes.Buffer) error, maxCount uint16) error {
 	addedLen := len(m.Added)
 	updatedLen := len(m.Updated)
 	removedLen := len(m.Removed)
-	if addedLen > math.MaxUint16 || updatedLen > math.MaxUint16 || removedLen > math.MaxUint16 {
+	if addedLen > int(maxCount) || updatedLen > int(maxCount) || removedLen > int(maxCount) {
 		return fmt.Errorf("map length too large: %d", addedLen+updatedLen+removedLen)
 	}
 
@@ -71,7 +70,7 @@ func writeMapPatсhState[K comparable, S any, P any](buf *bytes.Buffer, m *state
 		if err := writeKey(k, buf); err != nil {
 			return err
 		}
-		if err := writeValue(v, buf); err != nil {
+		if err := writeValue(&v, buf); err != nil {
 			return err
 		}
 	}
@@ -82,7 +81,7 @@ func writeMapPatсhState[K comparable, S any, P any](buf *bytes.Buffer, m *state
 		if err := writeKey(k, buf); err != nil {
 			return err
 		}
-		if err := writePatch(v, buf); err != nil {
+		if err := writePatch(&v, buf); err != nil {
 			return err
 		}
 	}
@@ -97,12 +96,12 @@ func writeMapPatсhState[K comparable, S any, P any](buf *bytes.Buffer, m *state
 	return nil
 }
 
-func readMapPathState[K comparable, S any, P any](buf *bytes.Buffer, readKey func(*bytes.Buffer) (K, error), readValue func(*bytes.Buffer) (S, error), readPatch func(*bytes.Buffer) (P, error)) (*state.MapStatePatch[K, S, P], error) {
+func readMapPatchState[K comparable, S any, P any](buf *bytes.Buffer, readKey func(*bytes.Buffer) (K, error), readValue func(*bytes.Buffer) (*S, error), readPatch func(*bytes.Buffer) (*P, error), maxCount uint16) (*state.MapStatePatch[K, S, P], error) {
 	addedLen := uint16(0)
 	if err := binary.Read(buf, binary.BigEndian, &addedLen); err != nil {
 		return nil, err
 	}
-	if addedLen > math.MaxUint16 {
+	if addedLen > maxCount {
 		return nil, fmt.Errorf("added length too large: %d", addedLen)
 	}
 	added := make(map[K]S)
@@ -118,13 +117,13 @@ func readMapPathState[K comparable, S any, P any](buf *bytes.Buffer, readKey fun
 		if _, ok := added[key]; ok {
 			return nil, fmt.Errorf("key %v already exists in map", key)
 		}
-		added[key] = value
+		added[key] = *value
 	}
 	updatedLen := uint16(0)
 	if err := binary.Read(buf, binary.BigEndian, &updatedLen); err != nil {
 		return nil, err
 	}
-	if updatedLen > math.MaxUint16 {
+	if updatedLen > maxCount {
 		return nil, fmt.Errorf("updated length too large: %d", updatedLen)
 	}
 	updated := make(map[K]P)
@@ -140,13 +139,13 @@ func readMapPathState[K comparable, S any, P any](buf *bytes.Buffer, readKey fun
 		if _, ok := updated[key]; ok {
 			return nil, fmt.Errorf("key %v already exists in map", key)
 		}
-		updated[key] = patch
+		updated[key] = *patch
 	}
 	removedLen := uint16(0)
 	if err := binary.Read(buf, binary.BigEndian, &removedLen); err != nil {
 		return nil, err
 	}
-	if removedLen > math.MaxUint16 {
+	if removedLen > maxCount {
 		return nil, fmt.Errorf("removed length too large: %d", removedLen)
 	}
 	removed := make([]K, 0)

@@ -26,7 +26,7 @@ func (r RpcID) IsValid() bool {
 type RpcState struct {
 	ID     RpcID
 	Target RpcTarget
-	Values []ValueState
+	Values MapState[ValueId, ValueState]
 
-	PeerID *domain.PeerID
+	PeerID domain.PeerID
 }
