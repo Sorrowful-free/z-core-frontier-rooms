@@ -1,12 +1,10 @@
 package state
 
 import (
-	"fmt"
-
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
 
-type EntityID uint32
+type EntityID uint16
 
 const (
 	EntityIDNone EntityID = 0
@@ -17,28 +15,21 @@ func (e EntityID) IsValid() bool {
 }
 
 type EntityState struct {
-	ID         EntityID
 	Owner      domain.PeerID
 	Components MapState[ComponentID, ComponentState]
 }
 
 type EntityStatePatch struct {
-	ID         EntityID
 	Owner      *domain.PeerID
 	Components MapStatePatch[ComponentID, ComponentState, ComponentStatePatch]
 }
 
 func (e *EntityState) Equals(other *EntityState, equals func(ComponentState, ComponentState) bool) bool {
-	return e.ID == other.ID && e.Owner == other.Owner && e.Components.Equals(&other.Components, equals)
+	return e.Owner == other.Owner && e.Components.Equals(&other.Components, equals)
 }
 
 func (e *EntityState) MakePatch(newEntityState *EntityState) (*EntityStatePatch, error) {
-	if !newEntityState.ID.IsValid() || newEntityState.ID != e.ID {
-		return nil, fmt.Errorf("entity id mismatch: %d != %d", newEntityState.ID, e.ID)
-	}
-
 	patch := &EntityStatePatch{
-		ID:         e.ID,
 		Components: *NewMapStatePatch[ComponentID, ComponentState, ComponentStatePatch](),
 	}
 
@@ -77,10 +68,6 @@ func (e *EntityState) MakePatch(newEntityState *EntityState) (*EntityStatePatch,
 }
 
 func (e *EntityState) ApplyPatch(patch EntityStatePatch) error {
-	if !patch.ID.IsValid() || patch.ID != e.ID {
-		return fmt.Errorf("invalid entity id: %d", patch.ID)
-	}
-
 	if patch.Owner != nil && *patch.Owner != e.Owner {
 		e.Owner = *patch.Owner
 	}

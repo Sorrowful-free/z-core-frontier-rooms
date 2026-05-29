@@ -8,8 +8,8 @@ type MapState[K comparable, T any] struct {
 	Items map[K]T
 }
 
-type MapStatePatch[K comparable, T any, P any] struct {
-	Added   map[K]T
+type MapStatePatch[K comparable, S any, P any] struct {
+	Added   map[K]S
 	Updated map[K]P
 	Removed []K
 }
@@ -29,24 +29,24 @@ func (m *MapState[K, T]) Equals(other *MapState[K, T], equals func(T, T) bool) b
 	return true
 }
 
-func NewMapState[K comparable, T any]() *MapState[K, T] {
-	return &MapState[K, T]{
-		Items: make(map[K]T),
+func NewMapState[K comparable, S any]() *MapState[K, S] {
+	return &MapState[K, S]{
+		Items: make(map[K]S),
 	}
 }
 
-func NewMapStatePatch[K comparable, T any, P any]() *MapStatePatch[K, T, P] {
-	return &MapStatePatch[K, T, P]{
-		Added:   make(map[K]T),
+func NewMapStatePatch[K comparable, S any, P any]() *MapStatePatch[K, S, P] {
+	return &MapStatePatch[K, S, P]{
+		Added:   make(map[K]S),
 		Updated: make(map[K]P),
 		Removed: make([]K, 0),
 	}
 }
 
-func MakeMapStatePatch[K comparable, T any, P any](oldMapState *MapState[K, T], newMapState *MapState[K, T], equals func(T, T) bool, patch func(T, T) (*P, error)) (*MapStatePatch[K, T, P], error) {
+func MakeMapStatePatch[K comparable, S any, P any](oldMapState *MapState[K, S], newMapState *MapState[K, S], equals func(S, S) bool, patch func(S, S) (*P, error)) (*MapStatePatch[K, S, P], error) {
 
-	patchState := &MapStatePatch[K, T, P]{
-		Added:   make(map[K]T),
+	patchState := &MapStatePatch[K, S, P]{
+		Added:   make(map[K]S),
 		Updated: make(map[K]P),
 		Removed: make([]K, 0),
 	}
@@ -84,7 +84,7 @@ func MakeMapStatePatch[K comparable, T any, P any](oldMapState *MapState[K, T], 
 	return patchState, nil
 }
 
-func ApplyMapStatePatch[K comparable, T any, P any](targetState *MapState[K, T], patchState MapStatePatch[K, T, P], apply func(T, P) (*T, error)) error {
+func ApplyMapStatePatch[K comparable, S any, P any](targetState *MapState[K, S], patchState MapStatePatch[K, S, P], apply func(S, P) (*S, error)) error {
 	for k, v := range patchState.Added {
 		if _, ok := targetState.Items[k]; ok {
 			return fmt.Errorf("key %v already exists in map", k)

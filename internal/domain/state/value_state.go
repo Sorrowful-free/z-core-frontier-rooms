@@ -12,11 +12,8 @@ func (f ValueId) IsValid() bool {
 	return f != ValueIdNone
 }
 
-type ValueState struct {
-	ID    ValueId
-	Value []byte
-}
+type ValueState []byte
 
 func (v *ValueState) Equals(other *ValueState) bool {
-	return v.ID == other.ID && slices.Equal(v.Value, other.Value)
+	return slices.Equal(*v, *other)
 }

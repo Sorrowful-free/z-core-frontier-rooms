@@ -1,9 +1,5 @@
 package state
 
-import (
-	"fmt"
-)
-
 type ComponentID byte
 
 const (
@@ -11,12 +7,10 @@ const (
 )
 
 type ComponentState struct {
-	ID     ComponentID
 	Values MapState[ValueId, ValueState]
 }
 
 type ComponentStatePatch struct {
-	ID     ComponentID
 	Values MapStatePatch[ValueId, ValueState, ValueState]
 }
 
@@ -25,16 +19,11 @@ func (c ComponentID) IsValid() bool {
 }
 
 func (c *ComponentState) Equals(other *ComponentState, equals func(ValueState, ValueState) bool) bool {
-	return c.ID == other.ID && c.Values.Equals(&other.Values, equals)
+	return c.Values.Equals(&other.Values, equals)
 }
 
 func (c *ComponentState) MakePatch(newComponentState *ComponentState) (*ComponentStatePatch, error) {
-	if !newComponentState.ID.IsValid() || newComponentState.ID != c.ID {
-		return nil, fmt.Errorf("component id mismatch: %d != %d", newComponentState.ID, c.ID)
-	}
-
 	patch := &ComponentStatePatch{
-		ID:     c.ID,
 		Values: *NewMapStatePatch[ValueId, ValueState, ValueState](),
 	}
 
@@ -55,10 +44,6 @@ func (c *ComponentState) MakePatch(newComponentState *ComponentState) (*Componen
 }
 
 func (c *ComponentState) ApplyPatch(patch ComponentStatePatch) error {
-	if !patch.ID.IsValid() || patch.ID != c.ID {
-		return fmt.Errorf("invalid component id: %d", patch.ID)
-	}
-
 	err := ApplyMapStatePatch(&c.Values, patch.Values, func(v1, v2 ValueState) (*ValueState, error) {
 		return &v2, nil
 	})

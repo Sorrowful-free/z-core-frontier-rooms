@@ -4,7 +4,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
 
-type RpcID uint32
+type RpcID byte
 
 type RpcTarget byte
 

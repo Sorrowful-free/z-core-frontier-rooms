@@ -1,4 +1,4 @@
-package roomstatecodec
+package codec
 
 import "github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
 
