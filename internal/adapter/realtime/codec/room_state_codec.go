@@ -55,21 +55,21 @@ func (c *RoomStateCodec) Encode(room *state.RoomState) ([]byte, error) {
 	if err := writeString(buf, room.Password); err != nil {
 		return nil, err
 	}
-	if err := writeMapState(buf, &room.Peers, func(k domain.PeerID, buf *bytes.Buffer) error {
+	if err := writeMapState(buf, room.Peers, func(k domain.PeerID, buf *bytes.Buffer) error {
 		return writePeerID(buf, k)
 	}, func(v *state.PeerState, buf *bytes.Buffer) error {
 		return writePeerState(buf, v)
 	}, RoomStateMaxPeers); err != nil {
 		return nil, err
 	}
-	if err := writeMapState(buf, &room.Inputs, func(k domain.PeerID, buf *bytes.Buffer) error {
+	if err := writeMapState(buf, room.Inputs, func(k domain.PeerID, buf *bytes.Buffer) error {
 		return writePeerID(buf, k)
 	}, func(v *state.InputState, buf *bytes.Buffer) error {
 		return writeInputState(buf, v)
 	}, RoomStateMaxInputs); err != nil {
 		return nil, err
 	}
-	if err := writeMapState(buf, &room.Entities, func(k state.EntityID, buf *bytes.Buffer) error {
+	if err := writeMapState(buf, room.Entities, func(k state.EntityID, buf *bytes.Buffer) error {
 		return writeEntityID(buf, k)
 	}, func(v *state.EntityState, buf *bytes.Buffer) error {
 		return writeEntityState(buf, v)
@@ -117,7 +117,7 @@ func (c *RoomStateCodec) Decode(data []byte) (*state.RoomState, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &state.RoomState{ID: id, Capacity: capacity, Password: password, Peers: *peers, Inputs: *inputs, Entities: *entities}, nil
+	return &state.RoomState{ID: id, Capacity: capacity, Password: password, Peers: peers, Inputs: inputs, Entities: entities}, nil
 }
 
 func (c *RoomStateCodec) EncodePatch(patch *state.RoomStatePatch) ([]byte, error) {
@@ -152,7 +152,7 @@ func (c *RoomStateCodec) EncodePatch(patch *state.RoomStatePatch) ([]byte, error
 		}
 	}
 	if flags&RoomStateFlagsPeers == RoomStateFlagsPeers {
-		if err := writeMapPatсhState(buf, &patch.Peers, func(k domain.PeerID, buf *bytes.Buffer) error {
+		if err := writeMapPatсhState(buf, patch.Peers, func(k domain.PeerID, buf *bytes.Buffer) error {
 			return writePeerID(buf, k)
 		}, func(s *state.PeerState, buf *bytes.Buffer) error {
 			return writePeerState(buf, s)
@@ -163,7 +163,7 @@ func (c *RoomStateCodec) EncodePatch(patch *state.RoomStatePatch) ([]byte, error
 		}
 	}
 	if flags&RoomStateFlagsInputs == RoomStateFlagsInputs {
-		if err := writeMapPatсhState(buf, &patch.Inputs, func(k domain.PeerID, buf *bytes.Buffer) error {
+		if err := writeMapPatсhState(buf, patch.Inputs, func(k domain.PeerID, buf *bytes.Buffer) error {
 			return writePeerID(buf, k)
 		}, func(s *state.InputState, buf *bytes.Buffer) error {
 			return writeInputState(buf, s)
@@ -174,7 +174,7 @@ func (c *RoomStateCodec) EncodePatch(patch *state.RoomStatePatch) ([]byte, error
 		}
 	}
 	if flags&RoomStateFlagsEntities == RoomStateFlagsEntities {
-		if err := writeMapPatсhState(buf, &patch.Entities, func(k state.EntityID, buf *bytes.Buffer) error {
+		if err := writeMapPatсhState(buf, patch.Entities, func(k state.EntityID, buf *bytes.Buffer) error {
 			return writeEntityID(buf, k)
 		}, func(s *state.EntityState, buf *bytes.Buffer) error {
 			return writeEntityState(buf, s)

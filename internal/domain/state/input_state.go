@@ -9,7 +9,7 @@ type InputStatePatch struct {
 }
 
 func (i *InputState) Equals(other *InputState, equals func(ValueState, ValueState) bool) bool {
-	return i.Values.Equals(&other.Values, equals)
+	return i.Values.Equals(other.Values, equals)
 }
 
 func (i *InputState) MakePatch(newInputState *InputState) (*InputStatePatch, error) {
@@ -17,7 +17,7 @@ func (i *InputState) MakePatch(newInputState *InputState) (*InputStatePatch, err
 	patch := &InputStatePatch{
 		Values: *NewMapStatePatch[ValueId, ValueState, ValueState](),
 	}
-	patchValues, err := MakeMapStatePatch(&i.Values, &newInputState.Values, func(v1, v2 ValueState) bool {
+	patchValues, err := MakeMapStatePatch(i.Values, newInputState.Values, func(v1, v2 ValueState) bool {
 		return v1.Equals(&v2)
 	}, func(v1, v2 ValueState) (*ValueState, error) {
 		return &v2, nil
@@ -33,7 +33,7 @@ func (i *InputState) MakePatch(newInputState *InputState) (*InputStatePatch, err
 }
 
 func (i *InputState) ApplyPatch(patch InputStatePatch) error {
-	err := ApplyMapStatePatch(&i.Values, patch.Values, func(v1, v2 ValueState) (*ValueState, error) {
+	err := ApplyMapStatePatch(i.Values, patch.Values, func(v1, v2 ValueState) (*ValueState, error) {
 		return &v2, nil
 	})
 	if err != nil {

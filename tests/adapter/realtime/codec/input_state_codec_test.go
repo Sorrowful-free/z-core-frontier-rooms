@@ -12,10 +12,10 @@ func TestInputStateCodec_roundTrip_full(t *testing.T) {
 
 	c := codec.NewInputStateCodec()
 	in := &state.InputState{
-		Values: *state.NewMapState[state.ValueId, state.ValueState](),
+		Values: state.NewMapState[state.ValueId, state.ValueState](),
 	}
-	in.Values.Items[state.ValueId(1)] = state.ValueState([]byte{9, 8})
-	in.Values.Items[state.ValueId(2)] = state.ValueState([]byte{0xFF})
+	in.Values[state.ValueId(1)] = state.ValueState([]byte{9, 8})
+	in.Values[state.ValueId(2)] = state.ValueState([]byte{0xFF})
 
 	data, err := c.Encode(in)
 	if err != nil {
@@ -26,7 +26,7 @@ func TestInputStateCodec_roundTrip_full(t *testing.T) {
 		t.Fatalf("Decode: %v", err)
 	}
 	if !inputEqual(in, got) {
-		t.Fatalf("got %#v, want %#v", got.Values.Items, in.Values.Items)
+		t.Fatalf("got %#v, want %#v", got.Values, in.Values)
 	}
 }
 
@@ -34,11 +34,11 @@ func TestInputStateCodec_roundTrip_patch(t *testing.T) {
 	t.Parallel()
 
 	c := codec.NewInputStateCodec()
-	cur := &state.InputState{Values: *state.NewMapState[state.ValueId, state.ValueState]()}
-	cur.Values.Items[state.ValueId(1)] = state.ValueState([]byte{1})
-	next := &state.InputState{Values: *state.NewMapState[state.ValueId, state.ValueState]()}
-	next.Values.Items[state.ValueId(1)] = state.ValueState([]byte{1, 2, 3})
-	next.Values.Items[state.ValueId(3)] = state.ValueState([]byte{7})
+	cur := &state.InputState{Values: state.NewMapState[state.ValueId, state.ValueState]()}
+	cur.Values[state.ValueId(1)] = state.ValueState([]byte{1})
+	next := &state.InputState{Values: state.NewMapState[state.ValueId, state.ValueState]()}
+	next.Values[state.ValueId(1)] = state.ValueState([]byte{1, 2, 3})
+	next.Values[state.ValueId(3)] = state.ValueState([]byte{7})
 
 	patch, err := cur.MakePatch(next)
 	if err != nil {
@@ -57,7 +57,7 @@ func TestInputStateCodec_roundTrip_patch(t *testing.T) {
 		t.Fatalf("ApplyPatch: %v", err)
 	}
 	if !inputEqual(next, cur) {
-		t.Fatalf("after apply: %#v", cur.Values.Items)
+		t.Fatalf("after apply: %#v", cur.Values)
 	}
 }
 

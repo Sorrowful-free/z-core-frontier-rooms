@@ -8,8 +8,8 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
 )
 
-func writeMapState[K comparable, V any](buf *bytes.Buffer, m *state.MapState[K, V], writeKey func(K, *bytes.Buffer) error, writeValue func(*V, *bytes.Buffer) error, maxCount uint16) error {
-	mapLen := len(m.Items)
+func writeMapState[K comparable, V any](buf *bytes.Buffer, m state.MapState[K, V], writeKey func(K, *bytes.Buffer) error, writeValue func(*V, *bytes.Buffer) error, maxCount uint16) error {
+	mapLen := len(m)
 
 	if mapLen > int(maxCount) {
 		return fmt.Errorf("map length too large: %d", mapLen)
@@ -18,7 +18,7 @@ func writeMapState[K comparable, V any](buf *bytes.Buffer, m *state.MapState[K, 
 	if err := binary.Write(buf, binary.BigEndian, uint16(mapLen)); err != nil {
 		return err
 	}
-	for k, v := range m.Items {
+	for k, v := range m {
 		if err := writeKey(k, buf); err != nil {
 			return err
 		}
@@ -29,7 +29,7 @@ func writeMapState[K comparable, V any](buf *bytes.Buffer, m *state.MapState[K, 
 	return nil
 }
 
-func readMapState[K comparable, V any](buf *bytes.Buffer, readKey func(*bytes.Buffer) (K, error), readValue func(*bytes.Buffer) (*V, error), maxCount uint16) (*state.MapState[K, V], error) {
+func readMapState[K comparable, V any](buf *bytes.Buffer, readKey func(*bytes.Buffer) (K, error), readValue func(*bytes.Buffer) (*V, error), maxCount uint16) (state.MapState[K, V], error) {
 	mapLen := uint16(0)
 	if err := binary.Read(buf, binary.BigEndian, &mapLen); err != nil {
 		return nil, err
@@ -47,15 +47,15 @@ func readMapState[K comparable, V any](buf *bytes.Buffer, readKey func(*bytes.Bu
 		if err != nil {
 			return nil, err
 		}
-		if _, ok := mapState.Items[key]; ok {
+		if _, ok := mapState[key]; ok {
 			return nil, fmt.Errorf("key %v already exists in map", key)
 		}
-		mapState.Items[key] = *value
+		mapState[key] = *value
 	}
 	return mapState, nil
 }
 
-func writeMapPatсhState[K comparable, S any, P any](buf *bytes.Buffer, m *state.MapStatePatch[K, S, P], writeKey func(K, *bytes.Buffer) error, writeValue func(*S, *bytes.Buffer) error, writePatch func(*P, *bytes.Buffer) error, maxCount uint16) error {
+func writeMapPatсhState[K comparable, S any, P any](buf *bytes.Buffer, m state.MapStatePatch[K, S, P], writeKey func(K, *bytes.Buffer) error, writeValue func(*S, *bytes.Buffer) error, writePatch func(*P, *bytes.Buffer) error, maxCount uint16) error {
 	addedLen := len(m.Added)
 	updatedLen := len(m.Updated)
 	removedLen := len(m.Removed)

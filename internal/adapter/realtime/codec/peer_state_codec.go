@@ -10,6 +10,7 @@ import (
 
 const (
 	PeerStateFlagsNickName = 1 << iota
+	PeerStateFlagsIsMaster
 	PeerStateFlagsPing
 )
 
@@ -29,6 +30,9 @@ func writePeerState(buf *bytes.Buffer, peer *state.PeerState) error {
 	if err := writeString(buf, peer.NickName); err != nil {
 		return err
 	}
+	if err := binary.Write(buf, binary.BigEndian, peer.IsMaster); err != nil {
+		return err
+	}
 	if err := binary.Write(buf, binary.BigEndian, peer.Ping); err != nil {
 		return err
 	}
@@ -40,17 +44,24 @@ func readPeerState(buf *bytes.Buffer) (*state.PeerState, error) {
 	if err != nil {
 		return nil, err
 	}
+	var isMaster bool
+	if err := binary.Read(buf, binary.BigEndian, &isMaster); err != nil {
+		return nil, err
+	}
 	var ping int64
 	if err := binary.Read(buf, binary.BigEndian, &ping); err != nil {
 		return nil, err
 	}
-	return &state.PeerState{NickName: nickName, Ping: ping}, nil
+	return &state.PeerState{NickName: nickName, IsMaster: isMaster, Ping: ping}, nil
 }
 
 func writePeerStatePatch(buf *bytes.Buffer, patch *state.PeerStatePatch) error {
 	flags := byte(0)
 	if patch.NickName != nil {
 		flags |= PeerStateFlagsNickName
+	}
+	if patch.IsMaster != nil {
+		flags |= PeerStateFlagsIsMaster
 	}
 	if patch.Ping != nil {
 		flags |= PeerStateFlagsPing
@@ -61,6 +72,11 @@ func writePeerStatePatch(buf *bytes.Buffer, patch *state.PeerStatePatch) error {
 	}
 	if patch.NickName != nil {
 		if err := writeString(buf, *patch.NickName); err != nil {
+			return err
+		}
+	}
+	if patch.IsMaster != nil {
+		if err := binary.Write(buf, binary.BigEndian, *patch.IsMaster); err != nil {
 			return err
 		}
 	}
@@ -85,6 +101,14 @@ func readPeerStatePatch(buf *bytes.Buffer) (*state.PeerStatePatch, error) {
 		}
 		nickName = &n
 	}
+	var isMaster *bool
+	if flags&PeerStateFlagsIsMaster == PeerStateFlagsIsMaster {
+		var im bool
+		if err := binary.Read(buf, binary.BigEndian, &im); err != nil {
+			return nil, err
+		}
+		isMaster = &im
+	}
 	var ping *int64
 	if flags&PeerStateFlagsPing == PeerStateFlagsPing {
 		var p int64
@@ -93,5 +117,5 @@ func readPeerStatePatch(buf *bytes.Buffer) (*state.PeerStatePatch, error) {
 		}
 		ping = &p
 	}
-	return &state.PeerStatePatch{NickName: nickName, Ping: ping}, nil
+	return &state.PeerStatePatch{NickName: nickName, IsMaster: isMaster, Ping: ping}, nil
 }

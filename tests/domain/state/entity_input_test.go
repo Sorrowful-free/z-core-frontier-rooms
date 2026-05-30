@@ -11,14 +11,14 @@ func TestInputState_valuePatch_roundTrip(t *testing.T) {
 	t.Parallel()
 
 	cur := &state.InputState{
-		Values: *state.NewMapState[state.ValueId, state.ValueState](),
+		Values: state.NewMapState[state.ValueId, state.ValueState](),
 	}
-	cur.Values.Items[state.ValueId(1)] = state.ValueState([]byte{1})
+	cur.Values[state.ValueId(1)] = state.ValueState([]byte{1})
 
 	next := &state.InputState{
-		Values: *state.NewMapState[state.ValueId, state.ValueState](),
+		Values: state.NewMapState[state.ValueId, state.ValueState](),
 	}
-	next.Values.Items[state.ValueId(1)] = state.ValueState([]byte{1, 2})
+	next.Values[state.ValueId(1)] = state.ValueState([]byte{1, 2})
 
 	patch, err := cur.MakePatch(next)
 	if err != nil {
@@ -33,7 +33,7 @@ func TestInputState_valuePatch_roundTrip(t *testing.T) {
 	}
 
 	if !cur.Equals(next, func(a, b state.ValueState) bool { return a.Equals(&b) }) {
-		t.Fatalf("input after apply = %#v, want %#v", cur.Values.Items, next.Values.Items)
+		t.Fatalf("input after apply = %#v, want %#v", cur.Values, next.Values)
 	}
 }
 
@@ -42,22 +42,22 @@ func TestEntityState_ownerAndComponentValue_roundTrip(t *testing.T) {
 
 	cur := &state.EntityState{
 		Owner:      domain.PeerID(1),
-		Components: *state.NewMapState[state.ComponentID, state.ComponentState](),
+		Components: state.NewMapState[state.ComponentID, state.ComponentState](),
 	}
-	cur.Components.Items[state.ComponentID(3)] = state.ComponentState{
-		Values: *state.NewMapState[state.ValueId, state.ValueState](),
+	cur.Components[state.ComponentID(3)] = state.ComponentState{
+		Values: state.NewMapState[state.ValueId, state.ValueState](),
 	}
-	cur.Components.Items[state.ComponentID(3)].Values.Items[state.ValueId(1)] =
+	cur.Components[state.ComponentID(3)].Values[state.ValueId(1)] =
 		state.ValueState([]byte{0})
 
 	next := &state.EntityState{
 		Owner:      domain.PeerID(2),
-		Components: *state.NewMapState[state.ComponentID, state.ComponentState](),
+		Components: state.NewMapState[state.ComponentID, state.ComponentState](),
 	}
-	next.Components.Items[state.ComponentID(3)] = state.ComponentState{
-		Values: *state.NewMapState[state.ValueId, state.ValueState](),
+	next.Components[state.ComponentID(3)] = state.ComponentState{
+		Values: state.NewMapState[state.ValueId, state.ValueState](),
 	}
-	next.Components.Items[state.ComponentID(3)].Values.Items[state.ValueId(1)] =
+	next.Components[state.ComponentID(3)].Values[state.ValueId(1)] =
 		state.ValueState([]byte{1})
 
 	patch, err := cur.MakePatch(next)
@@ -78,6 +78,6 @@ func TestEntityState_ownerAndComponentValue_roundTrip(t *testing.T) {
 	if !cur.Equals(next, func(c1, c2 state.ComponentState) bool {
 		return c1.Equals(&c2, func(v1, v2 state.ValueState) bool { return v1.Equals(&v2) })
 	}) {
-		t.Fatalf("entity after apply = owner %d components %#v", cur.Owner, cur.Components.Items)
+		t.Fatalf("entity after apply = owner %d components %#v", cur.Owner, cur.Components)
 	}
 }

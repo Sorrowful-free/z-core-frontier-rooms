@@ -25,7 +25,7 @@ type EntityStatePatch struct {
 }
 
 func (e *EntityState) Equals(other *EntityState, equals func(ComponentState, ComponentState) bool) bool {
-	return e.Owner == other.Owner && e.Components.Equals(&other.Components, equals)
+	return e.Owner == other.Owner && e.Components.Equals(other.Components, equals)
 }
 
 func (e *EntityState) MakePatch(newEntityState *EntityState) (*EntityStatePatch, error) {
@@ -40,7 +40,7 @@ func (e *EntityState) MakePatch(newEntityState *EntityState) (*EntityStatePatch,
 		hasChanges = true
 	}
 
-	patchComponents, err := MakeMapStatePatch(&e.Components, &newEntityState.Components, func(c1, c2 ComponentState) bool {
+	patchComponents, err := MakeMapStatePatch(e.Components, newEntityState.Components, func(c1, c2 ComponentState) bool {
 		return c1.Equals(&c2, func(v1, v2 ValueState) bool {
 			return v1.Equals(&v2)
 		})
@@ -72,7 +72,7 @@ func (e *EntityState) ApplyPatch(patch EntityStatePatch) error {
 		e.Owner = *patch.Owner
 	}
 
-	err := ApplyMapStatePatch(&e.Components, patch.Components, func(c1 ComponentState, c2 ComponentStatePatch) (*ComponentState, error) {
+	err := ApplyMapStatePatch(e.Components, patch.Components, func(c1 ComponentState, c2 ComponentStatePatch) (*ComponentState, error) {
 		err := c1.ApplyPatch(c2)
 		if err != nil {
 			return nil, err

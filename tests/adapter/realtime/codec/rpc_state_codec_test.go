@@ -15,10 +15,10 @@ func TestRpcStateCodec_roundTrip_withPeerID(t *testing.T) {
 	rpc := &state.RpcState{
 		ID:     state.RpcID(3),
 		Target: state.RpcTargetPeer,
-		Values: *state.NewMapState[state.ValueId, state.ValueState](),
+		Values: state.NewMapState[state.ValueId, state.ValueState](),
 		PeerID: domain.PeerID(42),
 	}
-	rpc.Values.Items[state.ValueId(1)] = state.ValueState([]byte{1, 2})
+	rpc.Values[state.ValueId(1)] = state.ValueState([]byte{1, 2})
 
 	data, err := c.Encode(rpc)
 	if err != nil {
@@ -31,10 +31,10 @@ func TestRpcStateCodec_roundTrip_withPeerID(t *testing.T) {
 	if got.ID != rpc.ID || got.Target != rpc.Target || got.PeerID != rpc.PeerID {
 		t.Fatalf("header: got id=%d target=%d peer=%d", got.ID, got.Target, got.PeerID)
 	}
-	wantV := rpc.Values.Items[state.ValueId(1)]
-	gotV := got.Values.Items[state.ValueId(1)]
-	if len(got.Values.Items) != 1 || !gotV.Equals(&wantV) {
-		t.Fatalf("values: %#v", got.Values.Items)
+	wantV := rpc.Values[state.ValueId(1)]
+	gotV := got.Values[state.ValueId(1)]
+	if len(got.Values) != 1 || !gotV.Equals(&wantV) {
+		t.Fatalf("values: %#v", got.Values)
 	}
 }
 
@@ -45,7 +45,7 @@ func TestRpcStateCodec_roundTrip_peerIDZero(t *testing.T) {
 	rpc := &state.RpcState{
 		ID:     state.RpcID(1),
 		Target: state.RpcTargetMaster,
-		Values: *state.NewMapState[state.ValueId, state.ValueState](),
+		Values: state.NewMapState[state.ValueId, state.ValueState](),
 		PeerID: domain.PeerID(0),
 	}
 

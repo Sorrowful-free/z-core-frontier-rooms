@@ -32,7 +32,7 @@ func readInputID(buf *bytes.Buffer) (domain.PeerID, error) {
 }
 
 func writeInputState(buf *bytes.Buffer, input *state.InputState) error {
-	if err := writeMapState(buf, &input.Values, func(k state.ValueId, buf *bytes.Buffer) error {
+	if err := writeMapState(buf, input.Values, func(k state.ValueId, buf *bytes.Buffer) error {
 		return binary.Write(buf, binary.BigEndian, k)
 	}, func(v *state.ValueState, buf *bytes.Buffer) error {
 		return writeValueState(buf, v)
@@ -59,11 +59,11 @@ func readInputState(buf *bytes.Buffer) (*state.InputState, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &state.InputState{Values: *values}, nil
+	return &state.InputState{Values: values}, nil
 }
 
 func writeInputStatePatch(buf *bytes.Buffer, patch *state.InputStatePatch) error {
-	if err := writeMapPatсhState(buf, &patch.Values, func(k state.ValueId, buf *bytes.Buffer) error {
+	if err := writeMapPatсhState(buf, patch.Values, func(k state.ValueId, buf *bytes.Buffer) error {
 		return binary.Write(buf, binary.BigEndian, k)
 	}, func(v *state.ValueState, buf *bytes.Buffer) error {
 		return writeValueState(buf, v)

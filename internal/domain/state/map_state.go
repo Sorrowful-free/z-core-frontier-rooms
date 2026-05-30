@@ -4,9 +4,7 @@ import (
 	"fmt"
 )
 
-type MapState[K comparable, T any] struct {
-	Items map[K]T
-}
+type MapState[K comparable, T any] map[K]T
 
 type MapStatePatch[K comparable, S any, P any] struct {
 	Added   map[K]S
@@ -14,25 +12,23 @@ type MapStatePatch[K comparable, S any, P any] struct {
 	Removed []K
 }
 
-func (m *MapState[K, T]) Equals(other *MapState[K, T], equals func(T, T) bool) bool {
-	if len(m.Items) != len(other.Items) {
+func (m MapState[K, T]) Equals(other MapState[K, T], equals func(T, T) bool) bool {
+	if len(m) != len(other) {
 		return false
 	}
-	for k, v := range m.Items {
-		if _, ok := other.Items[k]; !ok {
+	for k, v := range m {
+		if _, ok := other[k]; !ok {
 			return false
 		}
-		if !equals(v, other.Items[k]) {
+		if !equals(v, other[k]) {
 			return false
 		}
 	}
 	return true
 }
 
-func NewMapState[K comparable, S any]() *MapState[K, S] {
-	return &MapState[K, S]{
-		Items: make(map[K]S),
-	}
+func NewMapState[K comparable, S any]() MapState[K, S] {
+	return make(MapState[K, S])
 }
 
 func NewMapStatePatch[K comparable, S any, P any]() *MapStatePatch[K, S, P] {
@@ -43,7 +39,7 @@ func NewMapStatePatch[K comparable, S any, P any]() *MapStatePatch[K, S, P] {
 	}
 }
 
-func MakeMapStatePatch[K comparable, S any, P any](oldMapState *MapState[K, S], newMapState *MapState[K, S], equals func(S, S) bool, patch func(S, S) (*P, error)) (*MapStatePatch[K, S, P], error) {
+func MakeMapStatePatch[K comparable, S any, P any](oldMapState MapState[K, S], newMapState MapState[K, S], equals func(S, S) bool, patch func(S, S) (*P, error)) (*MapStatePatch[K, S, P], error) {
 
 	patchState := &MapStatePatch[K, S, P]{
 		Added:   make(map[K]S),
@@ -51,16 +47,16 @@ func MakeMapStatePatch[K comparable, S any, P any](oldMapState *MapState[K, S], 
 		Removed: make([]K, 0),
 	}
 	hasChanges := false
-	for k, v := range newMapState.Items {
-		if _, ok := oldMapState.Items[k]; !ok {
+	for k, v := range newMapState {
+		if _, ok := oldMapState[k]; !ok {
 			patchState.Added[k] = v
 			hasChanges = true
 		}
 	}
-	for k, v := range oldMapState.Items {
-		if _, ok := newMapState.Items[k]; ok {
-			if !equals(v, newMapState.Items[k]) {
-				p, err := patch(oldMapState.Items[k], newMapState.Items[k])
+	for k, v := range oldMapState {
+		if _, ok := newMapState[k]; ok {
+			if !equals(v, newMapState[k]) {
+				p, err := patch(oldMapState[k], newMapState[k])
 				if err != nil {
 					return nil, err
 				}
@@ -72,8 +68,8 @@ func MakeMapStatePatch[K comparable, S any, P any](oldMapState *MapState[K, S], 
 			}
 		}
 	}
-	for k, _ := range oldMapState.Items {
-		if _, ok := newMapState.Items[k]; !ok {
+	for k, _ := range oldMapState {
+		if _, ok := newMapState[k]; !ok {
 			patchState.Removed = append(patchState.Removed, k)
 			hasChanges = true
 		}
@@ -84,31 +80,31 @@ func MakeMapStatePatch[K comparable, S any, P any](oldMapState *MapState[K, S], 
 	return patchState, nil
 }
 
-func ApplyMapStatePatch[K comparable, S any, P any](targetState *MapState[K, S], patchState MapStatePatch[K, S, P], apply func(S, P) (*S, error)) error {
+func ApplyMapStatePatch[K comparable, S any, P any](targetState MapState[K, S], patchState MapStatePatch[K, S, P], apply func(S, P) (*S, error)) error {
 	for k, v := range patchState.Added {
-		if _, ok := targetState.Items[k]; ok {
+		if _, ok := targetState[k]; ok {
 			return fmt.Errorf("key %v already exists in map", k)
 		}
-		targetState.Items[k] = v
+		targetState[k] = v
 	}
 	for k, v := range patchState.Updated {
-		if _, ok := targetState.Items[k]; !ok {
+		if _, ok := targetState[k]; !ok {
 			return fmt.Errorf("key %v not found in map", k)
 		}
-		newItem, err := apply(targetState.Items[k], v)
+		newItem, err := apply(targetState[k], v)
 		if err != nil {
 			return err
 		}
 		if newItem == nil {
 			return fmt.Errorf("apply function returned nil for key %v", k)
 		}
-		targetState.Items[k] = *newItem
+		targetState[k] = *newItem
 	}
 	for _, k := range patchState.Removed {
-		if _, ok := targetState.Items[k]; !ok {
+		if _, ok := targetState[k]; !ok {
 			return fmt.Errorf("key %v not found in map", k)
 		}
-		delete(targetState.Items, k)
+		delete(targetState, k)
 	}
 
 	return nil

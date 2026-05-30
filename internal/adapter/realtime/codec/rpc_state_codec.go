@@ -46,7 +46,7 @@ func (c *RpcStateCodec) Encode(rpc *state.RpcState) ([]byte, error) {
 	if err := writeRpcTarget(buf, rpc.Target); err != nil {
 		return nil, err
 	}
-	if err := writeMapState(buf, &rpc.Values, func(k state.ValueId, buf *bytes.Buffer) error {
+	if err := writeMapState(buf, rpc.Values, func(k state.ValueId, buf *bytes.Buffer) error {
 		return binary.Write(buf, binary.BigEndian, k)
 	}, func(v *state.ValueState, buf *bytes.Buffer) error {
 		return writeValueState(buf, v)
@@ -82,5 +82,5 @@ func (c *RpcStateCodec) Decode(data []byte) (*state.RpcState, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &state.RpcState{ID: id, Target: target, Values: *values, PeerID: peerID}, nil
+	return &state.RpcState{ID: id, Target: target, Values: values, PeerID: peerID}, nil
 }

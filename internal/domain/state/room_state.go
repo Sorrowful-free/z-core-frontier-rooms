@@ -27,9 +27,9 @@ func NewRoomState(roomID domain.RoomID, capacity int8, password string) *RoomSta
 		ID:       roomID,
 		Capacity: capacity,
 		Password: password,
-		Peers:    *NewMapState[domain.PeerID, PeerState](),
-		Inputs:   *NewMapState[domain.PeerID, InputState](),
-		Entities: *NewMapState[EntityID, EntityState](),
+		Peers:    NewMapState[domain.PeerID, PeerState](),
+		Inputs:   NewMapState[domain.PeerID, InputState](),
+		Entities: NewMapState[EntityID, EntityState](),
 	}
 }
 
@@ -46,7 +46,7 @@ func (s *RoomState) MakePatch(newRoomState *RoomState) (*RoomStatePatch, error) 
 		hasChanges = true
 	}
 
-	patchPeers, err := MakeMapStatePatch(&s.Peers, &newRoomState.Peers, func(p1, p2 PeerState) bool {
+	patchPeers, err := MakeMapStatePatch(s.Peers, newRoomState.Peers, func(p1, p2 PeerState) bool {
 		return p1.Equals(&p2)
 	}, func(p1, p2 PeerState) (*PeerStatePatch, error) {
 		return p1.MakePatch(&p2)
@@ -59,7 +59,7 @@ func (s *RoomState) MakePatch(newRoomState *RoomState) (*RoomStatePatch, error) 
 		hasChanges = true
 	}
 
-	patchInputs, err := MakeMapStatePatch(&s.Inputs, &newRoomState.Inputs, func(i1, i2 InputState) bool {
+	patchInputs, err := MakeMapStatePatch(s.Inputs, newRoomState.Inputs, func(i1, i2 InputState) bool {
 		return i1.Equals(&i2, func(v1, v2 ValueState) bool {
 			return v1.Equals(&v2)
 		})
@@ -74,7 +74,7 @@ func (s *RoomState) MakePatch(newRoomState *RoomState) (*RoomStatePatch, error) 
 		hasChanges = true
 	}
 
-	patchEntities, err := MakeMapStatePatch(&s.Entities, &newRoomState.Entities, func(e1, e2 EntityState) bool {
+	patchEntities, err := MakeMapStatePatch(s.Entities, newRoomState.Entities, func(e1, e2 EntityState) bool {
 		return e1.Equals(&e2, func(c1, c2 ComponentState) bool {
 			return c1.Equals(&c2, func(v1, v2 ValueState) bool {
 				return v1.Equals(&v2)
@@ -105,7 +105,7 @@ func (s *RoomState) ApplyPatch(patch RoomStatePatch) error {
 		s.Password = *patch.Password
 	}
 
-	err := ApplyMapStatePatch(&s.Peers, patch.Peers, func(p1 PeerState, p2 PeerStatePatch) (*PeerState, error) {
+	err := ApplyMapStatePatch(s.Peers, patch.Peers, func(p1 PeerState, p2 PeerStatePatch) (*PeerState, error) {
 		err := p1.ApplyPatch(p2)
 		if err != nil {
 			return nil, err
@@ -116,7 +116,7 @@ func (s *RoomState) ApplyPatch(patch RoomStatePatch) error {
 		return err
 	}
 
-	err = ApplyMapStatePatch(&s.Inputs, patch.Inputs, func(i1 InputState, i2 InputStatePatch) (*InputState, error) {
+	err = ApplyMapStatePatch(s.Inputs, patch.Inputs, func(i1 InputState, i2 InputStatePatch) (*InputState, error) {
 		err := i1.ApplyPatch(i2)
 		if err != nil {
 			return nil, err
@@ -127,7 +127,7 @@ func (s *RoomState) ApplyPatch(patch RoomStatePatch) error {
 		return err
 	}
 
-	err = ApplyMapStatePatch(&s.Entities, patch.Entities, func(e1 EntityState, e2 EntityStatePatch) (*EntityState, error) {
+	err = ApplyMapStatePatch(s.Entities, patch.Entities, func(e1 EntityState, e2 EntityStatePatch) (*EntityState, error) {
 		err := e1.ApplyPatch(e2)
 		if err != nil {
 			return nil, err

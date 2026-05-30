@@ -32,7 +32,7 @@ func writeEntityState(buf *bytes.Buffer, entity *state.EntityState) error {
 	if err := writePeerID(buf, entity.Owner); err != nil {
 		return err
 	}
-	return writeMapState(buf, &entity.Components, func(k state.ComponentID, buf *bytes.Buffer) error {
+	return writeMapState(buf, entity.Components, func(k state.ComponentID, buf *bytes.Buffer) error {
 		return writeComponentID(buf, k)
 	}, func(v *state.ComponentState, buf *bytes.Buffer) error {
 		return writeComponentState(buf, v)
@@ -52,7 +52,7 @@ func readEntityState(buf *bytes.Buffer) (*state.EntityState, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &state.EntityState{Owner: owner, Components: *components}, nil
+	return &state.EntityState{Owner: owner, Components: components}, nil
 }
 
 func writeEntityStatePatch(buf *bytes.Buffer, patch *state.EntityStatePatch) error {
@@ -74,7 +74,7 @@ func writeEntityStatePatch(buf *bytes.Buffer, patch *state.EntityStatePatch) err
 	}
 
 	if flags&EntityStateFlagsComponents == EntityStateFlagsComponents {
-		return writeMapPatсhState(buf, &patch.Components, func(k state.ComponentID, buf *bytes.Buffer) error {
+		return writeMapPatсhState(buf, patch.Components, func(k state.ComponentID, buf *bytes.Buffer) error {
 			return writeComponentID(buf, k)
 		}, func(c *state.ComponentState, buf *bytes.Buffer) error {
 			return writeComponentState(buf, c)
