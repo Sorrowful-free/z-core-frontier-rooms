@@ -1,4 +1,4 @@
-package policy
+package relay
 
 import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"

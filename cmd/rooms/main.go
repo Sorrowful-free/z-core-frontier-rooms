@@ -13,7 +13,6 @@ import (
 	identityadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/identity"
 	zaplog "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/zap"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/registry"
 	reservationadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"

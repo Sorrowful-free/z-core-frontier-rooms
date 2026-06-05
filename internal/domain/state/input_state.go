@@ -32,6 +32,12 @@ func (i *InputState) MakePatch(newInputState *InputState) (*InputStatePatch, err
 	return patch, nil
 }
 
+func (i InputState) Clone() InputState {
+	return InputState{
+		Values: CloneMapState(i.Values, func(v ValueState) ValueState { return v.Clone() }),
+	}
+}
+
 func (i *InputState) ApplyPatch(patch InputStatePatch) error {
 	err := ApplyMapStatePatch(i.Values, patch.Values, func(v1, v2 ValueState) (*ValueState, error) {
 		return &v2, nil

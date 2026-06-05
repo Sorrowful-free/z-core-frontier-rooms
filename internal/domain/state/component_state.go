@@ -43,6 +43,12 @@ func (c *ComponentState) MakePatch(newComponentState *ComponentState) (*Componen
 	return patch, nil
 }
 
+func (c ComponentState) Clone() ComponentState {
+	return ComponentState{
+		Values: CloneMapState(c.Values, func(v ValueState) ValueState { return v.Clone() }),
+	}
+}
+
 func (c *ComponentState) ApplyPatch(patch ComponentStatePatch) error {
 	err := ApplyMapStatePatch(c.Values, patch.Values, func(v1, v2 ValueState) (*ValueState, error) {
 		return &v2, nil

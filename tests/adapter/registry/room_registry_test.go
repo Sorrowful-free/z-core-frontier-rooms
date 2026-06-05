@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	adapterpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy"
-	adapterrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
-	adapterregistry "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/registry"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/stdlib"
+	adapterrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
+	adapterpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy/relay"
+	adapterregistry "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/registry"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
 

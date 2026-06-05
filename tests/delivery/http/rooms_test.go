@@ -15,8 +15,8 @@ import (
 	admissionadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/admission"
 	identityadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/identity"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/stdlib"
-	adapterpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy"
 	adapterrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
+	adapterpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy/relay"
 	adapterregistry "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/registry"
 	adapterreservation "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
 	deliveryhttp "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/http"
@@ -317,7 +317,6 @@ func TestHTTP_IssueTicketReservationFull(t *testing.T) {
 	}
 	assertErrorCode(t, body, "reservation_full")
 }
-
 
 func TestHTTP_RoomPasswordOnCreateIssueDelete(t *testing.T) {
 	t.Parallel()

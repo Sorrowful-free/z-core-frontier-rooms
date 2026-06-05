@@ -1,4 +1,4 @@
-package policy
+package state
 
 import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"

@@ -1,6 +1,8 @@
 package state
 
 import (
+	"maps"
+
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
 
@@ -139,4 +141,20 @@ func (s *RoomState) ApplyPatch(patch RoomStatePatch) error {
 	}
 
 	return nil
+}
+
+// Clone returns a deep copy safe for snapshot-before-mutate (e.g. MakePatch).
+func (s *RoomState) Clone() *RoomState {
+	peers := make(MapState[domain.PeerID, PeerState], len(s.Peers))
+	maps.Copy(peers, s.Peers)
+	inputs := CloneMapState(s.Inputs, func(i InputState) InputState { return i.Clone() })
+	entities := CloneMapState(s.Entities, func(e EntityState) EntityState { return e.Clone() })
+	return &RoomState{
+		ID:       s.ID,
+		Capacity: s.Capacity,
+		Password: s.Password,
+		Peers:    peers,
+		Inputs:   inputs,
+		Entities: entities,
+	}
 }

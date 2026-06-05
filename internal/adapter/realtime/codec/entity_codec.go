@@ -10,11 +10,65 @@ import (
 
 const (
 	EntityStateMaxComponents = 64
+	EntitiesStateMaxEntities = 65535
 )
 const (
 	EntityStateFlagsOwner = 1 << iota
 	EntityStateFlagsComponents
 )
+
+type EntitiesStateCodec struct {
+}
+
+func NewEntitiesStateCodec() *EntitiesStateCodec {
+	return &EntitiesStateCodec{}
+}
+
+func (c *EntitiesStateCodec) Encode(entities state.EntitiesState) ([]byte, error) {
+	buf := bytes.NewBuffer(make([]byte, 0, 1024))
+	if err := writeMapState(buf, entities, func(k state.EntityID, buf *bytes.Buffer) error {
+		return writeEntityID(buf, k)
+	}, func(v *state.EntityState, buf *bytes.Buffer) error {
+		return writeEntityState(buf, v)
+	}, EntitiesStateMaxEntities); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (c *EntitiesStateCodec) Decode(data []byte) (state.EntitiesState, error) {
+	buf := bytes.NewBuffer(data)
+	return readMapState(buf, func(buf *bytes.Buffer) (state.EntityID, error) {
+		return readEntityID(buf)
+	}, func(buf *bytes.Buffer) (*state.EntityState, error) {
+		return readEntityState(buf)
+	}, EntitiesStateMaxEntities)
+}
+
+func (c *EntitiesStateCodec) EncodePatch(entitiesPatch *state.EntitiesStatePatch) ([]byte, error) {
+	buf := bytes.NewBuffer(make([]byte, 0, 1024))
+	if err := writeMapPatсhState(buf, *entitiesPatch, func(k state.EntityID, buf *bytes.Buffer) error {
+		return writeEntityID(buf, k)
+	}, func(v *state.EntityState, buf *bytes.Buffer) error {
+		return writeEntityState(buf, v)
+	}, func(v *state.EntityStatePatch, buf *bytes.Buffer) error {
+		return writeEntityStatePatch(buf, v)
+	}, EntitiesStateMaxEntities); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (c *EntitiesStateCodec) DecodePatch(data []byte) (*state.EntitiesStatePatch, error) {
+	buf := bytes.NewBuffer(data)
+	return readMapPatchState(buf, func(buf *bytes.Buffer) (state.EntityID, error) {
+		return readEntityID(buf)
+	}, func(buf *bytes.Buffer) (*state.EntityState, error) {
+		return readEntityState(buf)
+	}, func(buf *bytes.Buffer) (*state.EntityStatePatch, error) {
+		return readEntityStatePatch(buf)
+	}, EntitiesStateMaxEntities)
+}
 
 func writeEntityID(buf *bytes.Buffer, id state.EntityID) error {
 	return binary.Write(buf, binary.BigEndian, id)

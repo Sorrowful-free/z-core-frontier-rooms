@@ -1,6 +1,9 @@
 package state
 
-import "slices"
+import (
+	"bytes"
+	"slices"
+)
 
 type ValueId byte
 
@@ -16,4 +19,9 @@ type ValueState []byte
 
 func (v *ValueState) Equals(other *ValueState) bool {
 	return slices.Equal(*v, *other)
+}
+
+// Clone returns a deep copy of opaque value bytes.
+func (v ValueState) Clone() ValueState {
+	return bytes.Clone(v)
 }

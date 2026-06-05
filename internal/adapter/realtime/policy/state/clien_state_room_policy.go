@@ -1,0 +1,100 @@
+package state
+
+import (
+	"fmt"
+
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
+)
+
+func (p *StateRoomPolicy) onClientFullEntities(roomEvent events.RoomEvent) error {
+
+	if roomEvent.PeerID != p.master.GetID() {
+		return fmt.Errorf("peer not master: %d", roomEvent.PeerID)
+	}
+
+	full, err := p.stateCodec.Decode(roomEvent.Frame.Payload)
+	if err != nil {
+		return err
+	}
+	p.state.Entities = full.Entities
+	return nil
+}
+
+func (p *StateRoomPolicy) onClientPatchEntities(roomEvent events.RoomEvent) error {
+
+	if roomEvent.PeerID != p.master.GetID() {
+		return fmt.Errorf("peer not master: %d", roomEvent.PeerID)
+	}
+
+	patch, err := p.stateCodec.DecodePatch(roomEvent.Frame.Payload)
+	if err != nil {
+		return err
+	}
+	p.state.ApplyPatch(*patch)
+	return nil
+}
+
+func (p *StateRoomPolicy) onClientFullInput(roomEvent events.RoomEvent) error {
+	full, err := p.inputCodec.Decode(roomEvent.Frame.Payload)
+	if err != nil {
+		return err
+	}
+
+	return p.prepareAndSendRoomStatePatch(func(roomState *state.RoomState) error {
+		roomState.Inputs[roomEvent.PeerID] = *full
+		return nil
+	})
+}
+
+func (p *StateRoomPolicy) onClientPatchInput(roomEvent events.RoomEvent) error {
+	patch, err := p.inputCodec.DecodePatch(roomEvent.Frame.Payload)
+	if err != nil {
+		return err
+	}
+	peerID := roomEvent.PeerID
+
+	return p.prepareAndSendRoomStatePatch(func(roomState *state.RoomState) error {
+		inputState, ok := roomState.Inputs[peerID]
+		if !ok {
+			inputState = state.InputState{}
+		}
+		err := inputState.ApplyPatch(*patch)
+		if err != nil {
+			return err
+		}
+		roomState.Inputs[peerID] = inputState
+		return nil
+	})
+}
+
+func (p *StateRoomPolicy) onClientRpc(roomEvent events.RoomEvent) error {
+
+	payload := roomEvent.Frame.Payload
+	rpc, err := p.rpcCodec.Decode(payload)
+	if err != nil {
+		return err
+	}
+
+	senderPeerId := roomEvent.PeerID
+
+	peerEvent := events.PeerEvent{
+		ExcludePeerID: senderPeerId,
+		Frame: domain.Frame{
+			OpCode:  state.OpCodeRpc,
+			Payload: payload,
+		}}
+	rpcTarget := rpc.Target
+	rpcPeerID := rpc.PeerID
+
+	if rpcTarget == state.RpcTargetPeer && rpcPeerID.IsValid() && rpcPeerID != p.master.GetID() {
+		peerEvent.PeerID = rpcPeerID
+	} else if rpcTarget == state.RpcTargetMaster && p.master != nil && rpcPeerID == p.master.GetID() {
+		peerEvent.PeerID = rpcPeerID
+	} else if rpcTarget == state.RpcTargetAll && p.master != nil {
+		peerEvent.PeerID = domain.PeerIDInvalid
+	}
+
+	return p.room.Send(peerEvent)
+}

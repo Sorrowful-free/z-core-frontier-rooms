@@ -31,6 +31,15 @@ func NewMapState[K comparable, S any]() MapState[K, S] {
 	return make(MapState[K, S])
 }
 
+// CloneMapState copies map keys and clones each value with cloneItem.
+func CloneMapState[K comparable, T any](m MapState[K, T], cloneItem func(T) T) MapState[K, T] {
+	out := make(MapState[K, T], len(m))
+	for k, v := range m {
+		out[k] = cloneItem(v)
+	}
+	return out
+}
+
 func NewMapStatePatch[K comparable, S any, P any]() *MapStatePatch[K, S, P] {
 	return &MapStatePatch[K, S, P]{
 		Added:   make(map[K]S),

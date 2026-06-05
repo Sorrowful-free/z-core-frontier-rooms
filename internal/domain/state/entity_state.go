@@ -24,6 +24,10 @@ type EntityStatePatch struct {
 	Components MapStatePatch[ComponentID, ComponentState, ComponentStatePatch]
 }
 
+type EntitiesState = MapState[EntityID, EntityState]
+
+type EntitiesStatePatch = MapStatePatch[EntityID, EntityState, EntityStatePatch]
+
 func (e *EntityState) Equals(other *EntityState, equals func(ComponentState, ComponentState) bool) bool {
 	return e.Owner == other.Owner && e.Components.Equals(other.Components, equals)
 }
@@ -65,6 +69,13 @@ func (e *EntityState) MakePatch(newEntityState *EntityState) (*EntityStatePatch,
 	}
 
 	return patch, nil
+}
+
+func (e EntityState) Clone() EntityState {
+	return EntityState{
+		Owner:      e.Owner,
+		Components: CloneMapState(e.Components, func(c ComponentState) ComponentState { return c.Clone() }),
+	}
 }
 
 func (e *EntityState) ApplyPatch(patch EntityStatePatch) error {
