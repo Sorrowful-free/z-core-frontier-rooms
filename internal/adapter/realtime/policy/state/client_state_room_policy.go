@@ -65,7 +65,7 @@ func (p *StateRoomPolicy) onClientPatchInput(roomEvent events.RoomEvent) error {
 	return p.prepareAndSendRoomStatePatch(func(roomState *state.RoomState) error {
 		inputState, ok := roomState.Inputs[peerID]
 		if !ok {
-			inputState = state.InputState{}
+			inputState = state.InputState{Values: state.NewMapState[state.ValueId, state.ValueState]()}
 		}
 		err := inputState.ApplyPatch(*patch)
 		if err != nil {
