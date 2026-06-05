@@ -13,6 +13,7 @@ import (
 	identityadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/identity"
 	zaplog "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/zap"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
+	statepolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy/state"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/registry"
 	reservationadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"
@@ -47,7 +48,7 @@ func run() error {
 	fiberApp := fiber.New()
 	fiberApp.Use(fibzap.New(fibzap.Config{Logger: z}))
 
-	roomPolicyFactory := policy.NewRelayRoomPolicyFactory(zaplog.NewFrom(z, "rooms policy factory"))
+	roomPolicyFactory := statepolicy.NewStateRoomPolicyFactory(zaplog.NewFrom(z, "rooms policy factory"))
 	roomFactory := realtime.NewRoomFactory(zaplog.NewFrom(z, "rooms factory"), roomPolicyFactory)
 	peerFactory := realtime.NewPeerFactory(zaplog.NewFrom(z, "peer factory"))
 

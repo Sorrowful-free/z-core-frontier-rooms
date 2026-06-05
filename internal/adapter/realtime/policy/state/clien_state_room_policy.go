@@ -9,31 +9,33 @@ import (
 )
 
 func (p *StateRoomPolicy) onClientFullEntities(roomEvent events.RoomEvent) error {
-
-	if roomEvent.PeerID != p.master.GetID() {
+	if p.master == nil || roomEvent.PeerID != p.master.GetID() {
 		return fmt.Errorf("peer not master: %d", roomEvent.PeerID)
 	}
 
-	full, err := p.stateCodec.Decode(roomEvent.Frame.Payload)
+	full, err := p.entitiesCodec.Decode(roomEvent.Frame.Payload)
 	if err != nil {
 		return err
 	}
-	p.state.Entities = full.Entities
+	p.state.Entities = full
 	return nil
 }
 
 func (p *StateRoomPolicy) onClientPatchEntities(roomEvent events.RoomEvent) error {
-
-	if roomEvent.PeerID != p.master.GetID() {
+	if p.master == nil || roomEvent.PeerID != p.master.GetID() {
 		return fmt.Errorf("peer not master: %d", roomEvent.PeerID)
 	}
 
-	patch, err := p.stateCodec.DecodePatch(roomEvent.Frame.Payload)
+	patch, err := p.entitiesCodec.DecodePatch(roomEvent.Frame.Payload)
 	if err != nil {
 		return err
 	}
-	p.state.ApplyPatch(*patch)
-	return nil
+	return state.ApplyMapStatePatch(p.state.Entities, *patch, func(e1 state.EntityState, e2 state.EntityStatePatch) (*state.EntityState, error) {
+		if err := e1.ApplyPatch(e2); err != nil {
+			return nil, err
+		}
+		return &e1, nil
+	})
 }
 
 func (p *StateRoomPolicy) onClientFullInput(roomEvent events.RoomEvent) error {

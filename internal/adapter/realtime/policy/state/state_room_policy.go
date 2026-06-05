@@ -6,12 +6,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/codec"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/codec"
+)
+
+const (
+	DefaultFullStateInterval  = 4 * time.Second
+	DefaultPatchStateInterval = time.Second / 20
 )
 
 type StateRoomPolicy struct {
