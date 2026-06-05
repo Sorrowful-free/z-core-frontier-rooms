@@ -119,6 +119,44 @@ func (c *MockRoomDeliverCall) DoAndReturn(f func(events.RoomEvent) error) *MockR
 	return c
 }
 
+// GetCapacity mocks base method.
+func (m *MockRoom) GetCapacity() int8 {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetCapacity")
+	ret0, _ := ret[0].(int8)
+	return ret0
+}
+
+// GetCapacity indicates an expected call of GetCapacity.
+func (mr *MockRoomMockRecorder) GetCapacity() *MockRoomGetCapacityCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCapacity", reflect.TypeOf((*MockRoom)(nil).GetCapacity))
+	return &MockRoomGetCapacityCall{Call: call}
+}
+
+// MockRoomGetCapacityCall wrap *gomock.Call
+type MockRoomGetCapacityCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockRoomGetCapacityCall) Return(arg0 int8) *MockRoomGetCapacityCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockRoomGetCapacityCall) Do(f func() int8) *MockRoomGetCapacityCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockRoomGetCapacityCall) DoAndReturn(f func() int8) *MockRoomGetCapacityCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // GetID mocks base method.
 func (m *MockRoom) GetID() domain.RoomID {
 	m.ctrl.T.Helper()

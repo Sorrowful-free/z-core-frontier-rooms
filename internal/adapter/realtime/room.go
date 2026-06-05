@@ -14,7 +14,7 @@ import (
 
 type Room struct {
 	id       domain.RoomID
-	handler  policy.RoomPolicy
+	policy   policy.RoomPolicy
 	mutex    sync.RWMutex
 	peers    map[domain.PeerID]realtime.Peer
 	capacity int
@@ -27,11 +27,11 @@ type Room struct {
 	wg       sync.WaitGroup
 }
 
-func NewRoom(ctx context.Context, id domain.RoomID, handler policy.RoomPolicy, capacity int, logger logging.Logger) *Room {
+func NewRoom(ctx context.Context, id domain.RoomID, policy policy.RoomPolicy, capacity int, logger logging.Logger) *Room {
 	ctx, cancel := context.WithCancel(ctx)
 	return &Room{
 		id:       id,
-		handler:  handler,
+		policy:   policy,
 		mutex:    sync.RWMutex{},
 		peers:    make(map[domain.PeerID]realtime.Peer),
 		capacity: capacity,
@@ -50,6 +50,16 @@ func (r *Room) GetID() domain.RoomID {
 	return r.id
 }
 
+func (r *Room) GetCapacity() int8 {
+	if r.capacity > 127 {
+		return 127
+	}
+	if r.capacity < -128 {
+		return -128
+	}
+	return int8(r.capacity)
+}
+
 func (r *Room) GetPeers() []realtime.Peer {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
@@ -63,7 +73,7 @@ func (r *Room) GetPeers() []realtime.Peer {
 func (r *Room) Start() error {
 	r.wg.Add(1)
 	go processRoomEvents(r)
-	if err := r.handler.OnStart(r); err != nil {
+	if err := r.policy.OnStart(r); err != nil {
 		r.Stop()
 		return err
 	}
@@ -76,7 +86,7 @@ func (r *Room) Stop() error {
 		r.cancel()
 		r.wg.Wait()
 		close(r.incoming)
-		err = r.handler.OnStop(r)
+		err = r.policy.OnStop(r)
 	})
 	return err
 }
@@ -92,7 +102,7 @@ func (r *Room) Join(peer realtime.Peer) error {
 	r.peers[peerID] = peer
 	r.mutex.Unlock()
 
-	if err := r.handler.OnJoin(peer); err != nil {
+	if err := r.policy.OnJoin(peer); err != nil {
 		r.mutex.Lock()
 		delete(r.peers, peerID)
 		r.mutex.Unlock()
@@ -111,7 +121,7 @@ func (r *Room) Leave(peer realtime.Peer) error {
 	}
 	r.mutex.Unlock()
 
-	if err := r.handler.OnLeave(peer); err != nil {
+	if err := r.policy.OnLeave(peer); err != nil {
 		return err
 	}
 
@@ -132,10 +142,10 @@ func (r *Room) Replace(peer realtime.Peer) error {
 	}
 	r.mutex.Unlock()
 
-	if err := r.handler.OnLeave(old); err != nil {
+	if err := r.policy.OnLeave(old); err != nil {
 		return fmt.Errorf("%w: %w", domain.ErrReplaceFailed, err)
 	}
-	if err := r.handler.OnJoin(peer); err != nil {
+	if err := r.policy.OnJoin(peer); err != nil {
 		return fmt.Errorf("%w: %w", domain.ErrReplaceFailed, err)
 	}
 
@@ -218,7 +228,7 @@ func processRoomEvents(room *Room) {
 			if !ok {
 				return
 			}
-			if err := room.handler.OnMessage(roomEvent); err != nil {
+			if err := room.policy.OnMessage(roomEvent); err != nil {
 				room.logger.Error("error processing room event", "error", err)
 			}
 		}

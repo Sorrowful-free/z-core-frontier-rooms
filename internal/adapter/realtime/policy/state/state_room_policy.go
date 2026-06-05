@@ -31,6 +31,9 @@ type StateRoomPolicy struct {
 	inputCodec    codec.InputStateCodec
 	rpcCodec      codec.RpcStateCodec
 
+	fullStateInterval  time.Duration
+	patchStateInterval time.Duration
+
 	fullStateTicker  *time.Ticker
 	patchStateTicker *time.Ticker
 
@@ -47,12 +50,12 @@ func NewStateRoomPolicy(logger logging.Logger, stateCodec codec.RoomStateCodec, 
 		prevState: *state.NewRoomState(domain.RoomID(0), 0, ""),
 		state:     *state.NewRoomState(domain.RoomID(0), 0, ""),
 
-		stateCodec:      stateCodec,
-		entitiesCodec:   entitiesCodec,
-		inputCodec:      inputCodec,
-		rpcCodec:        rpcCodec,
-		fullStateTicker:  time.NewTicker(fullStateInterval),
-		patchStateTicker: time.NewTicker(patchStateInterval),
+		stateCodec:         stateCodec,
+		entitiesCodec:      entitiesCodec,
+		inputCodec:         inputCodec,
+		rpcCodec:           rpcCodec,
+		fullStateInterval:  fullStateInterval,
+		patchStateInterval: patchStateInterval,
 
 		logger: logger,
 	}
@@ -61,6 +64,9 @@ func NewStateRoomPolicy(logger logging.Logger, stateCodec codec.RoomStateCodec, 
 func (p *StateRoomPolicy) OnStart(room realtime.Room) error {
 	p.room = room
 	p.ctx, p.cancel = context.WithCancel(room.Context())
+	p.syncRoomStateFromRoom(room)
+	p.fullStateTicker = time.NewTicker(p.fullStateInterval)
+	p.patchStateTicker = time.NewTicker(p.patchStateInterval)
 	p.processRoomTimers()
 	return nil
 }
@@ -69,11 +75,21 @@ func (p *StateRoomPolicy) OnStop(room realtime.Room) error {
 	if p.cancel != nil {
 		p.cancel()
 	}
-	p.fullStateTicker.Stop()
-	p.patchStateTicker.Stop()
+	if p.fullStateTicker != nil {
+		p.fullStateTicker.Stop()
+	}
+	if p.patchStateTicker != nil {
+		p.patchStateTicker.Stop()
+	}
 	p.timersWg.Wait()
 	p.room = nil
 	return nil
+}
+
+func (p *StateRoomPolicy) syncRoomStateFromRoom(room realtime.Room) {
+	rs := state.NewRoomState(room.GetID(), room.GetCapacity(), "")
+	p.state = *rs
+	p.prevState = *rs.Clone()
 }
 
 func (p *StateRoomPolicy) OnJoin(peer realtime.Peer) error {

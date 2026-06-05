@@ -13,12 +13,13 @@ func (p *StateRoomPolicy) onClientFullEntities(roomEvent events.RoomEvent) error
 		return fmt.Errorf("peer not master: %d", roomEvent.PeerID)
 	}
 
+	oldRoomState := p.state.Clone()
 	full, err := p.entitiesCodec.Decode(roomEvent.Frame.Payload)
 	if err != nil {
 		return err
 	}
 	p.state.Entities = full
-	return nil
+	return p.publishRoomStateChange(oldRoomState, p.masterPeerID())
 }
 
 func (p *StateRoomPolicy) onClientPatchEntities(roomEvent events.RoomEvent) error {
@@ -26,16 +27,20 @@ func (p *StateRoomPolicy) onClientPatchEntities(roomEvent events.RoomEvent) erro
 		return fmt.Errorf("peer not master: %d", roomEvent.PeerID)
 	}
 
+	oldRoomState := p.state.Clone()
 	patch, err := p.entitiesCodec.DecodePatch(roomEvent.Frame.Payload)
 	if err != nil {
 		return err
 	}
-	return state.ApplyMapStatePatch(p.state.Entities, *patch, func(e1 state.EntityState, e2 state.EntityStatePatch) (*state.EntityState, error) {
+	if err := state.ApplyMapStatePatch(p.state.Entities, *patch, func(e1 state.EntityState, e2 state.EntityStatePatch) (*state.EntityState, error) {
 		if err := e1.ApplyPatch(e2); err != nil {
 			return nil, err
 		}
 		return &e1, nil
-	})
+	}); err != nil {
+		return err
+	}
+	return p.publishRoomStateChange(oldRoomState, p.masterPeerID())
 }
 
 func (p *StateRoomPolicy) onClientFullInput(roomEvent events.RoomEvent) error {
@@ -72,29 +77,33 @@ func (p *StateRoomPolicy) onClientPatchInput(roomEvent events.RoomEvent) error {
 }
 
 func (p *StateRoomPolicy) onClientRpc(roomEvent events.RoomEvent) error {
-
 	payload := roomEvent.Frame.Payload
 	rpc, err := p.rpcCodec.Decode(payload)
 	if err != nil {
 		return err
 	}
 
-	senderPeerId := roomEvent.PeerID
+	senderPeerID := roomEvent.PeerID
+	masterID := p.masterPeerID()
 
 	peerEvent := events.PeerEvent{
-		ExcludePeerID: senderPeerId,
+		ExcludePeerID: senderPeerID,
 		Frame: domain.Frame{
 			OpCode:  state.OpCodeRpc,
 			Payload: payload,
-		}}
-	rpcTarget := rpc.Target
-	rpcPeerID := rpc.PeerID
+		},
+	}
 
-	if rpcTarget == state.RpcTargetPeer && rpcPeerID.IsValid() && rpcPeerID != p.master.GetID() {
-		peerEvent.PeerID = rpcPeerID
-	} else if rpcTarget == state.RpcTargetMaster && p.master != nil && rpcPeerID == p.master.GetID() {
-		peerEvent.PeerID = rpcPeerID
-	} else if rpcTarget == state.RpcTargetAll && p.master != nil {
+	switch rpc.Target {
+	case state.RpcTargetPeer:
+		if rpc.PeerID.IsValid() && (!masterID.IsValid() || rpc.PeerID != masterID) {
+			peerEvent.PeerID = rpc.PeerID
+		}
+	case state.RpcTargetMaster:
+		if masterID.IsValid() && rpc.PeerID == masterID {
+			peerEvent.PeerID = rpc.PeerID
+		}
+	case state.RpcTargetAll:
 		peerEvent.PeerID = domain.PeerIDInvalid
 	}
 

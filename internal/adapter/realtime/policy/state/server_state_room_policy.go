@@ -127,10 +127,23 @@ func (p *StateRoomPolicy) sendFullStateToPeer(peerID domain.PeerID, full *state.
 	}
 	if peerID.IsValid() {
 		peerEvent.PeerID = peerID
-	} else {
-		peerEvent.ExcludePeerID = p.masterPeerID()
 	}
 	return p.room.Send(peerEvent)
+}
+
+func (p *StateRoomPolicy) publishRoomStateChange(old *state.RoomState, exclude domain.PeerID) error {
+	roomPatch, err := old.MakePatch(&p.state)
+	if err != nil {
+		return err
+	}
+	if roomPatch == nil {
+		return nil
+	}
+	if err := p.sendPatchStateExclude(exclude, roomPatch); err != nil {
+		return err
+	}
+	p.commitPrevState()
+	return nil
 }
 
 func (p *StateRoomPolicy) sendPatchState(patch *state.RoomStatePatch) error {
