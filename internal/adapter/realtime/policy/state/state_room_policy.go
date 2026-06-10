@@ -1,9 +1,7 @@
 package state
 
 import (
-	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
@@ -12,7 +10,10 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/codec"
+	portpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/policy"
 )
+
+var _ portpolicy.RoomPolicy = (*StateRoomPolicy)(nil)
 
 const (
 	DefaultFullStateInterval  = 4 * time.Second
@@ -33,14 +34,6 @@ type StateRoomPolicy struct {
 
 	fullStateInterval  time.Duration
 	patchStateInterval time.Duration
-
-	fullStateTicker  *time.Ticker
-	patchStateTicker *time.Ticker
-
-	ctx    context.Context
-	cancel context.CancelFunc
-
-	timersWg sync.WaitGroup
 
 	logger logging.Logger
 }
@@ -63,27 +56,17 @@ func NewStateRoomPolicy(logger logging.Logger, stateCodec codec.RoomStateCodec, 
 
 func (p *StateRoomPolicy) OnStart(room realtime.Room) error {
 	p.room = room
-	p.ctx, p.cancel = context.WithCancel(room.Context())
 	p.syncRoomStateFromRoom(room)
-	p.fullStateTicker = time.NewTicker(p.fullStateInterval)
-	p.patchStateTicker = time.NewTicker(p.patchStateInterval)
-	p.processRoomTimers()
 	return nil
 }
 
 func (p *StateRoomPolicy) OnStop(room realtime.Room) error {
-	if p.cancel != nil {
-		p.cancel()
-	}
-	if p.fullStateTicker != nil {
-		p.fullStateTicker.Stop()
-	}
-	if p.patchStateTicker != nil {
-		p.patchStateTicker.Stop()
-	}
-	p.timersWg.Wait()
 	p.room = nil
 	return nil
+}
+
+func (p *StateRoomPolicy) TickIntervals() (time.Duration, time.Duration) {
+	return p.fullStateInterval, p.patchStateInterval
 }
 
 func (p *StateRoomPolicy) syncRoomStateFromRoom(room realtime.Room) {
@@ -139,11 +122,6 @@ func (p *StateRoomPolicy) OnMessage(roomEvent events.RoomEvent) error {
 		return p.onClientPatchInput(roomEvent)
 	case state.OpCodeRpc:
 		return p.onClientRpc(roomEvent)
-
-	case tickOpCodeFullState:
-		return p.onTickFullState()
-	case tickOpCodePatchState:
-		return p.onTickPatchState()
 	}
 
 	return nil

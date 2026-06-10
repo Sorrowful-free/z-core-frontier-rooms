@@ -89,6 +89,10 @@ func (p *sendOnJoinPolicy) OnJoin(peer realtime.Peer) error {
 	})
 }
 
+func (p *sendOnJoinPolicy) TickIntervals() (time.Duration, time.Duration) { return 0, 0 }
+func (p *sendOnJoinPolicy) OnTickFullState() error                     { return nil }
+func (p *sendOnJoinPolicy) OnTickPatchState() error                    { return nil }
+
 type failOnJoinPolicy struct {
 	err error
 }
@@ -100,6 +104,10 @@ func (p *failOnJoinPolicy) OnMessage(events.RoomEvent) error {
 	return nil
 }
 func (p *failOnJoinPolicy) OnJoin(realtime.Peer) error { return p.err }
+
+func (p *failOnJoinPolicy) TickIntervals() (time.Duration, time.Duration) { return 0, 0 }
+func (p *failOnJoinPolicy) OnTickFullState() error                     { return nil }
+func (p *failOnJoinPolicy) OnTickPatchState() error                    { return nil }
 
 type stubPeer struct {
 	id domain.PeerID

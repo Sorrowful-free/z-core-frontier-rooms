@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
@@ -18,8 +19,10 @@ type Room struct {
 	mutex    sync.RWMutex
 	peers    map[domain.PeerID]realtime.Peer
 	capacity int
-	incoming chan events.RoomEvent
-	logger   logging.Logger
+	incoming         chan events.RoomEvent
+	logger           logging.Logger
+	fullStateTicker  *time.Ticker
+	patchStateTicker *time.Ticker
 
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -71,12 +74,19 @@ func (r *Room) GetPeers() []realtime.Peer {
 }
 
 func (r *Room) Start() error {
-	r.wg.Add(1)
-	go processRoomEvents(r)
 	if err := r.policy.OnStart(r); err != nil {
-		r.Stop()
 		return err
 	}
+	fullInterval, patchInterval := r.policy.TickIntervals()
+	if fullInterval > 0 {
+		r.fullStateTicker = time.NewTicker(fullInterval)
+	}
+	if patchInterval > 0 {
+		r.patchStateTicker = time.NewTicker(patchInterval)
+	}
+
+	r.wg.Add(1)
+	go processRoomEvents(r)
 	return nil
 }
 
@@ -84,6 +94,12 @@ func (r *Room) Stop() error {
 	var err error
 	r.stopOnce.Do(func() {
 		r.cancel()
+		if r.fullStateTicker != nil {
+			r.fullStateTicker.Stop()
+		}
+		if r.patchStateTicker != nil {
+			r.patchStateTicker.Stop()
+		}
 		r.wg.Wait()
 		close(r.incoming)
 		err = r.policy.OnStop(r)
@@ -220,6 +236,16 @@ func (r *Room) Deliver(roomEvent events.RoomEvent) error {
 
 func processRoomEvents(room *Room) {
 	defer room.wg.Done()
+
+	var fullTick <-chan time.Time
+	if room.fullStateTicker != nil {
+		fullTick = room.fullStateTicker.C
+	}
+	var patchTick <-chan time.Time
+	if room.patchStateTicker != nil {
+		patchTick = room.patchStateTicker.C
+	}
+
 	for {
 		select {
 		case <-room.ctx.Done():
@@ -230,6 +256,14 @@ func processRoomEvents(room *Room) {
 			}
 			if err := room.policy.OnMessage(roomEvent); err != nil {
 				room.logger.Error("error processing room event", "error", err)
+			}
+		case <-fullTick:
+			if err := room.policy.OnTickFullState(); err != nil {
+				room.logger.Error("tick full state", "error", err)
+			}
+		case <-patchTick:
+			if err := room.policy.OnTickPatchState(); err != nil {
+				room.logger.Error("tick patch state", "error", err)
 			}
 		}
 	}

@@ -16,12 +16,6 @@ import (
 	portpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/policy"
 )
 
-// Должны совпадать с tick opcodes в internal/adapter/realtime/policy/state.
-const (
-	tickOpCodeFullState  domain.OpCode = 0xF0
-	tickOpCodePatchState domain.OpCode = 0xF1
-)
-
 func TestOnJoin_FirstPeerGetsFullStateWithRoomMetadata(t *testing.T) {
 	t.Parallel()
 
@@ -163,7 +157,7 @@ func TestOnMessage_FullEntities_RejectsNonMaster(t *testing.T) {
 	}
 }
 
-func TestOnMessage_TickFullState_BroadcastsToAllPeers(t *testing.T) {
+func TestOnTickFullState_BroadcastsToAllPeers(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(5), 4)
@@ -173,10 +167,8 @@ func TestOnMessage_TickFullState_BroadcastsToAllPeers(t *testing.T) {
 	master.clear()
 	client.clear()
 
-	if err := h.policy.OnMessage(events.RoomEvent{
-		Frame: domain.Frame{OpCode: tickOpCodeFullState},
-	}); err != nil {
-		t.Fatalf("tick full: %v", err)
+	if err := h.policy.OnTickFullState(); err != nil {
+		t.Fatalf("OnTickFullState: %v", err)
 	}
 
 	if len(filterOpcode(master.snapshot(), state.OpCodeFullState)) != 1 {
@@ -187,7 +179,7 @@ func TestOnMessage_TickFullState_BroadcastsToAllPeers(t *testing.T) {
 	}
 }
 
-func TestOnMessage_TickPatchState_NoChangesNoSend(t *testing.T) {
+func TestOnTickPatchState_NoChangesNoSend(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(6), 4)
@@ -197,10 +189,8 @@ func TestOnMessage_TickPatchState_NoChangesNoSend(t *testing.T) {
 	master.clear()
 	client.clear()
 
-	if err := h.policy.OnMessage(events.RoomEvent{
-		Frame: domain.Frame{OpCode: tickOpCodePatchState},
-	}); err != nil {
-		t.Fatalf("tick patch: %v", err)
+	if err := h.policy.OnTickPatchState(); err != nil {
+		t.Fatalf("OnTickPatchState: %v", err)
 	}
 
 	if len(master.snapshot()) != 0 || len(client.snapshot()) != 0 {

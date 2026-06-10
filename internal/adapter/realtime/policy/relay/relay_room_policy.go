@@ -2,6 +2,7 @@ package relay
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
@@ -50,3 +51,10 @@ func (h *RelayRoomPolicy) OnMessage(roomEvent events.RoomEvent) error {
 	})
 	return nil
 }
+
+func (h *RelayRoomPolicy) TickIntervals() (time.Duration, time.Duration) {
+	return 0, 0
+}
+
+func (h *RelayRoomPolicy) OnTickFullState() error  { return nil }
+func (h *RelayRoomPolicy) OnTickPatchState() error { return nil }

@@ -9,54 +9,14 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 )
 
-// Внутренние opcodes: только room.Deliver из таймеров policy, на wire клиентам не уходят.
-const (
-	tickOpCodeFullState  domain.OpCode = 0xF0
-	tickOpCodePatchState domain.OpCode = 0xF1
-)
-
-func (p *StateRoomPolicy) processRoomTimers() error {
-	p.timersWg.Add(1)
-	go func() {
-		defer p.timersWg.Done()
-		for {
-			select {
-			case <-p.ctx.Done():
-				return
-			case <-p.fullStateTicker.C:
-				if err := p.deliverTick(tickOpCodeFullState); err != nil {
-					p.logger.Error("failed to deliver full state tick", "error", err)
-				}
-			case <-p.patchStateTicker.C:
-				if err := p.deliverTick(tickOpCodePatchState); err != nil {
-					p.logger.Error("failed to deliver patch state tick", "error", err)
-				}
-			}
-		}
-	}()
-	return nil
-}
-
-func (p *StateRoomPolicy) deliverTick(op domain.OpCode) error {
-	if p.room == nil || p.ctx.Err() != nil {
-		return nil
-	}
-	if err := p.room.Context().Err(); err != nil {
-		return nil
-	}
-	return p.room.Deliver(events.RoomEvent{
-		Frame: domain.Frame{OpCode: op},
-	})
-}
-
-func (p *StateRoomPolicy) onTickFullState() error {
+func (p *StateRoomPolicy) OnTickFullState() error {
 	if err := p.sendFullState(&p.state); err != nil {
 		return fmt.Errorf("send full state: %w", err)
 	}
 	return nil
 }
 
-func (p *StateRoomPolicy) onTickPatchState() error {
+func (p *StateRoomPolicy) OnTickPatchState() error {
 	patch, err := p.prevState.MakePatch(&p.state)
 	if err != nil {
 		return fmt.Errorf("make patch state: %w", err)
