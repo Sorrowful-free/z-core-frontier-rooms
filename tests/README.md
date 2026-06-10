@@ -71,4 +71,4 @@ go generate ./tests/mocks/...
 
 При новой join/reservation-ошибке — кейс в `join_reject_test.go` / `reservation_reject_test.go` (см. [.cursor/rules/join-error-opcodes.mdc](../.cursor/rules/join-error-opcodes.mdc)).
 
-Подробнее о слоях, OpCode и use case — [README.md](../README.md) в корне репозитория.
+Подробнее — индекс [README.md](../README.md), архитектура [docs/architecture.md](../docs/architecture.md), пакеты `internal/**/README.md`.

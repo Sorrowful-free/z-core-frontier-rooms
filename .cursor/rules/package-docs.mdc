@@ -1,0 +1,37 @@
+---
+description: Пакетная документация — README рядом с кодом; обновлять при изменении пакета
+alwaysApply: true
+---
+
+# Пакетная документация
+
+## Где лежит
+
+- Индекс: [README.md](../../README.md) (корень) — только обзор, сборка, ссылки.
+- Архитектура слоёв: [docs/architecture.md](../../docs/architecture.md).
+- **Пакет:** `README.md` в каталоге пакета, например `internal/usecase/room/README.md`.
+- Wire layout state: [docs/wire-state-codec.md](../../docs/wire-state-codec.md) (codec).
+
+## Правило для агентов и разработчиков
+
+При изменении **поведения, контракта или публичного API** пакета — в **том же PR/задаче** обновить `README.md` этого пакета (и при необходимости связанный wire-doc).
+
+Не дублировать длинные таблицы в корневом README — только ссылка на пакет.
+
+## Что обновлять
+
+| Изменили | Обновить |
+|----------|----------|
+| HTTP routes, DTO, коды ошибок | `internal/delivery/http/README.md` |
+| Join/admit/in-room OpCode, мапперы | `internal/delivery/errors/README.md`, чеклист [join-error-opcodes.mdc](join-error-opcodes.mdc) |
+| Ticket, Claims, ValidateNickName | `internal/adapter/admission/README.md`, `internal/domain/README.md` |
+| Reservation слоты | `internal/adapter/reservation/README.md` |
+| Room, Peer, lifecycle, Replace | `internal/adapter/realtime/README.md` |
+| StateRoomPolicy, master, ticks | `internal/adapter/realtime/policy/state/README.md` |
+| Binary codec полей | `docs/wire-state-codec.md`, `internal/adapter/realtime/codec/README.md` |
+| Use case потоки | `internal/usecase/room/README.md` |
+| Новый sentinel в domain | `internal/domain/README.md` + маппер в delivery/errors |
+
+## Объём
+
+Пакетный README — **краткий** (цель пакета, ключевые типы, потоки, ошибки, ссылки). Детали реализации — в коде и тестах `tests/…`.

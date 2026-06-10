@@ -5,6 +5,10 @@ alwaysApply: true
 
 # Go — стандарты проекта
 
+## Документация пакетов
+
+См. [.cursor/rules/package-docs.mdc](package-docs.mdc): у каждого значимого пакета — `README.md` рядом с кодом; корневой [README.md](../../README.md) — только индекс и quick start.
+
 ## Best practices
 
 - Следовать [Effective Go](https://go.dev/doc/effective_go), [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments) и официальным гайдам по модулям/пакетам.

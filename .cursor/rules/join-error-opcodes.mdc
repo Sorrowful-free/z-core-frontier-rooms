@@ -23,18 +23,18 @@ alwaysApply: false
 
 - [x] `join_errors.go` + `opcodes.go`
 - [x] `join_reject.go` + `tests/delivery/errors/join_reject_test.go`
-- [x] README (таблица join + делегирование reservation)
+- [x] [internal/delivery/errors/README.md](../../internal/delivery/errors/README.md) (join + делегирование reservation)
 
 ## Чеклист reservation (`0x70–0x7F`)
 
 - [x] `reservation_error.go` + `opcodes.go`
 - [x] `reservation_reject.go` + `tests/delivery/errors/reservation_reject_test.go`
-- [x] README (таблица `0x70–0x7F`, lifecycle / Issue политика A)
+- [x] [internal/delivery/errors/README.md](../../internal/delivery/errors/README.md) + [internal/adapter/reservation/README.md](../../internal/adapter/reservation/README.md)
 
 ## Чеклист in-room (`0x60–0x6F`)
 
 - [x] `room_errors.go` + `opcodes.go`
 - [x] `join_reject.go` (`InRoomErrorOpCode`) + `tests/delivery/errors/in_room_test.go`
-- [x] README (таблица `0x60–0x66`, master/RPC/payload/unknown opcode)
+- [x] [internal/delivery/errors/README.md](../../internal/delivery/errors/README.md) (`0x60–0x66`)
 
 HTTP — `delivery/http`, не этот пакет.

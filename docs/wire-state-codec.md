@@ -1,7 +1,8 @@
 # Wire: state codec (room sync)
 
 Бинарный контракт для игрового state между **Go-сервером** и **Godot-клиентом**.  
-Реализация: `internal/adapter/realtime/codec/`.  
+Реализация: [internal/adapter/realtime/codec/README.md](../internal/adapter/realtime/codec/README.md).  
+OpCode таблица: [internal/delivery/errors/README.md](../internal/delivery/errors/README.md).  
 Кадр транспорта: `domain.Frame` = `OpCode` (1 байт) + `Payload` (этот документ описывает **payload** state/input/rpc).
 
 ## Общие правила
