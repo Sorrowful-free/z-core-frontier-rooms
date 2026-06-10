@@ -8,11 +8,54 @@ import (
 
 	adapterrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/stdlib"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/codec"
+	statepolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy/state"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	portpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/policy"
 )
+
+func TestDeliver_UnknownOpcode_NotifiesSender(t *testing.T) {
+	t.Parallel()
+
+	logger := stdlib.New("test")
+	policy := statepolicy.NewStateRoomPolicy(
+		logger,
+		codec.NewRoomStateCodec(&logger),
+		codec.NewEntitiesStateCodec(),
+		codec.NewInputStateCodec(),
+		&codec.RpcStateCodec{},
+		time.Hour,
+		time.Hour,
+	)
+	room := adapterrealtime.NewRoom(context.Background(), domain.RoomID(2), policy, 8, logger)
+
+	if err := room.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { _ = room.Stop() })
+
+	peer := newErrorCapturePeer(domain.PeerID(10))
+	if err := room.Join(peer); err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+	peer.clear()
+
+	if err := room.Deliver(events.RoomEvent{
+		PeerID: peer.id,
+		Frame:  domain.Frame{OpCode: domain.OpCode(0x99)},
+	}); err != nil {
+		t.Fatalf("Deliver: %v", err)
+	}
+
+	waitForPeerDelivery(t, peer, 1)
+
+	got := peer.snapshot()
+	if got[0].Frame.OpCode != domain.OpInRoomUnknownOpcode {
+		t.Fatalf("opcode = %#x, want OpInRoomUnknownOpcode", got[0].Frame.OpCode)
+	}
+}
 
 func TestDeliver_NotifiesSenderOnPolicyError(t *testing.T) {
 	t.Parallel()
@@ -39,15 +82,9 @@ func TestDeliver_NotifiesSenderOnPolicyError(t *testing.T) {
 		t.Fatalf("Deliver: %v", err)
 	}
 
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for len(peer.snapshot()) == 0 && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
+	waitForPeerDelivery(t, peer, 1)
 
 	got := peer.snapshot()
-	if len(got) != 1 {
-		t.Fatalf("delivered = %d, want 1 in-room error", len(got))
-	}
 	if got[0].Frame.OpCode != domain.OpInRoomNotMaster {
 		t.Fatalf("opcode = %#x, want OpInRoomNotMaster", got[0].Frame.OpCode)
 	}
@@ -112,3 +149,14 @@ func (p *errorCapturePeer) clear() {
 }
 
 var _ realtime.Peer = (*errorCapturePeer)(nil)
+
+func waitForPeerDelivery(t *testing.T, peer *errorCapturePeer, want int) {
+	t.Helper()
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for len(peer.snapshot()) < want && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if got := len(peer.snapshot()); got != want {
+		t.Fatalf("delivered = %d, want %d", got, want)
+	}
+}

@@ -70,6 +70,8 @@ func InRoomErrorOpCode(err error) domain.OpCode {
 		return domain.OpInRoomRpcPeerNotFound
 	case stderrors.Is(err, domain.ErrNoMaster):
 		return domain.OpInRoomNoMaster
+	case stderrors.Is(err, domain.ErrInRoomUnknownOpcode):
+		return domain.OpInRoomUnknownOpcode
 	case stderrors.Is(err, domain.ErrInRoomInternal):
 		return domain.OpInRoomInternal
 	default:

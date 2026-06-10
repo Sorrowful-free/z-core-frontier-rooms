@@ -26,7 +26,8 @@ const (
 	OpInRoomInvalidPayload OpCode = 0x62
 	OpInRoomInvalidRpc     OpCode = 0x63
 	OpInRoomRpcPeerNotFound OpCode = 0x64
-	OpInRoomNoMaster       OpCode = 0x65
+	OpInRoomNoMaster        OpCode = 0x65
+	OpInRoomUnknownOpcode   OpCode = 0x66
 
 	// Reservation (0x70–0x7F) — control plane / join admit по слоту.
 	OpReservationNotFound        OpCode = 0x70

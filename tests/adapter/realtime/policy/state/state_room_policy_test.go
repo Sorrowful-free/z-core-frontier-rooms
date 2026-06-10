@@ -314,6 +314,22 @@ func TestOnMessage_Rpc_TargetPeerNotInRoom_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestOnMessage_UnknownOpcode_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, domain.RoomID(13), 4)
+	master := newCapturePeer(1, "master")
+	mustJoin(t, h.room, master)
+
+	err := h.policy.OnMessage(events.RoomEvent{
+		PeerID: domain.PeerID(1),
+		Frame:  domain.Frame{OpCode: domain.OpCode(0x99)},
+	})
+	if !errors.Is(err, domain.ErrInRoomUnknownOpcode) {
+		t.Fatalf("err = %v, want ErrInRoomUnknownOpcode", err)
+	}
+}
+
 func TestOnMessage_PatchInput_BroadcastsToAllIncludingMaster(t *testing.T) {
 	t.Parallel()
 

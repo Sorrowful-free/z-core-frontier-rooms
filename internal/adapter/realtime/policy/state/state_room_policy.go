@@ -114,7 +114,7 @@ func (p *StateRoomPolicy) OnMessage(roomEvent events.RoomEvent) error {
 		return p.onClientPatchInput(roomEvent)
 	case state.OpCodeRpc:
 		return p.onClientRpc(roomEvent)
+	default:
+		return fmt.Errorf("%w: %#x", domain.ErrInRoomUnknownOpcode, opcode)
 	}
-
-	return nil
 }
