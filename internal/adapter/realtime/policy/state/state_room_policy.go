@@ -38,6 +38,13 @@ type StateRoomPolicy struct {
 	logger logging.Logger
 }
 
+func normalizeTickInterval(interval, defaultInterval time.Duration) time.Duration {
+	if interval <= 0 {
+		return defaultInterval
+	}
+	return interval
+}
+
 func NewStateRoomPolicy(logger logging.Logger, stateCodec codec.RoomStateCodec, entitiesCodec codec.EntitiesStateCodec, inputCodec codec.InputStateCodec, rpcCodec codec.RpcStateCodec, fullStateInterval time.Duration, patchStateInterval time.Duration) *StateRoomPolicy {
 	return &StateRoomPolicy{
 		prevState: *state.NewRoomState(domain.RoomID(0), 0, ""),
@@ -47,8 +54,8 @@ func NewStateRoomPolicy(logger logging.Logger, stateCodec codec.RoomStateCodec, 
 		entitiesCodec:      entitiesCodec,
 		inputCodec:         inputCodec,
 		rpcCodec:           rpcCodec,
-		fullStateInterval:  fullStateInterval,
-		patchStateInterval: patchStateInterval,
+		fullStateInterval:  normalizeTickInterval(fullStateInterval, DefaultFullStateInterval),
+		patchStateInterval: normalizeTickInterval(patchStateInterval, DefaultPatchStateInterval),
 
 		logger: logger,
 	}
