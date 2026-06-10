@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -190,6 +191,15 @@ func (r *Room) Replace(peer realtime.Peer) error {
 		r.mutex.Lock()
 		r.peers[peerID] = old
 		r.mutex.Unlock()
+
+		rollbackErr := r.dispatchLifecycle(lifecycleRequest{
+			op:   lifecycleJoin,
+			peer: old,
+			done: make(chan error, 1),
+		})
+		if rollbackErr != nil {
+			return fmt.Errorf("%w: %w", domain.ErrReplaceFailed, errors.Join(err, rollbackErr))
+		}
 		return fmt.Errorf("%w: %w", domain.ErrReplaceFailed, err)
 	}
 
