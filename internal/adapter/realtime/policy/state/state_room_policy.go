@@ -87,6 +87,7 @@ func (p *StateRoomPolicy) OnLeave(peer realtime.Peer) error {
 			return fmt.Errorf("peer not found: %d", peerID)
 		}
 		delete(roomState.Peers, peerID)
+		delete(roomState.Inputs, peerID)
 		if !peerState.IsMaster {
 			return nil
 		}

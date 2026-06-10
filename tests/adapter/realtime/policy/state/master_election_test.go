@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
 )
 
@@ -114,6 +115,52 @@ func TestOnLeave_NonMaster_KeepsCurrentMaster(t *testing.T) {
 		if upd.IsMaster != nil && *upd.IsMaster {
 			t.Fatalf("unexpected new master %d in patch", id)
 		}
+	}
+}
+
+func TestOnLeave_RemovesPeerInputFromRoomState(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, domain.RoomID(25), 4)
+	master := newCapturePeer(1, "master")
+	client := newCapturePeer(2, "client")
+	mustJoin(t, h.room, master, client)
+	master.clear()
+	client.clear()
+
+	inputPatch := &state.InputStatePatch{
+		Values: *state.NewMapStatePatch[state.ValueId, state.ValueState, state.ValueState](),
+	}
+	inputPatch.Values.Added[state.ValueId(1)] = state.ValueState([]byte{0xCD})
+	payload, err := h.inputCodec.EncodePatch(inputPatch)
+	if err != nil {
+		t.Fatalf("EncodePatch input: %v", err)
+	}
+	if err := h.policy.OnMessage(events.RoomEvent{
+		PeerID: domain.PeerID(2),
+		Frame:  domain.Frame{OpCode: state.OpCodePatchInput, Payload: payload},
+	}); err != nil {
+		t.Fatalf("OnMessage patch input: %v", err)
+	}
+	master.clear()
+
+	if err := h.room.Leave(client); err != nil {
+		t.Fatalf("Leave client: %v", err)
+	}
+
+	patches := filterOpcode(master.snapshot(), state.OpCodePatchState)
+	if len(patches) != 1 {
+		t.Fatalf("master patches = %d, want 1", len(patches))
+	}
+	patch, err := h.roomCodec.DecodePatch(patches[0].Frame.Payload)
+	if err != nil {
+		t.Fatalf("DecodePatch: %v", err)
+	}
+	if !slices.Contains(patch.Peers.Removed, domain.PeerID(2)) {
+		t.Fatalf("patch peers.removed = %#v", patch.Peers.Removed)
+	}
+	if !slices.Contains(patch.Inputs.Removed, domain.PeerID(2)) {
+		t.Fatalf("patch inputs.removed = %#v", patch.Inputs.Removed)
 	}
 }
 
