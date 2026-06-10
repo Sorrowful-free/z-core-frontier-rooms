@@ -11,8 +11,11 @@ tests/
   adapter/admission/    — ticket Issue/Validate
   adapter/reservation/  — слоты: Reserve / Admit / Revoke / State
   adapter/identity/     — Counter: AllocateRoomID / AllocatePeerID, wrap skip 0
-  adapter/realtime/     — Room Join, policy без deadlock
+  adapter/realtime/     — Room Join/Replace, policy без deadlock, peer factory nick
+  adapter/realtime/policy/state/ — StateRoomPolicy, master election, tick intervals
   adapter/realtime/codec/ — round-trip state/input/rpc/room wire codec
+  domain/               — ValidateNickName
+  domain/state/         — atomic apply patch (entity/component)
   adapter/registry/     — RoomRegistry, Shutdown
   usecase/room/         — Create, Delete, GetList, IssueTicket, JoinRoom, LeaveRoom (gomock)
   delivery/http/        — REST JSON (Fiber app.Test + in-memory adapters)
@@ -38,14 +41,17 @@ go test -race ./tests/...
 | Пакет | Сценарии |
 |-------|----------|
 | `tests/delivery/errors` | `JoinRejectOpCode`, `ReservationRejectOpCode`, делегирование reservation в join, `InRoomErrorOpCode`, диапазоны `Is*OpCode` |
-| `tests/adapter/admission` | Round-trip ticket, invalid/expired token, invalid credentials |
-| `tests/adapter/realtime` | `OnJoin` → `room.Send` без deadlock; откат map при `ErrJoinDenied` |
+| `tests/adapter/admission` | Round-trip ticket + NickName, invalid nick, invalid/expired token, invalid credentials |
+| `tests/adapter/realtime` | `OnJoin` → `room.Send` без deadlock; откат map при `ErrJoinDenied`; Replace rollback policy; `PeerFactory` nick |
+| `tests/adapter/realtime/policy/state` | join/full/patch/master; `NewStateRoomPolicy` zero intervals → defaults |
+| `tests/domain` | `ValidateNickName` |
+| `tests/domain/state` | atomic `ApplyPatch` rollback на entity/component |
 | `tests/adapter/realtime/codec` | Round-trip `InputStateCodec`, `RpcStateCodec`, `RoomStateCodec` (full + patch) |
 | `tests/adapter/registry` | `GetRoom` → `ErrRoomNotFound`; `Shutdown` |
 | `tests/adapter/reservation` | Reserve → Admit → Revoke; expiry sweep; идемпотентный `Revoke`; `State` (none / reserved / admitted) |
 | `tests/adapter/identity` | первый ID = 1; независимые room/peer; ctx cancel; wrap `MaxUint32` → 1; уникальность под конкуренцией |
 | `tests/usecase/room` | **Create** — success, ctx cancel, registry rollback + `errors.Join` на unregister; **Delete** — success, room not found; **GetList**; **IssueTicket** — success, room/peer errors, slot held, orphan admitted cleanup, issue+revoke join; **JoinRoom** — validate error, success, admit/join/revoke откаты; **LeaveRoom** — success, not found, revoke idempotent |
-| `tests/delivery/http` | create → list → delete; issue ticket (base64url); 409/404/400 и коды ошибок |
+| `tests/delivery/http` | create → list → delete; issue ticket (`nick_name`, base64url v2); `invalid_nick_name`; 409/404/400 |
 
 После изменения `internal/port/*` интерфейсов:
 

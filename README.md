@@ -9,13 +9,13 @@
 | Область | Состояние |
 |--------|-----------|
 | `domain/`, `port/` | Типы, события, интерфейсы без зависимостей от инфраструктуры |
-| `adapter/realtime` | `Room`, `Peer`, фабрики; state wire codec (`adapter/realtime/codec`); `RelayRoomPolicy` (relay) |
+| `adapter/realtime` | `Room` (event loop, lifecycle, ticks), `Peer`, фабрики; wire codec (`adapter/realtime/codec`); `StateRoomPolicy` (authoritative state) |
 | `adapter/registry` | In-memory `RoomRegistry`, lifecycle-`ctx`, `Shutdown` |
 | `adapter/reservation` | In-memory слоты: `RegisterRoom` / `Reserve` / `Admit` / `Revoke` |
 | `adapter/admission` | HMAC-SHA256 ticket, TTL (`Issue` / `Validate`) |
 | `adapter/transport` | WebSocket; ENet (CGO + build tag `enet`) |
-| Use case `Create` / `Delete` / `GetList` | Реализованы; HTTP handlers — **заглушки** (use case не вызываются) |
-| Use case `IssueTicket` | Реализован; в `cmd` подключён; **HTTP-маршрута пока нет** |
+| Use case `Create` / `Delete` / `GetList` | Реализованы; HTTP handlers в `delivery/http` |
+| Use case `IssueTicket` | Реализован; HTTP `POST /rooms/:id/tickets` (`nick_name` обязателен) |
 | Use case `JoinRoom` | Data plane: validate ticket → peer → `room.Join` → `Start`; WS + ENet в `cmd`; при ошибке join — OpCode на wire (`delivery/errors`) |
 | Use case `LeaveRoom` | `GetPeer` → `room.Leave` → `peer.Stop` → `reservation.Revoke` (мягко при `ErrReservationNotFound`); disconnect WS/ENet |
 | Reservation ↔ use case | **Подключено** в `cmd`: Create/Delete, IssueTicket, JoinRoom, LeaveRoom; shutdown — `GetList` + `Delete` + `registry.Shutdown` |
@@ -32,7 +32,7 @@
 - Хранить **комнаты** (`Room`) и подключённых **пиров** (`Peer`).
 - **Допуск:** выдача ticket (control plane, `IssueTicket`) и вход по realtime (`JoinRoom`).
 - **Выход:** снятие пира с комнаты (`LeaveRoom`) при отключении транспорта.
-- **Relay** кадров между пирами — через `RoomPolicy` / `RelayRoomPolicy` (черновик).
+- **Authoritative state** комнаты — `StateRoomPolicy`: full/patch ticks, master-only entities/input, RPC; ошибки in-room → OpCode отправителю.
 - **Бронирование слотов** — `port/reservation` (отдельно от HMAC ticket); лимит мест и TTL брони до join.
 - Единый контракт `transport.Connection` для WS и ENet; протокол — только в `delivery`.
 
@@ -40,7 +40,7 @@
 
 | Use case | Плоскость | Смысл |
 |----------|-----------|--------|
-| **`IssueTicket`** | Control (HTTP, планируется) | `Reserve` → `Issue`; политика A + orphan cleanup (`State` = admitted, peer не в room) |
+| **`IssueTicket`** | Control (HTTP) | `ValidateNickName` → `Reserve` → `Issue(roomID, peerID, nickName, …)`; политика A + orphan cleanup |
 | **`JoinRoom`** | Data (WS / ENet) | `Validate` → `Admit` → peer → `Join`/`Replace` → `Start`; откат `Revoke` при ошибках (кроме Replace) |
 | **`LeaveRoom`** | Data (при disconnect) | `Leave` → `Stop` → `Revoke` |
 | **`Create` / `Delete`** | Control | `RegisterRoom`/`UnregisterRoom` ↔ registry; Create откатывает `UnregisterRoom` через `errors.Join` |
@@ -86,16 +86,17 @@ WebSocket — на **том же** `*fiber.App` (HTTP upgrade). ENet — **от�
 `internal/usecase/room/issue_ticket.go`:
 
 ```text
+ValidateNickName (обязателен, max 64 байта UTF-8)
 GetRoom → HasPeer? → ErrPeerAlreadyInRoom
 Reserve(expiresAt = admission.TTL())
   при ErrTicketSlotHeld и peer не в room:
     State → если admitted (orphan) → Revoke → повторный Reserve (один раз)
-Issue → при ошибке Revoke (откат брони)
+Issue(roomID, peerID, nickName, password) → при ошибке Revoke (откат брони)
 ```
 
 **Политика A (строгая):** peer уже в room → `ErrPeerAlreadyInRoom`; слот `reserved`/`admitted` → `ErrTicketSlotHeld`; повторный Issue при активной брони запрещён.
 
-Клиент получает ticket (пока программно / будущий HTTP), затем WS или ENet.
+HTTP: `POST /rooms/:id/tickets` с `{"nick_name":"…","password":"…"}` → `{"token":"<base64url>"}`. Затем WS или ENet.
 
 HTTP control plane реализован в `delivery/http` (см. таблицу endpoints ниже).
 
@@ -104,15 +105,15 @@ HTTP control plane реализован в `delivery/http` (см. таблицу
 `internal/usecase/room/join_room.go` — `JoinRoom(ctx, connection, token)`.
 
 ```text
-1. admission.Validate(ctx, token) → domain.Claims
+1. admission.Validate(ctx, token) → domain.Claims (включая NickName из ticket)
 2. roomRegistry.GetRoom(claims.RoomID)
 3. reservation.Admit(claims.RoomID, claims.PeerID)   // reserved → admitted
-4. peerFactory.CreatePeer(room.Context(), …)
+4. peerFactory.CreatePeer(room.Context(), claims.PeerID, claims.NickName, …)
 5. room.Replace(peer) если peer уже в комнате, иначе room.Join(peer)
 6. peer.Start()
 ```
 
-При ошибке на шаге 5: `room.Leave(peer)`, `peer.Stop()`. При любой ошибке join delivery шлёт **один binary-кадр** с OpCode ошибки (`deliveryerrors.SendJoinReject`), затем закрывает transport (`defer Close` на WS, `sess.close` на ENet). До `peer.Start()` use case **не** вызывает `peer.Stop()` — только откат membership в `Room`.
+При ошибке на шаге 5: `room.Leave(peer)`, `peer.Stop()`. При **Replace** ошибке старый peer остаётся в комнате — `Revoke` не вызывается; `Room.Replace` откатывает `peers` и policy (`OnJoin(old)`). При любой ошибке join delivery шлёт **один binary-кадр** с OpCode ошибки (`deliveryerrors.SendJoinReject`), затем закрывает transport (`defer Close` на WS, `sess.close` на ENet). До `peer.Start()` use case **не** вызывает `peer.Stop()` — только откат membership в `Room`.
 
 Ошибки join оборачивают sentinel из `domain/join_errors.go` (`%w`); маппинг в OpCode — **только** в `internal/delivery/errors` (чеклист — [.cursor/rules/join-error-opcodes.mdc](.cursor/rules/join-error-opcodes.mdc)).
 
@@ -161,21 +162,26 @@ HTTP control plane реализован в `delivery/http` (см. таблицу
 ### Допуск (Admission)
 
 Порт: `internal/port/admission/admission.go`.  
-Реализация: `internal/adapter/admission` (HMAC-SHA256, фиксированный размер token 65 байт: payload + MAC).
+Реализация: `internal/adapter/admission` (HMAC-SHA256, **token v2**, переменная длина).
 
-- **`Issue`** — `roomID`, `peerID`, `password` → `[]byte` ticket.
+**Формат ticket v2:** `version(1)` + `roomID(8)` + `peerID(8)` + `issuedAt(8)` + `expiresAt(8)` + `nickLen(1)` + `nick(nickLen)` + `HMAC-SHA256(32)`.  
+Размер: `67 + len(nick) … 130` байт при `nick` 1…64 байта.
+
+- **`Issue`** — `roomID`, `peerID`, `nickName`, `password` → `[]byte` ticket (`domain.ValidateNickName`).
 - **`Validate`** — `token` → `domain.Claims` или ошибка (`domain.ErrInvalidToken`, `domain.ErrExpiredToken`, …).
 
-`domain.Claims`: `RoomID`, `PeerID`, `IssuedAt`, `ExpiresAt`.
+`domain.Claims`: `RoomID`, `PeerID`, `NickName`, `IssuedAt`, `ExpiresAt`.
 
 В `main` секрет зашит как `dev-secret-change-me` (только для разработки).
 
 ### Realtime
 
-- **`Room`** — lifecycle, `Join` / `Leave` / `Replace`, `GetPeer`, `Deliver` / `Send`.
-- **`Peer`** — чтение/запись кадров через `transport.Connection`.
-- **`RoomPolicy`** (`port/realtime/policy`) — хуки комнаты; **`RelayRoomPolicy`** — временный relay.
-- `RoomFactory` создаёт policy внутри adapter (не в port `RoomFactory`).
+- **`Room`** — один event loop на комнату: `incoming` (кадры), `lifecycle` (Join/Leave/Replace), full/patch ticks из `RoomPolicy.TickIntervals()`.
+- **`Peer`** — чтение/запись кадров через `transport.Connection`; `NickName` из ticket → `PeerState` на join.
+- **`RoomPolicy`** (`port/realtime/policy`) — `OnStart`/`OnStop`, `OnJoin`/`OnLeave`, `OnMessage`, `OnTickFullState`/`OnTickPatchState`.
+- **`StateRoomPolicy`** (`adapter/realtime/policy/state`) — authoritative `RoomState`: master election (min ping ≥ 0), full/patch broadcast, master-only entities/input/RPC, in-room errors отправителю.
+- `StateRoomPolicyFactory` — дефолтные интервалы тиков (4s full, 50ms patch); `0` в конструкторе → подстановка дефолтов.
+- Patch apply — атомарно на уровне entities map, entity components и component values (`ApplyMapStatePatchCopy`).
 
 ### Реестр комнат
 
@@ -221,22 +227,36 @@ HTTP control plane реализован в `delivery/http` (см. таблицу
 | `OpPeerAlreadyInRoom` | `0x76` | Peer в room (Issue, политика A) |
 | `OpReservationInternal` | `0x7F` | Прочая ошибка reservation |
 
-**In-room (`0x60–0x6F`)** — после admit; маппер `InRoomErrorOpCode` / `SendInRoomError`:
+**In-room (`0x60–0x6F`)** — после admit; ошибка **отправителю**, соединение остаётся открытым; маппер `InRoomErrorOpCode` / `SendInRoomError` (`delivery/errors/join_reject.go`):
 
-| OpCode | Hex | Смысл (черновик) |
-|--------|-----|------------------|
-| `OpInRoomInternal` | `0x60` | Прочая ошибка в сессии (пока default) |
+| OpCode | Hex | Sentinel (`domain`) |
+|--------|-----|---------------------|
+| `OpInRoomInternal` | `0x60` | `ErrInRoomInternal` (default) |
+| `OpInRoomNotMaster` | `0x61` | `ErrNotMaster` |
+| `OpInRoomInvalidPayload` | `0x62` | `ErrInRoomInvalidPayload` |
+| `OpInRoomInvalidRpc` | `0x63` | `ErrInvalidRpcTarget` |
+| `OpInRoomRpcPeerNotFound` | `0x64` | `ErrRpcTargetPeerNotFound` |
+| `OpInRoomNoMaster` | `0x65` | `ErrNoMaster` |
+| `OpInRoomUnknownOpcode` | `0x66` | `ErrInRoomUnknownOpcode` |
 
-| `OpCodeFullState` | `0x03` | Room snapshot (см. [docs/wire-state-codec.md](docs/wire-state-codec.md)) |
-| `OpCodePatchState` | `0x04` | Room patch |
-| `OpCodeFullInput` | `0x05` | Input map (без `peer_id` в payload) |
+**State sync (игровой трафик):**
+
+| OpCode | Hex | Смысл |
+|--------|-----|--------|
+| `OpCodeFullState` | `0x01` | Room snapshot |
+| `OpCodePatchState` | `0x02` | Room patch |
+| `OpCodeFullEntities` | `0x03` | Entities map (master → server) |
+| `OpCodePatchEntities` | `0x04` | Entities patch |
+| `OpCodeFullInput` | `0x05` | Input map |
 | `OpCodePatchInput` | `0x06` | Input patch |
-| `OpCodeRpc` | `0x07` | RPC |
+| `OpCodeRpc` | `0x07` | RPC (master → target peer) |
+
+Layout payload — [docs/wire-state-codec.md](docs/wire-state-codec.md).
 
 **State wire (payload layout):** [docs/wire-state-codec.md](docs/wire-state-codec.md) — BE, map, flags, лимиты; реализация `internal/adapter/realtime/codec/`.
 
-Источник OpCode: `internal/domain/state/opcodes.go`; join/reservation — `join_errors.go`, `room_errors.go`.  
-Мапперы: `internal/delivery/errors` — `join_reject.go`, `reservation_reject.go`, `in_room.go`, `wire.go` (импорт: `deliveryerrors ".../delivery/errors"`).
+Источник OpCode: state — `internal/domain/state/opcodes.go`; join/reservation/in-room — `internal/domain/opcodes.go`, `join_errors.go`, `room_errors.go`.  
+Мапперы: `internal/delivery/errors` — `join_reject.go` (join + in-room), `reservation_reject.go` (импорт: `deliveryerrors ".../delivery/errors"`).
 
 ## API и endpoints
 
@@ -247,13 +267,15 @@ HTTP control plane реализован в `delivery/http` (см. таблицу
 | `POST` | `/rooms` | `Create` | `201` | `{"id":1,"capacity":8,"password":"optional"}` | `{"id":1,"peers":[]}` |
 | `GET` | `/rooms` | `GetList` | `200` | — | `{"rooms":[…]}` |
 | `DELETE` | `/rooms/:id` | `Delete` | `204` | `{"password":"…"}` (тело опционально; нужно, если при create задан пароль) | — |
-| `POST` | `/rooms/:id/tickets` | `IssueTicket` | `201` | `{"peer_id":2,"password":"…"}` | `{"token":"<base64url>"}` |
+| `POST` | `/rooms/:id/tickets` | `IssueTicket` | `201` | `{"nick_name":"player","password":"…"}` | `{"token":"<base64url>"}` |
+
+`nick_name` — **обязателен**, 1…64 байта UTF-8, без control-символов (`domain.ValidateNickName`). При ошибке — `400` / `invalid_nick_name`.
 
 Если при создании комнаты `password` не пустой — тот же пароль обязателен для `IssueTicket` и `Delete`. Пустой/отсутствующий пароль при create — комната без защиты.
 
-Ошибки: JSON `{"code":"…","message":"…"}`; коды — `room_not_found`, `room_already_exists`, `ticket_slot_held`, `invalid_request`, … (маппинг в `delivery/http/errors.go`).
+Ошибки: JSON `{"code":"…","message":"…"}`; коды — `room_not_found`, `room_already_exists`, `ticket_slot_held`, `invalid_nick_name`, `invalid_request`, … (маппинг в `delivery/http/errors.go`).
 
-Ticket в ответе — **base64url без padding** (сырой HMAC-ticket 65 байт). Для WS query используйте то же кодирование или передавайте бинарь иным каналом.
+Ticket в ответе — **base64url без padding** (сырой HMAC-ticket v2, 67…130 байт в зависимости от длины nick). Для WS query декодируйте base64url в сырые байты.
 
 ### WebSocket
 
@@ -263,7 +285,7 @@ Ticket в ответе — **base64url без padding** (сырой HMAC-ticket 
 
 При ошибке `JoinRoom`: один кадр с OpCode из таблицы выше → закрытие WebSocket.
 
-**Ограничение:** ticket бинарный (65 байт); в HTTP отдаётся как base64url. Для WS query — декодируйте base64url в сырые байты или передавайте иным каналом. Отсутствие `token` в query — закрытие **без** кадра (`0x40` не отправляется).
+**Ограничение:** ticket бинарный (v2, переменная длина); в HTTP — base64url. Для WS query — декодируйте в сырые байты. Отсутствие `token` в query — закрытие **без** кадра (`0x40` не отправляется).
 
 ### ENet
 
@@ -298,7 +320,7 @@ internal/
   adapter/
     admission/                  — HMAC ticket
     reservation/                — in-memory слоты
-    realtime/                   — Room, Peer; policy/ (RelayRoomPolicy)
+    realtime/                   — Room, Peer; policy/state (StateRoomPolicy)
     registry/
     transport/ws|enet/
     logging/stdlib|zap/
@@ -306,7 +328,7 @@ internal/
     http/                        — dto, errors, rooms handlers
     ws/rooms.go
     enet/                       — handler, config, run_cgo / run_stub
-    errors/                     — wire OpCode: join (0x40+), reservation (0x70+), in_room (0x60+)
+    errors/                     — wire OpCode: join (0x40+), in-room (0x60+), reservation (0x70+)
     ws/rooms.go, enet/          — транспорт → JoinRoom use case
 tests/                          — см. tests/README.md
 ```
@@ -362,7 +384,7 @@ go test -race ./tests/...
 - Конфигурация admission: секрет и пароль комнаты из env (сейчас dev secret в `main`)
 - Конфигурация: порт HTTP/ENet, секрет admission из env
 - Health-check
-- Доменные ошибки и маппинг в HTTP status (control plane; data plane — OpCode выше)
 - Идемпотентный `LeaveRoom` в realtime, если peer уже снят с `Room`
-- Замена `RelayRoomPolicy` на целевую логику комнаты (decode → `RoomState` / apply patch)
 - Ping/idle eviction для зомби `admitted` (сейчас — события + orphan cleanup в Issue)
+- `delivery/ws` e2e: issue ticket → join по WS
+- Буферизация `Room.incoming` под нагрузку (сейчас unbuffered)

@@ -14,7 +14,7 @@ alwaysApply: false
 |------|----------|-----|
 | `join_reject.go` | `0x40–0x5F` (+ reservation via join) | `JoinRejectOpCode`, `SendJoinReject` |
 | `reservation_reject.go` | `0x70–0x7F` | `ReservationRejectOpCode`, `SendReservationReject` |
-| `in_room.go` | `0x60–0x6F` | `InRoomErrorOpCode`, `SendInRoomError` |
+| `join_reject.go` (in-room) | `0x60–0x6F` | `InRoomErrorOpCode`, `SendInRoomError` |
 | `wire.go` | — | `IsJoinRejectOpCode`, `IsReservationRejectOpCode`, `IsInRoomErrorOpCode` |
 
 Домен: `opcodes.go`, `join_errors.go`, `reservation_error.go`, `room_errors.go`.
@@ -34,7 +34,7 @@ alwaysApply: false
 ## Чеклист in-room (`0x60–0x6F`)
 
 - [x] `room_errors.go` + `opcodes.go`
-- [x] `in_room.go` + `tests/delivery/errors/in_room_test.go`
-- [ ] README (расширять по мере сценариев in-room)
+- [x] `join_reject.go` (`InRoomErrorOpCode`) + `tests/delivery/errors/in_room_test.go`
+- [x] README (таблица `0x60–0x66`, master/RPC/payload/unknown opcode)
 
 HTTP — `delivery/http`, не этот пакет.

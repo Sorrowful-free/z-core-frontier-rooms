@@ -2,7 +2,7 @@ package domain
 
 import "errors"
 
-// Sentinel-ошибки внутри комнаты (после admit); маппинг — delivery/errors/in_room.go.
+// Sentinel-ошибки внутри комнаты (после admit); маппинг — delivery/errors/join_reject.go (InRoomErrorOpCode).
 
 var (
 	ErrInRoomInternal        = errors.New("in-room: internal")
