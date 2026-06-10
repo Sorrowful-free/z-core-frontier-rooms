@@ -78,7 +78,7 @@ func TestJoinRoom_Success(t *testing.T) {
 	room.EXPECT().GetPeers().Return([]realtime.Peer{peer}).AnyTimes()
 	peer.EXPECT().GetID().Return(peerID).AnyTimes()
 	peer.EXPECT().GetNickName().Return("").AnyTimes()
-	peer.EXPECT().GetPing().Return(int64(0)).AnyTimes()
+	peer.EXPECT().Ping().Return(int64(0)).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewJoinRoomUseCase(admission, peerFactory, registry, reservation, logger)

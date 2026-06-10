@@ -395,20 +395,27 @@ func mustJoin(t *testing.T, room *realtime.Room, peers ...*capturePeer) {
 	}
 }
 
+const pingUnknown = int64(-1)
+
 type capturePeer struct {
-	id       domain.PeerID
-	nick     string
-	mu       sync.Mutex
+	id        domain.PeerID
+	nick      string
+	ping      int64
+	mu        sync.Mutex
 	delivered []events.PeerEvent
 }
 
 func newCapturePeer(id domain.PeerID, nick string) *capturePeer {
-	return &capturePeer{id: id, nick: nick}
+	return newCapturePeerWithPing(id, nick, 0)
 }
 
-func (p *capturePeer) GetID() domain.PeerID    { return p.id }
-func (p *capturePeer) GetNickName() string     { return p.nick }
-func (p *capturePeer) GetPing() int64          { return 0 }
+func newCapturePeerWithPing(id domain.PeerID, nick string, ping int64) *capturePeer {
+	return &capturePeer{id: id, nick: nick, ping: ping}
+}
+
+func (p *capturePeer) GetID() domain.PeerID { return p.id }
+func (p *capturePeer) GetNickName() string  { return p.nick }
+func (p *capturePeer) Ping() int64          { return p.ping }
 func (p *capturePeer) Start() error            { return nil }
 func (p *capturePeer) Stop() error             { return nil }
 func (p *capturePeer) Deliver(ev events.PeerEvent) error {

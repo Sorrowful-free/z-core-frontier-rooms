@@ -23,6 +23,10 @@ func (c *EnetConnection) Receive() (domain.Frame, error) {
 	return domain.Frame{}, io.EOF
 }
 
+func (c *EnetConnection) Ping() int64 {
+	return -1
+}
+
 func (c *EnetConnection) Close() error {
 	return nil
 }

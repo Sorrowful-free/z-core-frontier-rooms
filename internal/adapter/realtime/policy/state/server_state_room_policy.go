@@ -17,6 +17,9 @@ func (p *StateRoomPolicy) OnTickFullState() error {
 }
 
 func (p *StateRoomPolicy) OnTickPatchState() error {
+	if err := p.refreshPeerPings(); err != nil {
+		return fmt.Errorf("refresh peer pings: %w", err)
+	}
 	patch, err := p.prevState.MakePatch(&p.state)
 	if err != nil {
 		return fmt.Errorf("make patch state: %w", err)
@@ -25,6 +28,18 @@ func (p *StateRoomPolicy) OnTickPatchState() error {
 		return nil
 	}
 	return p.sendPatchState(patch)
+}
+
+func (p *StateRoomPolicy) refreshPeerPings() error {
+	for peerID, peerState := range p.state.Peers {
+		peer, err := p.room.GetPeer(peerID)
+		if err != nil {
+			return fmt.Errorf("get peer %d: %w", peerID, err)
+		}
+		peerState.Ping = peer.Ping()
+		p.state.Peers[peerID] = peerState
+	}
+	return nil
 }
 
 func (p *StateRoomPolicy) masterPeerID() domain.PeerID {
@@ -45,7 +60,7 @@ func (p *StateRoomPolicy) joinPeerAndSyncState(peer realtime.Peer) error {
 		p.state.Peers[peerID] = state.PeerState{
 			NickName: peer.GetNickName(),
 			IsMaster: len(p.state.Peers) == 0,
-			Ping:     0,
+			Ping:     peer.Ping(),
 		}
 	}
 

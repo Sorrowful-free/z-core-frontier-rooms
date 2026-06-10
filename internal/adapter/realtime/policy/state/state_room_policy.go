@@ -87,23 +87,14 @@ func (p *StateRoomPolicy) OnLeave(peer realtime.Peer) error {
 			return fmt.Errorf("peer not found: %d", peerID)
 		}
 		delete(roomState.Peers, peerID)
-		if peerState.IsMaster && len(roomState.Peers) > 0 {
-			for id, _ := range roomState.Peers {
-				peerState, ok := roomState.Peers[id]
-				if !ok {
-					return fmt.Errorf("peer not found: %d", id)
-				}
-				newPeer, err := p.room.GetPeer(id)
-				if err != nil {
-					return err
-				}
-				peerState.IsMaster = true
-				roomState.Peers[id] = peerState
-				p.master = newPeer
-				break
-			}
+		if !peerState.IsMaster {
+			return nil
 		}
-		return nil
+		if len(roomState.Peers) == 0 {
+			p.master = nil
+			return nil
+		}
+		return p.electAndAssignMaster(roomState)
 	})
 }
 

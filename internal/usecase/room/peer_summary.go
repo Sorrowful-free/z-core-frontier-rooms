@@ -26,7 +26,7 @@ func NewPeerSummary(peerID domain.PeerID, nickName string, ping int64) *PeerSumm
 }
 
 func NewPeerSummaryFromPeer(peer realtime.Peer) *PeerSummary {
-	return NewPeerSummary(peer.GetID(), peer.GetNickName(), peer.GetPing())
+	return NewPeerSummary(peer.GetID(), peer.GetNickName(), peer.Ping())
 }
 
 func (p *PeerSummary) IsValid() bool {

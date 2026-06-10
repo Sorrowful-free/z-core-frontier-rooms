@@ -36,6 +36,13 @@ func (c *EnetConnection) Receive() (domain.Frame, error) {
 	return frame, nil
 }
 
+func (c *EnetConnection) Ping() int64 {
+	if c.peer == nil {
+		return -1
+	}
+	return int64(c.peer.GetRoundTripTime())
+}
+
 func (c *EnetConnection) Close() error {
 	c.closeOnce.Do(func() {
 		if c.incoming != nil {

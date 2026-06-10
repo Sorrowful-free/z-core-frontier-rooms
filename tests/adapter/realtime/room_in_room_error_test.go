@@ -87,7 +87,7 @@ func newErrorCapturePeer(id domain.PeerID) *errorCapturePeer {
 
 func (p *errorCapturePeer) GetID() domain.PeerID { return p.id }
 func (p *errorCapturePeer) GetNickName() string  { return "" }
-func (p *errorCapturePeer) GetPing() int64     { return 0 }
+func (p *errorCapturePeer) Ping() int64          { return 0 }
 func (p *errorCapturePeer) Start() error       { return nil }
 func (p *errorCapturePeer) Stop() error        { return nil }
 func (p *errorCapturePeer) Deliver(ev events.PeerEvent) error {

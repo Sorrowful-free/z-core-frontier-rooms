@@ -115,7 +115,7 @@ type stubPeer struct {
 
 func (p *stubPeer) GetID() domain.PeerID    { return p.id }
 func (p *stubPeer) GetNickName() string     { return "" }
-func (p *stubPeer) GetPing() int64          { return 0 }
+func (p *stubPeer) Ping() int64               { return 0 }
 func (p *stubPeer) Start() error            { return nil }
 func (p *stubPeer) Stop() error             { return nil }
 func (p *stubPeer) Deliver(events.PeerEvent) error {

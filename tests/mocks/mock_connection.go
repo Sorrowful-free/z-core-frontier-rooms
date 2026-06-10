@@ -78,6 +78,44 @@ func (c *MockConnectionCloseCall) DoAndReturn(f func() error) *MockConnectionClo
 	return c
 }
 
+// Ping mocks base method.
+func (m *MockConnection) Ping() int64 {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Ping")
+	ret0, _ := ret[0].(int64)
+	return ret0
+}
+
+// Ping indicates an expected call of Ping.
+func (mr *MockConnectionMockRecorder) Ping() *MockConnectionPingCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Ping", reflect.TypeOf((*MockConnection)(nil).Ping))
+	return &MockConnectionPingCall{Call: call}
+}
+
+// MockConnectionPingCall wrap *gomock.Call
+type MockConnectionPingCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockConnectionPingCall) Return(arg0 int64) *MockConnectionPingCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockConnectionPingCall) Do(f func() int64) *MockConnectionPingCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockConnectionPingCall) DoAndReturn(f func() int64) *MockConnectionPingCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // Receive mocks base method.
 func (m *MockConnection) Receive() (domain.Frame, error) {
 	m.ctrl.T.Helper()

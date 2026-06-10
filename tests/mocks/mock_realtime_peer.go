@@ -155,40 +155,40 @@ func (c *MockPeerGetNickNameCall) DoAndReturn(f func() string) *MockPeerGetNickN
 	return c
 }
 
-// GetPing mocks base method.
-func (m *MockPeer) GetPing() int64 {
+// Ping mocks base method.
+func (m *MockPeer) Ping() int64 {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetPing")
+	ret := m.ctrl.Call(m, "Ping")
 	ret0, _ := ret[0].(int64)
 	return ret0
 }
 
-// GetPing indicates an expected call of GetPing.
-func (mr *MockPeerMockRecorder) GetPing() *MockPeerGetPingCall {
+// Ping indicates an expected call of Ping.
+func (mr *MockPeerMockRecorder) Ping() *MockPeerPingCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPing", reflect.TypeOf((*MockPeer)(nil).GetPing))
-	return &MockPeerGetPingCall{Call: call}
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Ping", reflect.TypeOf((*MockPeer)(nil).Ping))
+	return &MockPeerPingCall{Call: call}
 }
 
-// MockPeerGetPingCall wrap *gomock.Call
-type MockPeerGetPingCall struct {
+// MockPeerPingCall wrap *gomock.Call
+type MockPeerPingCall struct {
 	*gomock.Call
 }
 
 // Return rewrite *gomock.Call.Return
-func (c *MockPeerGetPingCall) Return(arg0 int64) *MockPeerGetPingCall {
+func (c *MockPeerPingCall) Return(arg0 int64) *MockPeerPingCall {
 	c.Call = c.Call.Return(arg0)
 	return c
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockPeerGetPingCall) Do(f func() int64) *MockPeerGetPingCall {
+func (c *MockPeerPingCall) Do(f func() int64) *MockPeerPingCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockPeerGetPingCall) DoAndReturn(f func() int64) *MockPeerGetPingCall {
+func (c *MockPeerPingCall) DoAndReturn(f func() int64) *MockPeerPingCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

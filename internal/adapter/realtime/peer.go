@@ -15,7 +15,6 @@ import (
 type Peer struct {
 	id         domain.PeerID
 	nickName   string
-	ping       int64
 	connection transport.Connection
 	room       realtime.Room
 	outbound   chan events.PeerEvent
@@ -48,8 +47,8 @@ func (p *Peer) GetNickName() string {
 	return p.nickName
 }
 
-func (p *Peer) GetPing() int64 {
-	return p.ping
+func (p *Peer) Ping() int64 {
+	return p.connection.Ping()
 }
 
 func (p *Peer) Start() error {
