@@ -32,14 +32,21 @@ func (p *StateRoomPolicy) onClientPatchEntities(roomEvent events.RoomEvent) erro
 	if err != nil {
 		return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
 	}
-	if err := state.ApplyMapStatePatch(p.state.Entities, *patch, func(e1 state.EntityState, e2 state.EntityStatePatch) (*state.EntityState, error) {
-		if err := e1.ApplyPatch(e2); err != nil {
-			return nil, err
-		}
-		return &e1, nil
-	}); err != nil {
+	nextEntities, err := state.ApplyMapStatePatchCopy(
+		p.state.Entities,
+		*patch,
+		func(e state.EntityState) state.EntityState { return e.Clone() },
+		func(e1 state.EntityState, e2 state.EntityStatePatch) (*state.EntityState, error) {
+			if err := e1.ApplyPatch(e2); err != nil {
+				return nil, err
+			}
+			return &e1, nil
+		},
+	)
+	if err != nil {
 		return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
 	}
+	p.state.Entities = nextEntities
 	return p.publishRoomStateChange(oldRoomState, p.masterPeerID())
 }
 
@@ -66,9 +73,10 @@ func (p *StateRoomPolicy) onClientPatchInput(roomEvent events.RoomEvent) error {
 		inputState, ok := roomState.Inputs[peerID]
 		if !ok {
 			inputState = state.InputState{Values: state.NewMapState[state.ValueId, state.ValueState]()}
+		} else {
+			inputState = inputState.Clone()
 		}
-		err := inputState.ApplyPatch(*patch)
-		if err != nil {
+		if err := inputState.ApplyPatch(*patch); err != nil {
 			return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
 		}
 		roomState.Inputs[peerID] = inputState

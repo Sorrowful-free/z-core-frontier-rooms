@@ -118,3 +118,17 @@ func ApplyMapStatePatch[K comparable, S any, P any](targetState MapState[K, S], 
 
 	return nil
 }
+
+// ApplyMapStatePatchCopy applies patch to a clone of source; source is unchanged on error.
+func ApplyMapStatePatchCopy[K comparable, S any, P any](
+	source MapState[K, S],
+	patchState MapStatePatch[K, S, P],
+	cloneItem func(S) S,
+	apply func(S, P) (*S, error),
+) (MapState[K, S], error) {
+	cloned := CloneMapState(source, cloneItem)
+	if err := ApplyMapStatePatch(cloned, patchState, apply); err != nil {
+		return nil, err
+	}
+	return cloned, nil
+}

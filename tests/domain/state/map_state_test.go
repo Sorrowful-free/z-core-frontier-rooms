@@ -114,3 +114,35 @@ func TestApplyMapStatePatch_roundTrip(t *testing.T) {
 		t.Fatalf("map = %#v, want 1:15 and 2:20", target)
 	}
 }
+
+func TestApplyMapStatePatchCopy_errorPreservesSource(t *testing.T) {
+	t.Parallel()
+
+	source := state.NewMapState[int, int]()
+	source[1] = 10
+	source[2] = 20
+
+	patch := state.MapStatePatch[int, int, int]{
+		Updated: map[int]int{1: 11, 2: 22},
+	}
+
+	_, err := state.ApplyMapStatePatchCopy(source, patch, func(v int) int { return v }, func(cur, p int) (*int, error) {
+		if p == 22 {
+			return nil, errApplyFail
+		}
+		v := p
+		return &v, nil
+	})
+	if err == nil {
+		t.Fatal("expected apply error")
+	}
+	if source[1] != 10 || source[2] != 20 {
+		t.Fatalf("source mutated on failed apply: %#v", source)
+	}
+}
+
+var errApplyFail = &applyError{}
+
+type applyError struct{}
+
+func (e *applyError) Error() string { return "apply failed" }
