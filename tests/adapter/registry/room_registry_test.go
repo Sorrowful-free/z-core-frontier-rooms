@@ -7,7 +7,7 @@ import (
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/stdlib"
 	adapterrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
-	adapterpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy/relay"
+	statepolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy/state"
 	adapterregistry "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/registry"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
@@ -15,7 +15,7 @@ import (
 func newTestRegistry(t *testing.T) *adapterregistry.RoomRegistry {
 	t.Helper()
 	logger := stdlib.New("test")
-	roomPolicyFactory := adapterpolicy.NewRelayRoomPolicyFactory(logger)
+	roomPolicyFactory := statepolicy.NewStateRoomPolicyFactory(logger)
 	roomFactory := adapterrealtime.NewRoomFactory(logger, roomPolicyFactory)
 	return adapterregistry.NewRoomRegistry(context.Background(), roomFactory, logger)
 }

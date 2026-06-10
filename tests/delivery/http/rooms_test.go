@@ -16,7 +16,7 @@ import (
 	identityadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/identity"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/stdlib"
 	adapterrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
-	adapterpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy/relay"
+	statepolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy/state"
 	adapterregistry "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/registry"
 	adapterreservation "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
 	deliveryhttp "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/http"
@@ -32,7 +32,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
 
 	logger := stdlib.New("http-test")
-	roomPolicyFactory := adapterpolicy.NewRelayRoomPolicyFactory(logger)
+	roomPolicyFactory := statepolicy.NewStateRoomPolicyFactory(logger)
 	roomFactory := adapterrealtime.NewRoomFactory(logger, roomPolicyFactory)
 	registry := adapterregistry.NewRoomRegistry(context.Background(), roomFactory, logger)
 	reservation := adapterreservation.NewReservation(logger)
