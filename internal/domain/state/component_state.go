@@ -50,12 +50,14 @@ func (c ComponentState) Clone() ComponentState {
 }
 
 func (c *ComponentState) ApplyPatch(patch ComponentStatePatch) error {
-	err := ApplyMapStatePatch(c.Values, patch.Values, func(v1, v2 ValueState) (*ValueState, error) {
+	nextValues, err := ApplyMapStatePatchCopy(c.Values, patch.Values, func(v ValueState) ValueState {
+		return v.Clone()
+	}, func(v1, v2 ValueState) (*ValueState, error) {
 		return &v2, nil
 	})
 	if err != nil {
 		return err
 	}
-
+	c.Values = nextValues
 	return nil
 }

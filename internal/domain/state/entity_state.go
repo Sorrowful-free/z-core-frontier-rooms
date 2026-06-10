@@ -79,19 +79,21 @@ func (e EntityState) Clone() EntityState {
 }
 
 func (e *EntityState) ApplyPatch(patch EntityStatePatch) error {
-	if patch.Owner != nil && *patch.Owner != e.Owner {
-		e.Owner = *patch.Owner
-	}
-
-	err := ApplyMapStatePatch(e.Components, patch.Components, func(c1 ComponentState, c2 ComponentStatePatch) (*ComponentState, error) {
-		err := c1.ApplyPatch(c2)
-		if err != nil {
+	nextComponents, err := ApplyMapStatePatchCopy(e.Components, patch.Components, func(c ComponentState) ComponentState {
+		return c.Clone()
+	}, func(c1 ComponentState, c2 ComponentStatePatch) (*ComponentState, error) {
+		next := c1.Clone()
+		if err := next.ApplyPatch(c2); err != nil {
 			return nil, err
 		}
-		return &c1, nil
+		return &next, nil
 	})
 	if err != nil {
 		return err
+	}
+	e.Components = nextComponents
+	if patch.Owner != nil && *patch.Owner != e.Owner {
+		e.Owner = *patch.Owner
 	}
 	return nil
 }
