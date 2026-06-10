@@ -171,17 +171,27 @@ func (r *Room) Replace(peer realtime.Peer) error {
 	r.mutex.Unlock()
 
 	if err := r.dispatchLifecycle(lifecycleRequest{
-		op:      lifecycleReplace,
-		peer:    peer,
-		oldPeer: old,
-		done:    make(chan error, 1),
+		op:   lifecycleLeave,
+		peer: old,
+		done: make(chan error, 1),
 	}); err != nil {
-		return err
+		return fmt.Errorf("%w: %w", domain.ErrReplaceFailed, err)
 	}
 
 	r.mutex.Lock()
 	r.peers[peerID] = peer
 	r.mutex.Unlock()
+
+	if err := r.dispatchLifecycle(lifecycleRequest{
+		op:   lifecycleJoin,
+		peer: peer,
+		done: make(chan error, 1),
+	}); err != nil {
+		r.mutex.Lock()
+		r.peers[peerID] = old
+		r.mutex.Unlock()
+		return fmt.Errorf("%w: %w", domain.ErrReplaceFailed, err)
+	}
 
 	if err := old.Stop(); err != nil {
 		return err
