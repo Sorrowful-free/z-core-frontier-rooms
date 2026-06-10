@@ -10,13 +10,13 @@ import (
 
 func (p *StateRoomPolicy) onClientFullEntities(roomEvent events.RoomEvent) error {
 	if p.master == nil || roomEvent.PeerID != p.master.GetID() {
-		return fmt.Errorf("peer not master: %d", roomEvent.PeerID)
+		return fmt.Errorf("%w: peer %d", domain.ErrNotMaster, roomEvent.PeerID)
 	}
 
 	oldRoomState := p.state.Clone()
 	full, err := p.entitiesCodec.Decode(roomEvent.Frame.Payload)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
 	}
 	p.state.Entities = full
 	return p.publishRoomStateChange(oldRoomState, p.masterPeerID())
@@ -24,13 +24,13 @@ func (p *StateRoomPolicy) onClientFullEntities(roomEvent events.RoomEvent) error
 
 func (p *StateRoomPolicy) onClientPatchEntities(roomEvent events.RoomEvent) error {
 	if p.master == nil || roomEvent.PeerID != p.master.GetID() {
-		return fmt.Errorf("peer not master: %d", roomEvent.PeerID)
+		return fmt.Errorf("%w: peer %d", domain.ErrNotMaster, roomEvent.PeerID)
 	}
 
 	oldRoomState := p.state.Clone()
 	patch, err := p.entitiesCodec.DecodePatch(roomEvent.Frame.Payload)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
 	}
 	if err := state.ApplyMapStatePatch(p.state.Entities, *patch, func(e1 state.EntityState, e2 state.EntityStatePatch) (*state.EntityState, error) {
 		if err := e1.ApplyPatch(e2); err != nil {
@@ -38,7 +38,7 @@ func (p *StateRoomPolicy) onClientPatchEntities(roomEvent events.RoomEvent) erro
 		}
 		return &e1, nil
 	}); err != nil {
-		return err
+		return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
 	}
 	return p.publishRoomStateChange(oldRoomState, p.masterPeerID())
 }
@@ -46,7 +46,7 @@ func (p *StateRoomPolicy) onClientPatchEntities(roomEvent events.RoomEvent) erro
 func (p *StateRoomPolicy) onClientFullInput(roomEvent events.RoomEvent) error {
 	full, err := p.inputCodec.Decode(roomEvent.Frame.Payload)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
 	}
 
 	return p.prepareAndSendRoomStatePatch(func(roomState *state.RoomState) error {
@@ -58,7 +58,7 @@ func (p *StateRoomPolicy) onClientFullInput(roomEvent events.RoomEvent) error {
 func (p *StateRoomPolicy) onClientPatchInput(roomEvent events.RoomEvent) error {
 	patch, err := p.inputCodec.DecodePatch(roomEvent.Frame.Payload)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
 	}
 	peerID := roomEvent.PeerID
 
@@ -69,7 +69,7 @@ func (p *StateRoomPolicy) onClientPatchInput(roomEvent events.RoomEvent) error {
 		}
 		err := inputState.ApplyPatch(*patch)
 		if err != nil {
-			return err
+			return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
 		}
 		roomState.Inputs[peerID] = inputState
 		return nil
@@ -80,7 +80,7 @@ func (p *StateRoomPolicy) onClientRpc(roomEvent events.RoomEvent) error {
 	payload := roomEvent.Frame.Payload
 	rpc, err := p.rpcCodec.Decode(payload)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
 	}
 
 	senderPeerID := roomEvent.PeerID
@@ -96,15 +96,22 @@ func (p *StateRoomPolicy) onClientRpc(roomEvent events.RoomEvent) error {
 
 	switch rpc.Target {
 	case state.RpcTargetPeer:
-		if rpc.PeerID.IsValid() && (!masterID.IsValid() || rpc.PeerID != masterID) {
-			peerEvent.PeerID = rpc.PeerID
+		if !rpc.PeerID.IsValid() {
+			return domain.ErrInvalidRpcTarget
 		}
+		if !p.room.HasPeer(rpc.PeerID) {
+			return fmt.Errorf("%w: %d", domain.ErrRpcTargetPeerNotFound, rpc.PeerID)
+		}
+		peerEvent.PeerID = rpc.PeerID
 	case state.RpcTargetMaster:
-		if masterID.IsValid() && rpc.PeerID == masterID {
-			peerEvent.PeerID = rpc.PeerID
+		if !masterID.IsValid() {
+			return domain.ErrNoMaster
 		}
+		peerEvent.PeerID = masterID
 	case state.RpcTargetAll:
 		peerEvent.PeerID = domain.PeerIDInvalid
+	default:
+		return domain.ErrInvalidRpcTarget
 	}
 
 	return p.room.Send(peerEvent)

@@ -60,6 +60,16 @@ func IsInRoomErrorOpCode(op domain.OpCode) bool {
 // InRoomErrorOpCode maps in-room errors to wire OpCode (0x60–0x6F, empty payload).
 func InRoomErrorOpCode(err error) domain.OpCode {
 	switch {
+	case stderrors.Is(err, domain.ErrNotMaster):
+		return domain.OpInRoomNotMaster
+	case stderrors.Is(err, domain.ErrInRoomInvalidPayload):
+		return domain.OpInRoomInvalidPayload
+	case stderrors.Is(err, domain.ErrInvalidRpcTarget):
+		return domain.OpInRoomInvalidRpc
+	case stderrors.Is(err, domain.ErrRpcTargetPeerNotFound):
+		return domain.OpInRoomRpcPeerNotFound
+	case stderrors.Is(err, domain.ErrNoMaster):
+		return domain.OpInRoomNoMaster
 	case stderrors.Is(err, domain.ErrInRoomInternal):
 		return domain.OpInRoomInternal
 	default:

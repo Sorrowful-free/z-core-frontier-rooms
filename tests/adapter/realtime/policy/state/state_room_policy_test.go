@@ -2,6 +2,7 @@ package state_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -152,8 +153,8 @@ func TestOnMessage_FullEntities_RejectsNonMaster(t *testing.T) {
 		PeerID: domain.PeerID(2),
 		Frame:  domain.Frame{OpCode: state.OpCodeFullEntities, Payload: payload},
 	})
-	if err == nil {
-		t.Fatal("expected error when non-master sends full entities")
+	if !errors.Is(err, domain.ErrNotMaster) {
+		t.Fatalf("err = %v, want ErrNotMaster", err)
 	}
 }
 
@@ -196,6 +197,120 @@ func TestOnTickPatchState_NoChangesNoSend(t *testing.T) {
 	if len(master.snapshot()) != 0 || len(client.snapshot()) != 0 {
 		t.Fatalf("expected no wire traffic on idle tick, master=%d client=%d",
 			len(master.snapshot()), len(client.snapshot()))
+	}
+}
+
+func TestOnMessage_RpcTargetAll_BroadcastsExcludingSender(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, domain.RoomID(8), 4)
+	master := newCapturePeer(1, "master")
+	client := newCapturePeer(2, "client")
+	sender := newCapturePeer(3, "sender")
+	mustJoin(t, h.room, master, client, sender)
+	master.clear()
+	client.clear()
+	sender.clear()
+
+	payload := mustEncodeRPC(t, state.RpcTargetAll, domain.PeerIDInvalid)
+	if err := h.policy.OnMessage(events.RoomEvent{
+		PeerID: domain.PeerID(3),
+		Frame:  domain.Frame{OpCode: state.OpCodeRpc, Payload: payload},
+	}); err != nil {
+		t.Fatalf("OnMessage rpc all: %v", err)
+	}
+
+	if len(filterOpcode(sender.snapshot(), state.OpCodeRpc)) != 0 {
+		t.Fatal("sender should not receive own rpc")
+	}
+	if len(filterOpcode(master.snapshot(), state.OpCodeRpc)) != 1 {
+		t.Fatal("master should receive rpc broadcast")
+	}
+	if len(filterOpcode(client.snapshot(), state.OpCodeRpc)) != 1 {
+		t.Fatal("client should receive rpc broadcast")
+	}
+}
+
+func TestOnMessage_RpcTargetPeer_UnicastsToTarget(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, domain.RoomID(9), 4)
+	master := newCapturePeer(1, "master")
+	client := newCapturePeer(2, "client")
+	mustJoin(t, h.room, master, client)
+	master.clear()
+	client.clear()
+
+	payload := mustEncodeRPC(t, state.RpcTargetPeer, domain.PeerID(1))
+	if err := h.policy.OnMessage(events.RoomEvent{
+		PeerID: domain.PeerID(2),
+		Frame:  domain.Frame{OpCode: state.OpCodeRpc, Payload: payload},
+	}); err != nil {
+		t.Fatalf("OnMessage rpc peer: %v", err)
+	}
+
+	if len(filterOpcode(master.snapshot(), state.OpCodeRpc)) != 1 {
+		t.Fatal("master should receive targeted rpc")
+	}
+	if len(filterOpcode(client.snapshot(), state.OpCodeRpc)) != 0 {
+		t.Fatal("client should not receive targeted rpc to master")
+	}
+}
+
+func TestOnMessage_RpcTargetMaster_UsesServerMasterNotPayloadPeerID(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, domain.RoomID(10), 4)
+	master := newCapturePeer(1, "master")
+	client := newCapturePeer(2, "client")
+	mustJoin(t, h.room, master, client)
+	master.clear()
+	client.clear()
+
+	payload := mustEncodeRPC(t, state.RpcTargetMaster, domain.PeerID(2))
+	if err := h.policy.OnMessage(events.RoomEvent{
+		PeerID: domain.PeerID(2),
+		Frame:  domain.Frame{OpCode: state.OpCodeRpc, Payload: payload},
+	}); err != nil {
+		t.Fatalf("OnMessage rpc master: %v", err)
+	}
+
+	if len(filterOpcode(master.snapshot(), state.OpCodeRpc)) != 1 {
+		t.Fatal("master should receive rpc to master target")
+	}
+}
+
+func TestOnMessage_Rpc_InvalidTarget_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, domain.RoomID(11), 4)
+	master := newCapturePeer(1, "master")
+	mustJoin(t, h.room, master)
+
+	payload := mustEncodeRPC(t, state.RpcTargetNone, domain.PeerIDInvalid)
+	err := h.policy.OnMessage(events.RoomEvent{
+		PeerID: domain.PeerID(1),
+		Frame:  domain.Frame{OpCode: state.OpCodeRpc, Payload: payload},
+	})
+	if !errors.Is(err, domain.ErrInvalidRpcTarget) {
+		t.Fatalf("err = %v, want ErrInvalidRpcTarget", err)
+	}
+}
+
+func TestOnMessage_Rpc_TargetPeerNotInRoom_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, domain.RoomID(12), 4)
+	master := newCapturePeer(1, "master")
+	mustJoin(t, h.room, master)
+
+	payload := mustEncodeRPC(t, state.RpcTargetPeer, domain.PeerID(99))
+	err := h.policy.OnMessage(events.RoomEvent{
+		PeerID: domain.PeerID(1),
+		Frame:  domain.Frame{OpCode: state.OpCodeRpc, Payload: payload},
+	})
+	if !errors.Is(err, domain.ErrRpcTargetPeerNotFound) {
+		t.Fatalf("err = %v, want ErrRpcTargetPeerNotFound", err)
 	}
 }
 
@@ -333,4 +448,19 @@ func opcodes(peerEvents []events.PeerEvent) []domain.OpCode {
 		out[i] = ev.Frame.OpCode
 	}
 	return out
+}
+
+func mustEncodeRPC(t *testing.T, target state.RpcTarget, peerID domain.PeerID) []byte {
+	t.Helper()
+	c := &codec.RpcStateCodec{}
+	payload, err := c.Encode(&state.RpcState{
+		ID:     state.RpcID(1),
+		Target: target,
+		Values: state.NewMapState[state.ValueId, state.ValueState](),
+		PeerID: peerID,
+	})
+	if err != nil {
+		t.Fatalf("Encode rpc: %v", err)
+	}
+	return payload
 }

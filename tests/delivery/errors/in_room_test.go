@@ -17,6 +17,11 @@ func TestInRoomErrorOpCode(t *testing.T) {
 		want domain.OpCode
 	}{
 		{"in-room internal", domain.ErrInRoomInternal, domain.OpInRoomInternal},
+		{"not master", domain.ErrNotMaster, domain.OpInRoomNotMaster},
+		{"invalid payload", domain.ErrInRoomInvalidPayload, domain.OpInRoomInvalidPayload},
+		{"invalid rpc target", domain.ErrInvalidRpcTarget, domain.OpInRoomInvalidRpc},
+		{"rpc peer not found", domain.ErrRpcTargetPeerNotFound, domain.OpInRoomRpcPeerNotFound},
+		{"no master", domain.ErrNoMaster, domain.OpInRoomNoMaster},
 		{"unknown defaults in-room internal", errors.New("other"), domain.OpInRoomInternal},
 	}
 

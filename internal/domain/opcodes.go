@@ -21,7 +21,12 @@ const (
 	OpPeerStartFailed OpCode = 0x51
 
 	// In-room (0x60–0x6F) — после admit; расширять по мере появления сценариев.
-	OpInRoomInternal OpCode = 0x60
+	OpInRoomInternal       OpCode = 0x60
+	OpInRoomNotMaster      OpCode = 0x61
+	OpInRoomInvalidPayload OpCode = 0x62
+	OpInRoomInvalidRpc     OpCode = 0x63
+	OpInRoomRpcPeerNotFound OpCode = 0x64
+	OpInRoomNoMaster       OpCode = 0x65
 
 	// Reservation (0x70–0x7F) — control plane / join admit по слоту.
 	OpReservationNotFound        OpCode = 0x70

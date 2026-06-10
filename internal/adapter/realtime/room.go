@@ -270,6 +270,7 @@ func processRoomEvents(room *Room) {
 			}
 			if err := room.policy.OnMessage(roomEvent); err != nil {
 				room.logger.Error("error processing room event", "error", err)
+				room.notifyInRoomError(roomEvent.PeerID, err)
 			}
 		case req, ok := <-room.lifecycle:
 			if !ok {
