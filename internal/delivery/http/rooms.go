@@ -1,6 +1,7 @@
 package http
 
 import (
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 	useroom "github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
 	"github.com/gofiber/fiber/v3"
@@ -60,8 +61,11 @@ func (h *RoomsHandler) IssueTicket(c fiber.Ctx) error {
 	if err := c.Bind().JSON(&req); err != nil {
 		return writeBindError(c, err)
 	}
+	if err := domain.ValidateNickName(req.NickName); err != nil {
+		return writeAPIError(c, fiber.StatusBadRequest, codeInvalidNickName, err.Error())
+	}
 
-	token, err := h.issueTicketUseCase.IssueTicket(c.Context(), roomID, req.Password)
+	token, err := h.issueTicketUseCase.IssueTicket(c.Context(), roomID, req.NickName, req.Password)
 	if err != nil {
 		h.logger.Error("http issue ticket failed", "error", err, "roomID", roomID)
 		return writeUsecaseError(c, err)

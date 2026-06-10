@@ -59,7 +59,7 @@ func (uc *JoinRoomUseCase) JoinRoom(ctx context.Context, connection transport.Co
 		return EmptyRoomSummary, domain.PeerIDInvalid, err
 	}
 
-	peer, err := uc.peerFactory.CreatePeer(room.Context(), claims.PeerID, connection, room, uc.logging)
+	peer, err := uc.peerFactory.CreatePeer(room.Context(), claims.PeerID, claims.NickName, connection, room, uc.logging)
 	if err != nil {
 		return EmptyRoomSummary, domain.PeerIDInvalid, uc.revokeJoinReservation(ctx, room, claims.RoomID, claims.PeerID, err)
 	}

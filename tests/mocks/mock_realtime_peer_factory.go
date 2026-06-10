@@ -45,18 +45,18 @@ func (m *MockPeerFactory) EXPECT() *MockPeerFactoryMockRecorder {
 }
 
 // CreatePeer mocks base method.
-func (m *MockPeerFactory) CreatePeer(ctx context.Context, id domain.PeerID, connection transport.Connection, room realtime.Room, logger logging.Logger) (realtime.Peer, error) {
+func (m *MockPeerFactory) CreatePeer(ctx context.Context, id domain.PeerID, nickName string, connection transport.Connection, room realtime.Room, logger logging.Logger) (realtime.Peer, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreatePeer", ctx, id, connection, room, logger)
+	ret := m.ctrl.Call(m, "CreatePeer", ctx, id, nickName, connection, room, logger)
 	ret0, _ := ret[0].(realtime.Peer)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreatePeer indicates an expected call of CreatePeer.
-func (mr *MockPeerFactoryMockRecorder) CreatePeer(ctx, id, connection, room, logger any) *MockPeerFactoryCreatePeerCall {
+func (mr *MockPeerFactoryMockRecorder) CreatePeer(ctx, id, nickName, connection, room, logger any) *MockPeerFactoryCreatePeerCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreatePeer", reflect.TypeOf((*MockPeerFactory)(nil).CreatePeer), ctx, id, connection, room, logger)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreatePeer", reflect.TypeOf((*MockPeerFactory)(nil).CreatePeer), ctx, id, nickName, connection, room, logger)
 	return &MockPeerFactoryCreatePeerCall{Call: call}
 }
 
@@ -72,13 +72,13 @@ func (c *MockPeerFactoryCreatePeerCall) Return(arg0 realtime.Peer, arg1 error) *
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockPeerFactoryCreatePeerCall) Do(f func(context.Context, domain.PeerID, transport.Connection, realtime.Room, logging.Logger) (realtime.Peer, error)) *MockPeerFactoryCreatePeerCall {
+func (c *MockPeerFactoryCreatePeerCall) Do(f func(context.Context, domain.PeerID, string, transport.Connection, realtime.Room, logging.Logger) (realtime.Peer, error)) *MockPeerFactoryCreatePeerCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockPeerFactoryCreatePeerCall) DoAndReturn(f func(context.Context, domain.PeerID, transport.Connection, realtime.Room, logging.Logger) (realtime.Peer, error)) *MockPeerFactoryCreatePeerCall {
+func (c *MockPeerFactoryCreatePeerCall) DoAndReturn(f func(context.Context, domain.PeerID, string, transport.Connection, realtime.Room, logging.Logger) (realtime.Peer, error)) *MockPeerFactoryCreatePeerCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

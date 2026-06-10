@@ -9,5 +9,5 @@ import (
 )
 
 type PeerFactory interface {
-	CreatePeer(ctx context.Context, id domain.PeerID, connection transport.Connection, room Room, logger logging.Logger) (Peer, error)
+	CreatePeer(ctx context.Context, id domain.PeerID, nickName string, connection transport.Connection, room Room, logger logging.Logger) (Peer, error)
 }

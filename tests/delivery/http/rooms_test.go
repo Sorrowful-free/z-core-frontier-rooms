@@ -156,7 +156,10 @@ func TestHTTP_IssueTicket(t *testing.T) {
 		t.Fatalf("unmarshal create: %v", err)
 	}
 
-	resp, body = env.do(t, http.MethodPost, "/rooms/"+formatID(created.ID)+"/tickets", map[string]any{})
+	const nickName = "player"
+	resp, body = env.do(t, http.MethodPost, "/rooms/"+formatID(created.ID)+"/tickets", map[string]any{
+		"nick_name": nickName,
+	})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("issue status = %d, body = %s", resp.StatusCode, body)
 	}
@@ -171,8 +174,9 @@ func TestHTTP_IssueTicket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode token: %v", err)
 	}
-	if len(raw) != 65 {
-		t.Fatalf("token len = %d, want 65", len(raw))
+	wantTokenLen := 34 + len(nickName) + 32
+	if len(raw) != wantTokenLen {
+		t.Fatalf("token len = %d, want %d", len(raw), wantTokenLen)
 	}
 }
 
@@ -250,7 +254,7 @@ func TestHTTP_IssueTicketRoomNotFound(t *testing.T) {
 
 	env := newTestEnv(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms/99/tickets", map[string]any{})
+	resp, body := env.do(t, http.MethodPost, "/rooms/99/tickets", map[string]any{"nick_name": "player"})
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404, body = %s", resp.StatusCode, body)
 	}
@@ -306,12 +310,12 @@ func TestHTTP_IssueTicketReservationFull(t *testing.T) {
 	}
 	roomPath := "/rooms/" + formatID(created.ID) + "/tickets"
 
-	resp, body = env.do(t, http.MethodPost, roomPath, map[string]any{})
+	resp, body = env.do(t, http.MethodPost, roomPath, map[string]any{"nick_name": "player"})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("first issue status = %d, body = %s", resp.StatusCode, body)
 	}
 
-	resp, body = env.do(t, http.MethodPost, roomPath, map[string]any{})
+	resp, body = env.do(t, http.MethodPost, roomPath, map[string]any{"nick_name": "player2"})
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("second issue status = %d, want 409, body = %s", resp.StatusCode, body)
 	}
@@ -339,7 +343,8 @@ func TestHTTP_RoomPasswordOnCreateIssueDelete(t *testing.T) {
 	roomPath := "/rooms/" + formatID(created.ID)
 
 	resp, body = env.do(t, http.MethodPost, roomPath+"/tickets", map[string]any{
-		"password": "wrong",
+		"nick_name": "player",
+		"password":  "wrong",
 	})
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("issue wrong pass status = %d, body = %s", resp.StatusCode, body)
@@ -347,7 +352,8 @@ func TestHTTP_RoomPasswordOnCreateIssueDelete(t *testing.T) {
 	assertErrorCode(t, body, "invalid_credentials")
 
 	resp, body = env.do(t, http.MethodPost, roomPath+"/tickets", map[string]any{
-		"password": "room-pass",
+		"nick_name": "player",
+		"password":  "room-pass",
 	})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("issue ok status = %d, body = %s", resp.StatusCode, body)

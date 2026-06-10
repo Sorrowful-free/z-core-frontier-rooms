@@ -13,7 +13,7 @@ type deleteRoomRequest struct {
 }
 
 type issueTicketRequest struct {
-	PeerID   int64  `json:"peer_id"`
+	NickName string `json:"nick_name"`
 	Password string `json:"password"`
 }
 

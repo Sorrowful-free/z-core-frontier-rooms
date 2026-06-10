@@ -17,7 +17,8 @@ func TestIssueValidateRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	a := admission.NewAdmission([]byte("test-secret"), time.Hour, "")
 
-	token, err := a.Issue(ctx, domain.RoomID(1), domain.PeerID(2), "")
+	const nickName = "player"
+	token, err := a.Issue(ctx, domain.RoomID(1), domain.PeerID(2), nickName, "")
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -26,7 +27,7 @@ func TestIssueValidateRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
-	if claims.RoomID != 1 || claims.PeerID != 2 {
+	if claims.RoomID != 1 || claims.PeerID != 2 || claims.NickName != nickName {
 		t.Fatalf("claims = %+v", claims)
 	}
 }
@@ -47,7 +48,7 @@ func TestValidateExpiredToken(t *testing.T) {
 	ctx := context.Background()
 	a := admission.NewAdmission([]byte("secret"), time.Millisecond, "")
 
-	token, err := a.Issue(ctx, domain.RoomID(1), domain.PeerID(1), "")
+	token, err := a.Issue(ctx, domain.RoomID(1), domain.PeerID(1), "player", "")
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -66,7 +67,7 @@ func TestIssueValidateMaxUint32IDs(t *testing.T) {
 	ctx := context.Background()
 	a := admission.NewAdmission([]byte("test-secret"), time.Hour, "")
 
-	token, err := a.Issue(ctx, domain.RoomID(math.MaxUint32), domain.PeerID(math.MaxUint32), "")
+	token, err := a.Issue(ctx, domain.RoomID(math.MaxUint32), domain.PeerID(math.MaxUint32), "player", "")
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -84,7 +85,7 @@ func TestIssueInvalidCredentials(t *testing.T) {
 	t.Parallel()
 
 	a := admission.NewAdmission([]byte("secret"), time.Hour, "room-pass")
-	_, err := a.Issue(context.Background(), domain.RoomIDInvalid, domain.PeerID(1), "")
+	_, err := a.Issue(context.Background(), domain.RoomIDInvalid, domain.PeerID(1), "player", "")
 	if !errors.Is(err, domain.ErrInvalidCredentials) {
 		t.Fatalf("err = %v, want ErrInvalidCredentials", err)
 	}

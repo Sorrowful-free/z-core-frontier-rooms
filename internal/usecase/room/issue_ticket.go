@@ -41,8 +41,11 @@ func NewIssueTicketUseCase(roomRegistry registry.RoomRegistry, allocator identit
 	}
 }
 
-func (uc *IssueTicketUseCase) IssueTicket(ctx context.Context, roomID domain.RoomID, password string) ([]byte, error) {
+func (uc *IssueTicketUseCase) IssueTicket(ctx context.Context, roomID domain.RoomID, nickName string, password string) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := domain.ValidateNickName(nickName); err != nil {
 		return nil, err
 	}
 
@@ -74,7 +77,7 @@ func (uc *IssueTicketUseCase) IssueTicket(ctx context.Context, roomID domain.Roo
 		return nil, err
 	}
 
-	token, err := uc.admission.Issue(ctx, roomID, peerID, password)
+	token, err := uc.admission.Issue(ctx, roomID, peerID, nickName, password)
 	if err != nil {
 		uc.logger.Error("issue ticket: issue failed", "error", err, "roomID", roomID, "peerID", peerID)
 		return nil, uc.revokeIssueReservation(ctx, roomID, peerID, err)

@@ -26,10 +26,11 @@ type Peer struct {
 	wg       sync.WaitGroup
 }
 
-func NewPeer(ctx context.Context, id domain.PeerID, connection transport.Connection, room realtime.Room, logger logging.Logger) *Peer {
+func NewPeer(ctx context.Context, id domain.PeerID, nickName string, connection transport.Connection, room realtime.Room, logger logging.Logger) *Peer {
 	ctx, cancel := context.WithCancel(ctx)
 	return &Peer{
 		id:         id,
+		nickName:   nickName,
 		connection: connection,
 		room:       room,
 		outbound:   make(chan events.PeerEvent),

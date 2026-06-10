@@ -43,18 +43,18 @@ func (m *MockAdmission) EXPECT() *MockAdmissionMockRecorder {
 }
 
 // Issue mocks base method.
-func (m *MockAdmission) Issue(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, password string) ([]byte, error) {
+func (m *MockAdmission) Issue(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, nickName, password string) ([]byte, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Issue", ctx, roomID, peerID, password)
+	ret := m.ctrl.Call(m, "Issue", ctx, roomID, peerID, nickName, password)
 	ret0, _ := ret[0].([]byte)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Issue indicates an expected call of Issue.
-func (mr *MockAdmissionMockRecorder) Issue(ctx, roomID, peerID, password any) *MockAdmissionIssueCall {
+func (mr *MockAdmissionMockRecorder) Issue(ctx, roomID, peerID, nickName, password any) *MockAdmissionIssueCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Issue", reflect.TypeOf((*MockAdmission)(nil).Issue), ctx, roomID, peerID, password)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Issue", reflect.TypeOf((*MockAdmission)(nil).Issue), ctx, roomID, peerID, nickName, password)
 	return &MockAdmissionIssueCall{Call: call}
 }
 
@@ -70,13 +70,13 @@ func (c *MockAdmissionIssueCall) Return(arg0 []byte, arg1 error) *MockAdmissionI
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockAdmissionIssueCall) Do(f func(context.Context, domain.RoomID, domain.PeerID, string) ([]byte, error)) *MockAdmissionIssueCall {
+func (c *MockAdmissionIssueCall) Do(f func(context.Context, domain.RoomID, domain.PeerID, string, string) ([]byte, error)) *MockAdmissionIssueCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockAdmissionIssueCall) DoAndReturn(f func(context.Context, domain.RoomID, domain.PeerID, string) ([]byte, error)) *MockAdmissionIssueCall {
+func (c *MockAdmissionIssueCall) DoAndReturn(f func(context.Context, domain.RoomID, domain.PeerID, string, string) ([]byte, error)) *MockAdmissionIssueCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
