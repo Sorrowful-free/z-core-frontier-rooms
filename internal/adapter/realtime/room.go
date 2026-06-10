@@ -20,6 +20,7 @@ type Room struct {
 	peers    map[domain.PeerID]realtime.Peer
 	capacity int
 	incoming         chan events.RoomEvent
+	lifecycle        chan lifecycleRequest
 	logger           logging.Logger
 	fullStateTicker  *time.Ticker
 	patchStateTicker *time.Ticker
@@ -38,8 +39,9 @@ func NewRoom(ctx context.Context, id domain.RoomID, policy policy.RoomPolicy, ca
 		mutex:    sync.RWMutex{},
 		peers:    make(map[domain.PeerID]realtime.Peer),
 		capacity: capacity,
-		incoming: make(chan events.RoomEvent),
-		logger:   logger,
+		incoming:  make(chan events.RoomEvent),
+		lifecycle: make(chan lifecycleRequest),
+		logger:    logger,
 		ctx:      ctx,
 		cancel:   cancel,
 	}
@@ -102,6 +104,7 @@ func (r *Room) Stop() error {
 		}
 		r.wg.Wait()
 		close(r.incoming)
+		close(r.lifecycle)
 		err = r.policy.OnStop(r)
 	})
 	return err
@@ -118,7 +121,12 @@ func (r *Room) Join(peer realtime.Peer) error {
 	r.peers[peerID] = peer
 	r.mutex.Unlock()
 
-	if err := r.policy.OnJoin(peer); err != nil {
+	err := r.dispatchLifecycle(lifecycleRequest{
+		op:   lifecycleJoin,
+		peer: peer,
+		done: make(chan error, 1),
+	})
+	if err != nil {
 		r.mutex.Lock()
 		delete(r.peers, peerID)
 		r.mutex.Unlock()
@@ -137,7 +145,11 @@ func (r *Room) Leave(peer realtime.Peer) error {
 	}
 	r.mutex.Unlock()
 
-	if err := r.policy.OnLeave(peer); err != nil {
+	if err := r.dispatchLifecycle(lifecycleRequest{
+		op:   lifecycleLeave,
+		peer: peer,
+		done: make(chan error, 1),
+	}); err != nil {
 		return err
 	}
 
@@ -158,11 +170,13 @@ func (r *Room) Replace(peer realtime.Peer) error {
 	}
 	r.mutex.Unlock()
 
-	if err := r.policy.OnLeave(old); err != nil {
-		return fmt.Errorf("%w: %w", domain.ErrReplaceFailed, err)
-	}
-	if err := r.policy.OnJoin(peer); err != nil {
-		return fmt.Errorf("%w: %w", domain.ErrReplaceFailed, err)
+	if err := r.dispatchLifecycle(lifecycleRequest{
+		op:      lifecycleReplace,
+		peer:    peer,
+		oldPeer: old,
+		done:    make(chan error, 1),
+	}); err != nil {
+		return err
 	}
 
 	r.mutex.Lock()
@@ -257,6 +271,11 @@ func processRoomEvents(room *Room) {
 			if err := room.policy.OnMessage(roomEvent); err != nil {
 				room.logger.Error("error processing room event", "error", err)
 			}
+		case req, ok := <-room.lifecycle:
+			if !ok {
+				return
+			}
+			room.runLifecycle(req)
 		case <-fullTick:
 			if err := room.policy.OnTickFullState(); err != nil {
 				room.logger.Error("tick full state", "error", err)
