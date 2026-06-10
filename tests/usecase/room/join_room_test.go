@@ -48,9 +48,11 @@ func TestJoinRoom_Success(t *testing.T) {
 		peerID = domain.PeerID(2)
 	)
 	now := time.Now()
+	const nickName = "player"
 	claims := domain.Claims{
 		RoomID:    roomID,
 		PeerID:    peerID,
+		NickName:  nickName,
 		IssuedAt:  now,
 		ExpiresAt: now.Add(time.Hour),
 	}
@@ -69,7 +71,7 @@ func TestJoinRoom_Success(t *testing.T) {
 	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
 	reservation.EXPECT().Admit(gomock.Any(), roomID, peerID).Return(nil)
 	room.EXPECT().Context().Return(context.Background()).AnyTimes()
-	peerFactory.EXPECT().CreatePeer(gomock.Any(), peerID, gomock.Any(), conn, room, logger).Return(peer, nil)
+	peerFactory.EXPECT().CreatePeer(gomock.Any(), peerID, nickName, conn, room, logger).Return(peer, nil)
 	room.EXPECT().HasPeer(peerID).Return(false)
 	room.EXPECT().Join(peer).Return(nil)
 	peer.EXPECT().Start().Return(nil)
@@ -77,7 +79,7 @@ func TestJoinRoom_Success(t *testing.T) {
 	room.EXPECT().GetID().Return(roomID).AnyTimes()
 	room.EXPECT().GetPeers().Return([]realtime.Peer{peer}).AnyTimes()
 	peer.EXPECT().GetID().Return(peerID).AnyTimes()
-	peer.EXPECT().GetNickName().Return("").AnyTimes()
+	peer.EXPECT().GetNickName().Return(nickName).AnyTimes()
 	peer.EXPECT().Ping().Return(int64(0)).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 

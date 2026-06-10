@@ -249,6 +249,31 @@ func TestHTTP_DeleteNotFound(t *testing.T) {
 	assertErrorCode(t, body, "reservation_not_found")
 }
 
+func TestHTTP_IssueTicketInvalidNickName(t *testing.T) {
+	t.Parallel()
+
+	env := newTestEnv(t)
+
+	resp, body := env.do(t, http.MethodPost, "/rooms", map[string]any{"capacity": 2})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", resp.StatusCode, body)
+	}
+	var created struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatalf("unmarshal create: %v", err)
+	}
+
+	resp, body = env.do(t, http.MethodPost, "/rooms/"+formatID(created.ID)+"/tickets", map[string]any{
+		"password": "secret",
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", resp.StatusCode, body)
+	}
+	assertErrorCode(t, body, "invalid_nick_name")
+}
+
 func TestHTTP_IssueTicketRoomNotFound(t *testing.T) {
 	t.Parallel()
 

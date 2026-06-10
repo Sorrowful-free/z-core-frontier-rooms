@@ -2,6 +2,7 @@ package realtime_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
+	portpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/policy"
 )
 
 func TestReplace_SendsFullStateToNewPeerNotOld(t *testing.T) {
@@ -54,6 +56,42 @@ func TestReplace_SendsFullStateToNewPeerNotOld(t *testing.T) {
 	}
 	if len(filterReplaceOpcode(oldPeer.snapshot(), state.OpCodeFullState)) != 0 {
 		t.Fatal("old peer must not receive full state on replace")
+	}
+}
+
+func TestReplace_FailedJoinRestoresPeersMapAndPolicyState(t *testing.T) {
+	t.Parallel()
+
+	logger := stdlib.New("replace-rollback-test")
+	policy := &trackingReplacePolicy{rejectNick: "reject"}
+	room := adapterrealtime.NewRoom(context.Background(), domain.RoomID(32), policy, 4, logger)
+
+	if err := room.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { _ = room.Stop() })
+
+	const peerID = domain.PeerID(5)
+	oldPeer := newReplaceCapturePeer(peerID, "keeper")
+	if err := room.Join(oldPeer); err != nil {
+		t.Fatalf("Join old: %v", err)
+	}
+
+	newPeer := newReplaceCapturePeer(peerID, "reject")
+	err := room.Replace(newPeer)
+	if !errors.Is(err, domain.ErrReplaceFailed) {
+		t.Fatalf("Replace err = %v, want ErrReplaceFailed", err)
+	}
+
+	got, getErr := room.GetPeer(peerID)
+	if getErr != nil {
+		t.Fatalf("GetPeer: %v", getErr)
+	}
+	if got != oldPeer {
+		t.Fatal("room peers map must roll back to old peer after failed replace")
+	}
+	if policy.inRoom[peerID] != "keeper" {
+		t.Fatalf("policy state = %q, want keeper", policy.inRoom[peerID])
 	}
 }
 
@@ -149,3 +187,36 @@ func filterReplaceOpcode(peerEvents []events.PeerEvent, opcode domain.OpCode) []
 }
 
 var _ realtime.Peer = (*replaceCapturePeer)(nil)
+
+type trackingReplacePolicy struct {
+	inRoom     map[domain.PeerID]string
+	rejectNick string
+}
+
+func (p *trackingReplacePolicy) OnStart(realtime.Room) error {
+	p.inRoom = make(map[domain.PeerID]string)
+	return nil
+}
+
+func (p *trackingReplacePolicy) OnStop(realtime.Room) error { return nil }
+
+func (p *trackingReplacePolicy) OnJoin(peer realtime.Peer) error {
+	if peer.GetNickName() == p.rejectNick {
+		return errors.New("join rejected")
+	}
+	p.inRoom[peer.GetID()] = peer.GetNickName()
+	return nil
+}
+
+func (p *trackingReplacePolicy) OnLeave(peer realtime.Peer) error {
+	delete(p.inRoom, peer.GetID())
+	return nil
+}
+
+func (p *trackingReplacePolicy) OnMessage(events.RoomEvent) error { return nil }
+
+func (p *trackingReplacePolicy) TickIntervals() (time.Duration, time.Duration) { return 0, 0 }
+func (p *trackingReplacePolicy) OnTickFullState() error                      { return nil }
+func (p *trackingReplacePolicy) OnTickPatchState() error                     { return nil }
+
+var _ portpolicy.RoomPolicy = (*trackingReplacePolicy)(nil)

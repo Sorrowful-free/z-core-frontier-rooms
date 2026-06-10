@@ -81,6 +81,16 @@ func TestIssueValidateMaxUint32IDs(t *testing.T) {
 	}
 }
 
+func TestIssueInvalidNickName(t *testing.T) {
+	t.Parallel()
+
+	a := admission.NewAdmission([]byte("secret"), time.Hour, "")
+	_, err := a.Issue(context.Background(), domain.RoomID(1), domain.PeerID(1), "", "")
+	if !errors.Is(err, domain.ErrInvalidNickName) {
+		t.Fatalf("err = %v, want ErrInvalidNickName", err)
+	}
+}
+
 func TestIssueInvalidCredentials(t *testing.T) {
 	t.Parallel()
 

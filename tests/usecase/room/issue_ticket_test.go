@@ -56,6 +56,23 @@ func TestIssueTicket_Success(t *testing.T) {
 	}
 }
 
+func TestIssueTicket_InvalidNickName(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	registry := mocks.NewMockRoomRegistry(ctrl)
+	allocator := mocks.NewMockAllocator(ctrl)
+	admission := mocks.NewMockAdmission(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
+	logger := mocks.NewMockLogger(ctrl)
+
+	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
+	_, err := uc.IssueTicket(context.Background(), domain.RoomID(1), "", "secret")
+	if !errors.Is(err, domain.ErrInvalidNickName) {
+		t.Fatalf("err = %v, want ErrInvalidNickName", err)
+	}
+}
+
 func TestIssueTicket_RoomNotFound(t *testing.T) {
 	t.Parallel()
 
