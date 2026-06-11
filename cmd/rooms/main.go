@@ -75,8 +75,12 @@ func run() error {
 	deleteUseCase := room.NewDeleteUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "delete use case"))
 	getListUseCase := room.NewGetListUseCase(roomRegistry, zaplog.NewFrom(z, "get list use case"))
 
+	if cfg.HTTPAuth.Disabled {
+		z.Warn("HTTP control plane auth is disabled — for local development only")
+	}
+
 	roomsHandler := http.NewRoomsHandler(createUseCase, issueTicketUseCase, deleteUseCase, getListUseCase, zaplog.NewFrom(z, "rooms handler"))
-	roomsHandler.RegisterRoutes(fiberApp)
+	roomsHandler.RegisterRoutes(fiberApp, cfg.HTTPAuth)
 
 	wsHandler := deliveryws.NewRoomsHandler(appCtx, joinRoomUseCase, leaveRoomUseCase, wsConnectionFactory, zaplog.NewFrom(z, "ws rooms handler"))
 	wsHandler.RegisterRoutes(fiberApp)

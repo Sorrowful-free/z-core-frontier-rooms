@@ -1,8 +1,12 @@
 package config
 
-import admissionadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/admission"
+import (
+	admissionadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/admission"
+	httpauthadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httpauth"
+)
 
 // Config — корневая конфигурация процесса; поля — типы из соответствующих adapter-пакетов.
 type Config struct {
 	Admission admissionadapter.AdmissionConfig
+	HTTPAuth  httpauthadapter.HTTPAuthConfig
 }

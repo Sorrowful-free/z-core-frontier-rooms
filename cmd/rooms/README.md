@@ -16,6 +16,6 @@ Shutdown: SIGINT → `GetList` → `Delete` по комнатам → `registry.
 
 ## Env
 
-Обязателен `ADMISSION_SECRET` (≥ 32 байт). См. [.env.example](../../.env.example), [internal/adapter/config/README.md](../../internal/adapter/config/README.md).
+Обязательны `ADMISSION_SECRET` (≥ 32 байт) и `HTTP_API_KEY` (≥ 16 байт), либо `HTTP_AUTH_DISABLED=true` для dev. См. [.env.example](../../.env.example), [internal/adapter/config/README.md](../../internal/adapter/config/README.md).
 
 См. [docs/architecture.md](../../docs/architecture.md).

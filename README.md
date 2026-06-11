@@ -10,6 +10,7 @@
 ```bash
 # См. .env.example — ADMISSION_SECRET обязателен (≥ 32 байт)
 export ADMISSION_SECRET=replace-with-random-secret-at-least-32-bytes-long!!
+export HTTP_API_KEY=replace-with-random-api-key-16-chars-min
 
 go build -o bin/rooms ./cmd/rooms
 go run ./cmd/rooms
@@ -40,6 +41,7 @@ go test ./tests/...
 | Порты | [internal/port/README.md](internal/port/README.md) |
 | Use cases | [internal/usecase/room/README.md](internal/usecase/room/README.md) |
 | Config (env) | [internal/adapter/config/README.md](internal/adapter/config/README.md) |
+| HTTP auth | [internal/adapter/httpauth/README.md](internal/adapter/httpauth/README.md) |
 | Admission (ticket v2) | [internal/adapter/admission/README.md](internal/adapter/admission/README.md) |
 | Reservation | [internal/adapter/reservation/README.md](internal/adapter/reservation/README.md) |
 | Room registry | [internal/adapter/registry/README.md](internal/adapter/registry/README.md) |

@@ -2,6 +2,19 @@
 
 REST control plane (Fiber v3), порт `:3000`.
 
+## Аутентификация
+
+Все endpoints ниже защищены API key (`adapter/httpauth`), если не `HTTP_AUTH_DISABLED=true`.
+
+Заголовки (один из):
+
+- `Authorization: Bearer <HTTP_API_KEY>`
+- `X-API-Key: <HTTP_API_KEY>`
+
+Без ключа или при неверном ключе — `401` / `{"code":"unauthorized",…}`.
+
+`/ws` и data plane не используют этот ключ (join — ticket).
+
 ## Endpoints
 
 | Метод | Путь | Use case | Успех | Body запроса | Body ответа |
@@ -21,4 +34,4 @@ REST control plane (Fiber v3), порт `:3000`.
 
 ## Файлы
 
-`rooms.go` — handlers; `dto.go` — JSON types; `mapper.go` — summaries; `parse.go`, `errors.go`.
+`rooms.go` — handlers; `auth_middleware.go` — API key; `dto.go` — JSON types; `mapper.go` — summaries; `parse.go`, `errors.go`.

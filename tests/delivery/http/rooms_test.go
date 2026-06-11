@@ -13,6 +13,7 @@ import (
 	"time"
 
 	admissionadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/admission"
+	httpauthadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httpauth"
 	identityadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/identity"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/stdlib"
 	adapterrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
@@ -28,8 +29,13 @@ type testEnv struct {
 	app *fiber.App
 }
 
-func newTestEnv(t *testing.T) *testEnv {
+func newTestEnv(t *testing.T, httpAuth ...httpauthadapter.HTTPAuthConfig) *testEnv {
 	t.Helper()
+
+	authCfg := httpauthadapter.HTTPAuthConfig{Disabled: true}
+	if len(httpAuth) > 0 {
+		authCfg = httpAuth[0]
+	}
 
 	logger := stdlib.New("http-test")
 	roomPolicyFactory := statepolicy.NewStateRoomPolicyFactory(logger)
@@ -49,11 +55,19 @@ func newTestEnv(t *testing.T) *testEnv {
 
 	handler := deliveryhttp.NewRoomsHandler(createUC, issueUC, deleteUC, getListUC, logger)
 	app := fiber.New()
-	handler.RegisterRoutes(app)
+	handler.RegisterRoutes(app, authCfg)
 	return &testEnv{app: app}
 }
 
 func (e *testEnv) do(t *testing.T, method, target string, body any) (*http.Response, []byte) {
+	return e.doWithHeader(t, method, target, body, "", "")
+}
+
+func (e *testEnv) doAuthorized(t *testing.T, method, target string, body any, authorization string) (*http.Response, []byte) {
+	return e.doWithHeader(t, method, target, body, "Authorization", authorization)
+}
+
+func (e *testEnv) doWithHeader(t *testing.T, method, target string, body any, header, value string) (*http.Response, []byte) {
 	t.Helper()
 
 	var reader io.Reader
@@ -68,6 +82,9 @@ func (e *testEnv) do(t *testing.T, method, target string, body any) (*http.Respo
 	req := httptest.NewRequest(method, target, reader)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	if header != "" {
+		req.Header.Set(header, value)
 	}
 
 	resp, err := e.app.Test(req)

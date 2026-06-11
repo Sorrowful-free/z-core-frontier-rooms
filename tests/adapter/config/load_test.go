@@ -12,10 +12,27 @@ func validSecret() string {
 	return "test-admission-secret-32-chars-min!!"
 }
 
+func validHTTPAPIKey() string {
+	return "test-http-api-key-16b"
+}
+
+func setHTTPAuthEnabled(t *testing.T) {
+	t.Helper()
+	t.Setenv("HTTP_API_KEY", validHTTPAPIKey())
+	t.Setenv("HTTP_AUTH_DISABLED", "")
+}
+
+func setHTTPAuthDisabled(t *testing.T) {
+	t.Helper()
+	t.Setenv("HTTP_API_KEY", "")
+	t.Setenv("HTTP_AUTH_DISABLED", "true")
+}
+
 func TestLoadFromEnv_AdmissionRequired(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", "")
 	t.Setenv("ADMISSION_TTL", "")
 	t.Setenv("ADMISSION_PASSWORD", "")
+	setHTTPAuthDisabled(t)
 
 	_, err := appconfig.LoadFromEnv()
 	if err == nil {
@@ -30,6 +47,7 @@ func TestLoadFromEnv_ForbiddenDefaultSecret(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", "dev-secret-change-me")
 	t.Setenv("ADMISSION_TTL", "")
 	t.Setenv("ADMISSION_PASSWORD", "")
+	setHTTPAuthDisabled(t)
 
 	_, err := appconfig.LoadFromEnv()
 	if err == nil {
@@ -44,6 +62,7 @@ func TestLoadFromEnv_SecretTooShort(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", "short")
 	t.Setenv("ADMISSION_TTL", "")
 	t.Setenv("ADMISSION_PASSWORD", "")
+	setHTTPAuthDisabled(t)
 
 	_, err := appconfig.LoadFromEnv()
 	if err == nil {
@@ -58,6 +77,7 @@ func TestLoadFromEnv_InvalidTTL(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", validSecret())
 	t.Setenv("ADMISSION_TTL", "not-a-duration")
 	t.Setenv("ADMISSION_PASSWORD", "")
+	setHTTPAuthDisabled(t)
 
 	_, err := appconfig.LoadFromEnv()
 	if err == nil {
@@ -68,10 +88,41 @@ func TestLoadFromEnv_InvalidTTL(t *testing.T) {
 	}
 }
 
+func TestLoadFromEnv_HTTPAPIKeyRequired(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	t.Setenv("ADMISSION_TTL", "")
+	t.Setenv("ADMISSION_PASSWORD", "")
+	t.Setenv("HTTP_API_KEY", "")
+	t.Setenv("HTTP_AUTH_DISABLED", "")
+
+	_, err := appconfig.LoadFromEnv()
+	if err == nil {
+		t.Fatal("expected error for missing api key")
+	}
+	if !strings.Contains(err.Error(), "api key is required") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestLoadFromEnv_HTTPAPIKeyTooShort(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	t.Setenv("HTTP_API_KEY", "short")
+	t.Setenv("HTTP_AUTH_DISABLED", "")
+
+	_, err := appconfig.LoadFromEnv()
+	if err == nil {
+		t.Fatal("expected error for short api key")
+	}
+	if !strings.Contains(err.Error(), "at least 16 bytes") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestLoadFromEnv_SuccessDefaults(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", validSecret())
 	t.Setenv("ADMISSION_TTL", "")
 	t.Setenv("ADMISSION_PASSWORD", "")
+	setHTTPAuthEnabled(t)
 
 	cfg, err := appconfig.LoadFromEnv()
 	if err != nil {
@@ -86,12 +137,19 @@ func TestLoadFromEnv_SuccessDefaults(t *testing.T) {
 	if cfg.Admission.Password != "" {
 		t.Fatalf("password = %q", cfg.Admission.Password)
 	}
+	if cfg.HTTPAuth.APIKey != validHTTPAPIKey() {
+		t.Fatalf("api key = %q", cfg.HTTPAuth.APIKey)
+	}
+	if cfg.HTTPAuth.Disabled {
+		t.Fatal("http auth should be enabled")
+	}
 }
 
 func TestLoadFromEnv_SuccessCustomTTLAndPassword(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", validSecret())
 	t.Setenv("ADMISSION_TTL", "30m")
 	t.Setenv("ADMISSION_PASSWORD", "room-gate")
+	setHTTPAuthEnabled(t)
 
 	cfg, err := appconfig.LoadFromEnv()
 	if err != nil {
@@ -102,5 +160,18 @@ func TestLoadFromEnv_SuccessCustomTTLAndPassword(t *testing.T) {
 	}
 	if cfg.Admission.Password != "room-gate" {
 		t.Fatalf("password = %q", cfg.Admission.Password)
+	}
+}
+
+func TestLoadFromEnv_HTTPAuthDisabled(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+
+	cfg, err := appconfig.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv: %v", err)
+	}
+	if !cfg.HTTPAuth.Disabled {
+		t.Fatal("expected http auth disabled")
 	}
 }
