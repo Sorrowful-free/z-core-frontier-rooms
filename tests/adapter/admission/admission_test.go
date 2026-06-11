@@ -11,11 +11,19 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
 
+func testAdmissionConfig(secret string, ttl time.Duration, password string) admission.AdmissionConfig {
+	return admission.AdmissionConfig{
+		Secret:   []byte(secret),
+		TTL:      ttl,
+		Password: password,
+	}
+}
+
 func TestIssueValidateRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	a := admission.NewAdmission([]byte("test-secret"), time.Hour, "")
+	a := admission.NewAdmission(testAdmissionConfig("test-secret", time.Hour, ""))
 
 	const nickName = "player"
 	token, err := a.Issue(ctx, domain.RoomID(1), domain.PeerID(2), nickName, "")
@@ -35,7 +43,7 @@ func TestIssueValidateRoundTrip(t *testing.T) {
 func TestValidateInvalidToken(t *testing.T) {
 	t.Parallel()
 
-	a := admission.NewAdmission([]byte("secret"), time.Hour, "")
+	a := admission.NewAdmission(testAdmissionConfig("secret", time.Hour, ""))
 	_, err := a.Validate(context.Background(), []byte{1, 2, 3})
 	if !errors.Is(err, domain.ErrInvalidToken) {
 		t.Fatalf("err = %v, want ErrInvalidToken", err)
@@ -46,7 +54,7 @@ func TestValidateExpiredToken(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	a := admission.NewAdmission([]byte("secret"), time.Millisecond, "")
+	a := admission.NewAdmission(testAdmissionConfig("secret", time.Millisecond, ""))
 
 	token, err := a.Issue(ctx, domain.RoomID(1), domain.PeerID(1), "player", "")
 	if err != nil {
@@ -65,7 +73,7 @@ func TestIssueValidateMaxUint32IDs(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	a := admission.NewAdmission([]byte("test-secret"), time.Hour, "")
+	a := admission.NewAdmission(testAdmissionConfig("test-secret", time.Hour, ""))
 
 	token, err := a.Issue(ctx, domain.RoomID(math.MaxUint32), domain.PeerID(math.MaxUint32), "player", "")
 	if err != nil {
@@ -84,7 +92,7 @@ func TestIssueValidateMaxUint32IDs(t *testing.T) {
 func TestIssueInvalidNickName(t *testing.T) {
 	t.Parallel()
 
-	a := admission.NewAdmission([]byte("secret"), time.Hour, "")
+	a := admission.NewAdmission(testAdmissionConfig("secret", time.Hour, ""))
 	_, err := a.Issue(context.Background(), domain.RoomID(1), domain.PeerID(1), "", "")
 	if !errors.Is(err, domain.ErrInvalidNickName) {
 		t.Fatalf("err = %v, want ErrInvalidNickName", err)
@@ -94,7 +102,7 @@ func TestIssueInvalidNickName(t *testing.T) {
 func TestIssueInvalidCredentials(t *testing.T) {
 	t.Parallel()
 
-	a := admission.NewAdmission([]byte("secret"), time.Hour, "room-pass")
+	a := admission.NewAdmission(testAdmissionConfig("secret", time.Hour, "room-pass"))
 	_, err := a.Issue(context.Background(), domain.RoomIDInvalid, domain.PeerID(1), "player", "")
 	if !errors.Is(err, domain.ErrInvalidCredentials) {
 		t.Fatalf("err = %v, want ErrInvalidCredentials", err)

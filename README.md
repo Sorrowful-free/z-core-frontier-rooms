@@ -8,6 +8,9 @@
 ## Быстрый старт
 
 ```bash
+# См. .env.example — ADMISSION_SECRET обязателен (≥ 32 байт)
+export ADMISSION_SECRET=replace-with-random-secret-at-least-32-bytes-long!!
+
 go build -o bin/rooms ./cmd/rooms
 go run ./cmd/rooms
 ```
@@ -36,6 +39,7 @@ go test ./tests/...
 | State model | [internal/domain/state/README.md](internal/domain/state/README.md) |
 | Порты | [internal/port/README.md](internal/port/README.md) |
 | Use cases | [internal/usecase/room/README.md](internal/usecase/room/README.md) |
+| Config (env) | [internal/adapter/config/README.md](internal/adapter/config/README.md) |
 | Admission (ticket v2) | [internal/adapter/admission/README.md](internal/adapter/admission/README.md) |
 | Reservation | [internal/adapter/reservation/README.md](internal/adapter/reservation/README.md) |
 | Room registry | [internal/adapter/registry/README.md](internal/adapter/registry/README.md) |
@@ -52,12 +56,12 @@ go test ./tests/...
 ## Правила проекта
 
 - Go, Fiber, тесты в `tests/`: [.cursor/rules/go-standards.mdc](.cursor/rules/go-standards.mdc)
+- Конфигурация: [.cursor/rules/config.mdc](.cursor/rules/config.mdc)
 - Пакетная документация: [.cursor/rules/package-docs.mdc](.cursor/rules/package-docs.mdc)
 - Join / in-room OpCode чеклист: [.cursor/rules/join-error-opcodes.mdc](.cursor/rules/join-error-opcodes.mdc)
 
 ## TODO
 
-- Конфиг из env (секрет admission, порты)
 - Health-check
 - Идемпотентный `LeaveRoom` если peer уже снят
 - Ping/idle eviction для zombie `admitted`

@@ -8,7 +8,8 @@
 tests/
   mocks/                — mockgen из internal/port (gomock), go generate ./tests/mocks/...
   delivery/errors/      — join_reject, reservation_reject, in_room, wire helpers
-  adapter/admission/    — ticket Issue/Validate
+  adapter/config/       — LoadFromEnv, admission env validation
+  adapter/admission/    — ticket Issue/Validate, AdmissionConfig
   adapter/reservation/  — слоты: Reserve / Admit / Revoke / State
   adapter/identity/     — Counter: AllocateRoomID / AllocatePeerID, wrap skip 0
   adapter/realtime/     — Room Join/Replace, policy без deadlock, peer factory nick
@@ -41,7 +42,8 @@ go test -race ./tests/...
 | Пакет | Сценарии |
 |-------|----------|
 | `tests/delivery/errors` | `JoinRejectOpCode`, `ReservationRejectOpCode`, делегирование reservation в join, `InRoomErrorOpCode`, диапазоны `Is*OpCode` |
-| `tests/adapter/admission` | Round-trip ticket + NickName, invalid nick, invalid/expired token, invalid credentials |
+| `tests/adapter/config` | `LoadFromEnv`: secret, TTL, forbidden default |
+| `tests/adapter/admission` | `AdmissionConfig.Validate`; round-trip ticket + NickName, invalid nick, invalid/expired token, invalid credentials |
 | `tests/adapter/realtime` | `OnJoin` → `room.Send` без deadlock; откат map при `ErrJoinDenied`; Replace rollback policy; `PeerFactory` nick |
 | `tests/adapter/realtime/policy/state` | join/full/patch/master; `NewStateRoomPolicy` zero intervals → defaults |
 | `tests/domain` | `ValidateNickName` |

@@ -36,7 +36,10 @@ func newTestEnv(t *testing.T) *testEnv {
 	roomFactory := adapterrealtime.NewRoomFactory(logger, roomPolicyFactory)
 	registry := adapterregistry.NewRoomRegistry(context.Background(), roomFactory, logger)
 	reservation := adapterreservation.NewReservation(logger)
-	admission := admissionadapter.NewAdmission([]byte("test-secret"), time.Hour, "")
+	admission := admissionadapter.NewAdmission(admissionadapter.AdmissionConfig{
+		Secret: []byte("test-secret"),
+		TTL:    time.Hour,
+	})
 	allocator := identityadapter.NewCounter()
 
 	createUC := useroom.NewCreateUseCase(registry, allocator, reservation, logger)

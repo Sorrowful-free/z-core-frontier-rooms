@@ -33,11 +33,11 @@ type Admission struct {
 	password string
 }
 
-func NewAdmission(secret []byte, ttl time.Duration, password string) *Admission {
+func NewAdmission(cfg AdmissionConfig) *Admission {
 	return &Admission{
-		secret:   append([]byte(nil), secret...),
-		ttl:      ttl,
-		password: password,
+		secret:   append([]byte(nil), cfg.Secret...),
+		ttl:      cfg.TTL,
+		password: cfg.Password,
 	}
 }
 

@@ -1,0 +1,38 @@
+---
+description: Конфигурация приложения — типы в adapter-модулях, загрузка в adapter/config
+alwaysApply: true
+---
+
+# Конфигурация
+
+## Роли слоёв
+
+| Слой | Роль |
+|------|------|
+| `port/*` | Интерфейсы **поведения** для DI (`Admission`, `Reservation`, …). **Не** объявлять config/settings в port. |
+| `adapter/<module>/` | `ModuleConfig` struct (например `admission.AdmissionConfig`) + `Validate()` рядом с модулем |
+| `adapter/config/` | Корневая `Config` с полями типов из adapter-модулей; `LoadFromEnv()` |
+| `cmd/rooms` | Composition root: `LoadFromEnv` → передать `cfg.<Module>` в конструкторы |
+
+## Правила
+
+1. **Тип конфига модуля** — в пакете adapter этого модуля (`admission_config.go`, тип `AdmissionConfig`).
+2. **Валидация** — метод `Validate()` на struct модуля; `adapter/config` только парсит env и вызывает `Validate()`.
+3. **Глобальный loader** — один `adapter/config.LoadFromEnv()`; env-переменные парсятся в `load.go` / `load_<module>.go`.
+4. **Импорты:** `adapter/config` → `adapter/<module>`; **запрещено** `adapter/<module>` → `adapter/config`.
+5. **Конструкторы adapter** принимают свой `ModuleConfig` (или поля из него), не весь `config.Config`.
+6. **Секреты** — не логировать; не коммитить в репозиторий; при добавлении модуля — документировать env в `adapter/config/README.md` и README модуля.
+7. **Тесты модулей** — литералы `ModuleConfig` без env; тесты loader — `tests/adapter/config/` с `t.Setenv`.
+
+## Добавление нового модуля
+
+1. `internal/adapter/<module>/<module>_config.go` — struct + `Validate()`.
+2. Поле в `adapter/config.Config`.
+3. `load<Module>FromEnv()` в `adapter/config`.
+4. Wire в `cmd/rooms/main.go`.
+5. Обновить `adapter/config/README.md` и README модуля.
+
+## Документация
+
+- Индекс env: [internal/adapter/config/README.md](../../internal/adapter/config/README.md)
+- Пакетная документация: [.cursor/rules/package-docs.mdc](package-docs.mdc)

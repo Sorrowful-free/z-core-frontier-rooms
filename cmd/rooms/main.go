@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	admissionadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/admission"
+	appconfig "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/config"
 	identityadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/identity"
 	zaplog "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/zap"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
@@ -57,7 +59,12 @@ func run() error {
 	wsConnectionFactory := ws.NewWsConnectionFactory(zaplog.NewFrom(z, "ws connection factory"))
 	enetConnectionFactory := enet.NewEnetConnectionFactory(zaplog.NewFrom(z, "enet connection factory"))
 
-	admission := admissionadapter.NewAdmission([]byte("dev-secret-change-me"), time.Hour, "")
+	cfg, err := appconfig.LoadFromEnv()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	admission := admissionadapter.NewAdmission(cfg.Admission)
 	reservation := reservationadapter.NewReservation(zaplog.NewFrom(z, "reservation"))
 	allocator := identityadapter.NewCounter()
 
