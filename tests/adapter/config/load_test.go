@@ -6,6 +6,7 @@ import (
 	"time"
 
 	appconfig "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/config"
+	httplimitsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httplimits"
 )
 
 func validSecret() string {
@@ -142,6 +143,15 @@ func TestLoadFromEnv_SuccessDefaults(t *testing.T) {
 	}
 	if cfg.HTTPAuth.Disabled {
 		t.Fatal("http auth should be enabled")
+	}
+	if cfg.HTTPLimits.MaxRooms != httplimitsadapter.DefaultMaxRooms {
+		t.Fatalf("max rooms = %d", cfg.HTTPLimits.MaxRooms)
+	}
+	if cfg.HTTPLimits.CreateRoomsPerMinute != httplimitsadapter.DefaultCreateRoomsPerMinute {
+		t.Fatalf("create rate = %d", cfg.HTTPLimits.CreateRoomsPerMinute)
+	}
+	if cfg.HTTPLimits.IssueTicketsPerMinute != httplimitsadapter.DefaultIssueTicketsPerMinute {
+		t.Fatalf("issue rate = %d", cfg.HTTPLimits.IssueTicketsPerMinute)
 	}
 }
 

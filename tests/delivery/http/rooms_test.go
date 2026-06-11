@@ -14,6 +14,8 @@ import (
 
 	admissionadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/admission"
 	httpauthadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httpauth"
+	httplimitsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httplimits"
+	porthttplimits "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/httplimits"
 	identityadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/identity"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/stdlib"
 	adapterrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
@@ -30,12 +32,26 @@ type testEnv struct {
 }
 
 func newTestEnv(t *testing.T, httpAuth ...httpauthadapter.HTTPAuthConfig) *testEnv {
+	return newTestEnvWithLimits(t, httplimitsadapter.HTTPLimitsConfig{}, httpAuth...)
+}
+
+func mustHTTPLimits(t *testing.T, cfg httplimitsadapter.HTTPLimitsConfig) porthttplimits.Limits {
+	t.Helper()
+	limits, err := httplimitsadapter.New(cfg)
+	if err != nil {
+		t.Fatalf("httplimits.New: %v", err)
+	}
+	return limits
+}
+
+func newTestEnvWithLimits(t *testing.T, httpLimits httplimitsadapter.HTTPLimitsConfig, httpAuth ...httpauthadapter.HTTPAuthConfig) *testEnv {
 	t.Helper()
 
 	authCfg := httpauthadapter.HTTPAuthConfig{Disabled: true}
 	if len(httpAuth) > 0 {
 		authCfg = httpAuth[0]
 	}
+	limits := mustHTTPLimits(t, httpLimits)
 
 	logger := stdlib.New("http-test")
 	roomPolicyFactory := statepolicy.NewStateRoomPolicyFactory(logger)
@@ -48,14 +64,14 @@ func newTestEnv(t *testing.T, httpAuth ...httpauthadapter.HTTPAuthConfig) *testE
 	})
 	allocator := identityadapter.NewCounter()
 
-	createUC := useroom.NewCreateUseCase(registry, allocator, reservation, logger)
+	createUC := useroom.NewCreateUseCase(registry, allocator, reservation, limits, logger)
 	issueUC := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
 	deleteUC := useroom.NewDeleteUseCase(registry, reservation, logger)
 	getListUC := useroom.NewGetListUseCase(registry, logger)
 
 	handler := deliveryhttp.NewRoomsHandler(createUC, issueUC, deleteUC, getListUC, logger)
 	app := fiber.New()
-	handler.RegisterRoutes(app, authCfg)
+	handler.RegisterRoutes(app, authCfg, limits)
 	return &testEnv{app: app}
 }
 

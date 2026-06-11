@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/httplimits"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/identity"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/registry"
@@ -14,14 +15,16 @@ type CreateUseCase struct {
 	roomRegistry registry.RoomRegistry
 	allocator    identity.Allocator
 	reservation  reservation.Reservation
+	limits       httplimits.Limits
 	logging      logging.Logger
 }
 
-func NewCreateUseCase(roomRegistry registry.RoomRegistry, allocator identity.Allocator, reservation reservation.Reservation, logging logging.Logger) *CreateUseCase {
+func NewCreateUseCase(roomRegistry registry.RoomRegistry, allocator identity.Allocator, reservation reservation.Reservation, limits httplimits.Limits, logging logging.Logger) *CreateUseCase {
 	return &CreateUseCase{
 		roomRegistry: roomRegistry,
 		allocator:    allocator,
 		reservation:  reservation,
+		limits:       limits,
 		logging:      logging,
 	}
 }
@@ -29,6 +32,15 @@ func NewCreateUseCase(roomRegistry registry.RoomRegistry, allocator identity.All
 func (uc *CreateUseCase) Create(ctx context.Context, capacity int, password string) (RoomSummary, error) {
 
 	if err := ctx.Err(); err != nil {
+		return EmptyRoomSummary, err
+	}
+
+	rooms, err := uc.roomRegistry.GetList(ctx)
+	if err != nil {
+		return EmptyRoomSummary, err
+	}
+	if err := uc.limits.AllowCreateRoom(len(rooms)); err != nil {
+		uc.logging.Error("create room: rooms limit reached", "error", err, "current", len(rooms))
 		return EmptyRoomSummary, err
 	}
 

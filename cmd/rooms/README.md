@@ -5,7 +5,7 @@ Composition root: DI, Fiber `:3000`, ENet `7777` (при `-tags enet`).
 ```text
 fiber.New() + zap middleware
   → StateRoomPolicyFactory, RoomFactory, RoomRegistry, PeerFactory
-  → config.LoadFromEnv() → admission.NewAdmission(cfg.Admission), reservation (in-memory)
+  → config.LoadFromEnv() → admission, httplimits.New(cfg.HTTPLimits), reservation (in-memory)
   → Create, IssueTicket, JoinRoom, LeaveRoom, Delete, GetList
   → http / ws RegisterRoutes
   → enet.Listen() (goroutine)

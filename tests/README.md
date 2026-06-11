@@ -10,6 +10,7 @@ tests/
   delivery/errors/      — join_reject, reservation_reject, in_room, wire helpers
   adapter/config/       — LoadFromEnv, admission + http auth env
   adapter/httpauth/     — HTTPAuthConfig.Validate
+  adapter/httplimits/   — HTTPLimitsConfig, Limiter
   adapter/admission/    — ticket Issue/Validate, AdmissionConfig
   adapter/reservation/  — слоты: Reserve / Admit / Revoke / State
   adapter/identity/     — Counter: AllocateRoomID / AllocatePeerID, wrap skip 0
@@ -45,6 +46,7 @@ go test -race ./tests/...
 | `tests/delivery/errors` | `JoinRejectOpCode`, `ReservationRejectOpCode`, делегирование reservation в join, `InRoomErrorOpCode`, диапазоны `Is*OpCode` |
 | `tests/adapter/config` | `LoadFromEnv`: admission + HTTP API key / disabled |
 | `tests/adapter/httpauth` | `HTTPAuthConfig.Validate` |
+| `tests/adapter/httplimits` | `HTTPLimitsConfig.Validate`, `Limits` rate + max rooms |
 | `tests/adapter/admission` | `AdmissionConfig.Validate`; round-trip ticket + NickName, invalid nick, invalid/expired token, invalid credentials |
 | `tests/adapter/realtime` | `OnJoin` → `room.Send` без deadlock; откат map при `ErrJoinDenied`; Replace rollback policy; `PeerFactory` nick |
 | `tests/adapter/realtime/policy/state` | join/full/patch/master; `NewStateRoomPolicy` zero intervals → defaults |
@@ -54,8 +56,8 @@ go test -race ./tests/...
 | `tests/adapter/registry` | `GetRoom` → `ErrRoomNotFound`; `Shutdown` |
 | `tests/adapter/reservation` | Reserve → Admit → Revoke; expiry sweep; идемпотентный `Revoke`; `State` (none / reserved / admitted) |
 | `tests/adapter/identity` | первый ID = 1; независимые room/peer; ctx cancel; wrap `MaxUint32` → 1; уникальность под конкуренцией |
-| `tests/usecase/room` | **Create** — success, ctx cancel, registry rollback + `errors.Join` на unregister; **Delete** — success, room not found; **GetList**; **IssueTicket** — success, room/peer errors, slot held, orphan admitted cleanup, issue+revoke join; **JoinRoom** — validate error, success, admit/join/revoke откаты; **LeaveRoom** — success, not found, revoke idempotent |
-| `tests/delivery/http` | API key 401/ Bearer / X-API-Key; create → list → delete; issue ticket; `invalid_nick_name`; 409/404/400 |
+| `tests/usecase/room` | **Create** — success, rooms limit, ctx cancel, registry rollback + `errors.Join` на unregister; **Delete** — success, room not found; **GetList**; **IssueTicket** — success, room/peer errors, slot held, orphan admitted cleanup, issue+revoke join; **JoinRoom** — validate error, success, admit/join/revoke откаты; **LeaveRoom** — success, not found, revoke idempotent |
+| `tests/delivery/http` | API key; rate limit 429; rooms limit 503; create → list → delete; issue ticket; 409/404/400 |
 
 После изменения `internal/port/*` интерфейсов:
 

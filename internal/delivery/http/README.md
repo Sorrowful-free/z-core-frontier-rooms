@@ -15,6 +15,15 @@ REST control plane (Fiber v3), порт `:3000`.
 
 `/ws` и data plane не используют этот ключ (join — ticket).
 
+## Лимиты
+
+| Механизм | Где | Ответ |
+|----------|-----|-------|
+| Rate limit create/issue | middleware per IP | `429` / `rate_limited` |
+| Max rooms на инстанс | `Create` use case | `503` / `rooms_limit_reached` |
+
+Env — [adapter/httplimits/README.md](../../adapter/httplimits/README.md).
+
 ## Endpoints
 
 | Метод | Путь | Use case | Успех | Body запроса | Body ответа |
@@ -34,4 +43,4 @@ REST control plane (Fiber v3), порт `:3000`.
 
 ## Файлы
 
-`rooms.go` — handlers; `auth_middleware.go` — API key; `dto.go` — JSON types; `mapper.go` — summaries; `parse.go`, `errors.go`.
+`rooms.go` — handlers; `auth_middleware.go` — API key; `rate_limit_middleware.go` — per-IP limits; `dto.go` — JSON types; `mapper.go` — summaries; `parse.go`, `errors.go`.

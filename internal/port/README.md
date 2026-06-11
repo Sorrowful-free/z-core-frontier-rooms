@@ -13,5 +13,6 @@
 | `transport` | `Connection` | `adapter/transport/ws`, `enet` |
 | `identity` | `Allocator` | `adapter/identity` |
 | `logging` | `Logger` | `adapter/logging` |
+| `httplimits` | `Limits` | `adapter/httplimits` |
 
 Интерфейсы объявляет **потребитель** (use case / adapter), маленькие, без «на будущее».

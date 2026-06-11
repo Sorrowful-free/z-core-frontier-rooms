@@ -18,7 +18,7 @@
 | Файл | Назначение |
 |------|------------|
 | `join_errors.go` | Join/admit (`ErrJoinDenied`, `ErrTicketSlotHeld`, …) |
-| `room_errors.go` | In-room (`ErrNotMaster`, `ErrInRoomUnknownOpcode`, …) |
+| `room_errors.go` | In-room (`ErrNotMaster`, …), control (`ErrRoomsLimitReached`, …) |
 | `reservation_error.go` | Слоты (`ErrReservationFull`, …) |
 
 Wire OpCode: `opcodes.go` (join `0x40+`, in-room `0x60+`, reservation `0x70+`).  

@@ -6,7 +6,7 @@
 
 | Файл | Плоскость | Кратко |
 |------|-----------|--------|
-| `create.go` | Control | `RegisterRoom` → registry; откат `UnregisterRoom` |
+| `create.go` | Control | `limits.AllowCreateRoom` → `RegisterRoom` → registry; откат `UnregisterRoom` |
 | `delete.go` | Control | `DeleteRoom` → `UnregisterRoom` |
 | `get_list.go` | Control | Список комнат |
 | `issue_ticket.go` | Control | `ValidateNickName` → Reserve → Issue |

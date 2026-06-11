@@ -31,8 +31,18 @@
 
 Валидация — `httpauth.HTTPAuthConfig.Validate()`.
 
+## Env (http limits)
+
+| Переменная | Обязательна | Default | Описание |
+|------------|-------------|---------|----------|
+| `MAX_ROOMS` | нет | `500` | Макс. комнат в процессе; `0` — без лимита |
+| `HTTP_CREATE_RATE_PER_MIN` | нет | `30` | `POST /rooms` на IP в минуту; `0` — без лимита |
+| `HTTP_ISSUE_RATE_PER_MIN` | нет | `60` | `POST /rooms/:id/tickets` на IP в минуту; `0` — без лимита |
+
+Валидация — `httplimits.HTTPLimitsConfig.Validate()`.
+
 ## Зависимости
 
 `adapter/config` импортирует adapter-модули (например `adapter/admission`). Обратный импорт запрещён.
 
-Wiring — `cmd/rooms`: `cfg, _ := config.LoadFromEnv()` → `admission.NewAdmission(cfg.Admission)`, `RegisterRoutes(app, cfg.HTTPAuth)`.
+Wiring — `cmd/rooms`: `LoadFromEnv()` → `httplimits.New(cfg.HTTPLimits)` → `NewCreateUseCase(..., limits)`, `RegisterRoutes(app, cfg.HTTPAuth, limits)`.

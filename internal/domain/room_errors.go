@@ -14,4 +14,5 @@ var (
 	ErrInRoomUnknownOpcode   = errors.New("in-room: unknown opcode")
 	ErrRoomNotFound         = errors.New("room not found")
 	ErrRoomAlreadyExists    = errors.New("room already exists")
+	ErrRoomsLimitReached    = errors.New("rooms limit reached")
 )

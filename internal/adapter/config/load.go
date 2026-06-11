@@ -3,11 +3,13 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	admissionadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/admission"
 	httpauthadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httpauth"
+	httplimitsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httplimits"
 )
 
 const (
@@ -15,8 +17,12 @@ const (
 	envAdmissionTTL      = "ADMISSION_TTL"
 	envAdmissionPassword = "ADMISSION_PASSWORD"
 
-	envHTTPAPIKey      = "HTTP_API_KEY"
+	envHTTPAPIKey       = "HTTP_API_KEY"
 	envHTTPAuthDisabled = "HTTP_AUTH_DISABLED"
+
+	envMaxRooms              = "MAX_ROOMS"
+	envHTTPCreateRatePerMin  = "HTTP_CREATE_RATE_PER_MIN"
+	envHTTPIssueRatePerMin   = "HTTP_ISSUE_RATE_PER_MIN"
 )
 
 // LoadFromEnv читает переменные окружения и собирает Config.
@@ -29,9 +35,14 @@ func LoadFromEnv() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	httpLimits, err := loadHTTPLimitsFromEnv()
+	if err != nil {
+		return nil, err
+	}
 	return &Config{
-		Admission: admission,
-		HTTPAuth:  httpAuth,
+		Admission:  admission,
+		HTTPAuth:   httpAuth,
+		HTTPLimits: httpLimits,
 	}, nil
 }
 
@@ -65,4 +76,41 @@ func loadHTTPAuthFromEnv() (httpauthadapter.HTTPAuthConfig, error) {
 		return httpauthadapter.HTTPAuthConfig{}, err
 	}
 	return cfg, nil
+}
+
+func loadHTTPLimitsFromEnv() (httplimitsadapter.HTTPLimitsConfig, error) {
+	maxRooms, err := intFromEnv(envMaxRooms, httplimitsadapter.DefaultMaxRooms)
+	if err != nil {
+		return httplimitsadapter.HTTPLimitsConfig{}, err
+	}
+	createRate, err := intFromEnv(envHTTPCreateRatePerMin, httplimitsadapter.DefaultCreateRoomsPerMinute)
+	if err != nil {
+		return httplimitsadapter.HTTPLimitsConfig{}, err
+	}
+	issueRate, err := intFromEnv(envHTTPIssueRatePerMin, httplimitsadapter.DefaultIssueTicketsPerMinute)
+	if err != nil {
+		return httplimitsadapter.HTTPLimitsConfig{}, err
+	}
+
+	cfg := httplimitsadapter.HTTPLimitsConfig{
+		MaxRooms:              maxRooms,
+		CreateRoomsPerMinute:  createRate,
+		IssueTicketsPerMinute: issueRate,
+	}
+	if err := cfg.Validate(); err != nil {
+		return httplimitsadapter.HTTPLimitsConfig{}, err
+	}
+	return cfg, nil
+}
+
+func intFromEnv(name string, defaultValue int) (int, error) {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return defaultValue, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", name, err)
+	}
+	return value, nil
 }

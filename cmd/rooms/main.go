@@ -12,6 +12,7 @@ import (
 
 	admissionadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/admission"
 	appconfig "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/config"
+	httplimitsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httplimits"
 	identityadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/identity"
 	zaplog "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/zap"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
@@ -68,7 +69,12 @@ func run() error {
 	reservation := reservationadapter.NewReservation(zaplog.NewFrom(z, "reservation"))
 	allocator := identityadapter.NewCounter()
 
-	createUseCase := room.NewCreateUseCase(roomRegistry, allocator, reservation, zaplog.NewFrom(z, "create use case"))
+	httpLimits, err := httplimitsadapter.New(cfg.HTTPLimits)
+	if err != nil {
+		return fmt.Errorf("http limits: %w", err)
+	}
+
+	createUseCase := room.NewCreateUseCase(roomRegistry, allocator, reservation, httpLimits, zaplog.NewFrom(z, "create use case"))
 	issueTicketUseCase := room.NewIssueTicketUseCase(roomRegistry, allocator, admission, reservation, zaplog.NewFrom(z, "issue ticket use case"))
 	joinRoomUseCase := room.NewJoinRoomUseCase(admission, peerFactory, roomRegistry, reservation, zaplog.NewFrom(z, "join room use case"))
 	leaveRoomUseCase := room.NewLeaveRoomUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "leave room use case"))
@@ -80,7 +86,7 @@ func run() error {
 	}
 
 	roomsHandler := http.NewRoomsHandler(createUseCase, issueTicketUseCase, deleteUseCase, getListUseCase, zaplog.NewFrom(z, "rooms handler"))
-	roomsHandler.RegisterRoutes(fiberApp, cfg.HTTPAuth)
+	roomsHandler.RegisterRoutes(fiberApp, cfg.HTTPAuth, httpLimits)
 
 	wsHandler := deliveryws.NewRoomsHandler(appCtx, joinRoomUseCase, leaveRoomUseCase, wsConnectionFactory, zaplog.NewFrom(z, "ws rooms handler"))
 	wsHandler.RegisterRoutes(fiberApp)

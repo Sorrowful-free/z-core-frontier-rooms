@@ -2,6 +2,7 @@ package http
 
 import (
 	httpauthadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httpauth"
+	porthttplimits "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/httplimits"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 	useroom "github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
@@ -109,10 +110,10 @@ func (h *RoomsHandler) GetListRooms(c fiber.Ctx) error {
 	return c.JSON(roomsToResponse(summaries))
 }
 
-func (h *RoomsHandler) RegisterRoutes(app *fiber.App, httpAuth httpauthadapter.HTTPAuthConfig) {
+func (h *RoomsHandler) RegisterRoutes(app *fiber.App, httpAuth httpauthadapter.HTTPAuthConfig, limits porthttplimits.Limits) {
 	protected := app.Group("", NewAPIKeyMiddleware(httpAuth))
-	protected.Post("/rooms", h.CreateRoom)
-	protected.Post("/rooms/:id/tickets", h.IssueTicket)
+	protected.Post("/rooms", newCreateRateLimitMiddleware(limits), h.CreateRoom)
+	protected.Post("/rooms/:id/tickets", newIssueRateLimitMiddleware(limits), h.IssueTicket)
 	protected.Delete("/rooms/:id", h.DeleteRoom)
 	protected.Get("/rooms", h.GetListRooms)
 }

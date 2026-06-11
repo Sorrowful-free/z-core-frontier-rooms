@@ -26,6 +26,8 @@ alwaysApply: true
 | Join/admit/in-room OpCode, мапперы | `internal/delivery/errors/README.md`, чеклист [join-error-opcodes.mdc](join-error-opcodes.mdc) |
 | Env, `LoadFromEnv`, новый `*Config` модуля | `internal/adapter/config/README.md`, README модуля, [.cursor/rules/config.mdc](config.mdc) |
 | HTTP API key, `HTTPAuthConfig` | `internal/adapter/httpauth/README.md`, `internal/delivery/http/README.md` |
+| HTTP limits, `HTTPLimitsConfig`, `port/httplimits.Limits` | `internal/adapter/httplimits/README.md`, `internal/port/httplimits`, `internal/delivery/http/README.md` |
+| `ErrRoomsLimitReached` | `internal/domain/README.md`, `internal/delivery/http/README.md` |
 | Ticket, Claims, ValidateNickName, `AdmissionConfig` | `internal/adapter/admission/README.md`, `internal/domain/README.md` |
 | Reservation слоты | `internal/adapter/reservation/README.md` |
 | Room, Peer, lifecycle, Replace | `internal/adapter/realtime/README.md` |

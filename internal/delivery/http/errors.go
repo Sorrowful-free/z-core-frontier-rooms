@@ -24,6 +24,8 @@ const (
 	codeReservationExpired      = "reservation_expired"
 	codeReservationAlreadyAdmitted = "reservation_already_admitted"
 	codeInvalidCredentials      = "invalid_credentials"
+	codeRateLimited             = "rate_limited"
+	codeRoomsLimitReached       = "rooms_limit_reached"
 	codeInternal                = "internal_error"
 )
 
@@ -74,6 +76,8 @@ func statusAndCodeFromError(err error) (int, string) {
 		return fiber.StatusUnauthorized, codeInvalidCredentials
 	case errors.Is(err, domain.ErrInvalidNickName):
 		return fiber.StatusBadRequest, codeInvalidNickName
+	case errors.Is(err, domain.ErrRoomsLimitReached):
+		return fiber.StatusServiceUnavailable, codeRoomsLimitReached
 	default:
 		return fiber.StatusInternalServerError, codeInternal
 	}

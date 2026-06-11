@@ -42,6 +42,7 @@ go test ./tests/...
 | Use cases | [internal/usecase/room/README.md](internal/usecase/room/README.md) |
 | Config (env) | [internal/adapter/config/README.md](internal/adapter/config/README.md) |
 | HTTP auth | [internal/adapter/httpauth/README.md](internal/adapter/httpauth/README.md) |
+| HTTP limits | [internal/adapter/httplimits/README.md](internal/adapter/httplimits/README.md) |
 | Admission (ticket v2) | [internal/adapter/admission/README.md](internal/adapter/admission/README.md) |
 | Reservation | [internal/adapter/reservation/README.md](internal/adapter/reservation/README.md) |
 | Room registry | [internal/adapter/registry/README.md](internal/adapter/registry/README.md) |
