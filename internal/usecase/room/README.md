@@ -12,6 +12,7 @@
 | `issue_ticket.go` | Control | `ValidateNickName` → Reserve → Issue |
 | `join_room.go` | Data | Validate → Admit → CreatePeer(nick) → Join/Replace → Start |
 | `leave_room.go` | Data | Leave → Stop → Revoke |
+| `sweep_orphan_admitted.go` | Background | admitted без peer в room → Revoke (шаг 4A) |
 
 ## IssueTicket
 

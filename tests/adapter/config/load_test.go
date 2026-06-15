@@ -7,6 +7,7 @@ import (
 
 	appconfig "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/config"
 	httplimitsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httplimits"
+	reservationadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
 )
 
 func validSecret() string {
@@ -152,6 +153,12 @@ func TestLoadFromEnv_SuccessDefaults(t *testing.T) {
 	}
 	if cfg.HTTPLimits.IssueTicketsPerMinute != httplimitsadapter.DefaultIssueTicketsPerMinute {
 		t.Fatalf("issue rate = %d", cfg.HTTPLimits.IssueTicketsPerMinute)
+	}
+	if cfg.Reservation.OrphanAdmittedTTL != reservationadapter.DefaultOrphanAdmittedTTL {
+		t.Fatalf("orphan admitted ttl = %v", cfg.Reservation.OrphanAdmittedTTL)
+	}
+	if cfg.Reservation.OrphanSweepInterval != reservationadapter.DefaultOrphanSweepInterval {
+		t.Fatalf("orphan sweep interval = %v", cfg.Reservation.OrphanSweepInterval)
 	}
 }
 

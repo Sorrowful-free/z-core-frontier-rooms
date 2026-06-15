@@ -18,9 +18,10 @@ const (
 )
 
 type peerSlot struct {
-	peerID    domain.PeerID
-	state     reservationState
-	expiresAt time.Time
+	peerID     domain.PeerID
+	state      reservationState
+	expiresAt  time.Time
+	admittedAt time.Time
 }
 type roomSlot struct {
 	capacity int
@@ -165,9 +166,9 @@ func (r *Reservation) Admit(ctx context.Context, roomID domain.RoomID, peerID do
 	}
 
 	room.peers[peerID] = peerSlot{
-		peerID:    peerID,
-		state:     reservationStateAdmitted,
-		expiresAt: time.Time{},
+		peerID:     peerID,
+		state:      reservationStateAdmitted,
+		admittedAt: time.Now(),
 	}
 	return nil
 }
@@ -198,6 +199,32 @@ func (r *Reservation) State(ctx context.Context, roomID domain.RoomID, peerID do
 	default:
 		return domain.ReservationSlotNone, nil
 	}
+}
+
+func (r *Reservation) ListAdmittedPeers(ctx context.Context, roomID domain.RoomID) ([]domain.AdmittedSlot, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	room, ok := r.rooms[roomID]
+	if !ok {
+		return nil, reservationErrRoom(domain.ErrReservationNotFound, roomID)
+	}
+
+	slots := make([]domain.AdmittedSlot, 0, len(room.peers))
+	for peerID, peer := range room.peers {
+		if peer.state != reservationStateAdmitted {
+			continue
+		}
+		slots = append(slots, domain.AdmittedSlot{
+			PeerID:     peerID,
+			AdmittedAt: peer.admittedAt,
+		})
+	}
+	return slots, nil
 }
 
 func (r *Reservation) Revoke(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) error {

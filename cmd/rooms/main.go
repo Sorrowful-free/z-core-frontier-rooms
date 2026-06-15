@@ -80,6 +80,13 @@ func run() error {
 	leaveRoomUseCase := room.NewLeaveRoomUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "leave room use case"))
 	deleteUseCase := room.NewDeleteUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "delete use case"))
 	getListUseCase := room.NewGetListUseCase(roomRegistry, zaplog.NewFrom(z, "get list use case"))
+	sweepOrphanAdmittedUseCase := room.NewSweepOrphanAdmittedUseCase(
+		roomRegistry,
+		reservation,
+		cfg.Reservation.OrphanAdmittedTTL,
+		zaplog.NewFrom(z, "orphan admitted sweep"),
+	)
+	room.StartOrphanAdmittedSweep(appCtx, sweepOrphanAdmittedUseCase, cfg.Reservation.OrphanSweepInterval, zaplog.NewFrom(z, "orphan admitted sweep"))
 
 	if cfg.HTTPAuth.Disabled {
 		z.Warn("HTTP control plane auth is disabled — for local development only")

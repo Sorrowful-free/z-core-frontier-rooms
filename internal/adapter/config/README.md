@@ -45,4 +45,13 @@
 
 `adapter/config` импортирует adapter-модули (например `adapter/admission`). Обратный импорт запрещён.
 
-Wiring — `cmd/rooms`: `LoadFromEnv()` → `httplimits.New(cfg.HTTPLimits)` → `NewCreateUseCase(..., limits)`, `RegisterRoutes(app, cfg.HTTPAuth, limits)`.
+## Env (reservation orphan sweep)
+
+| Переменная | Обязательна | Default | Описание |
+|------------|-------------|---------|----------|
+| `RESERVATION_ORPHAN_ADMITTED_TTL` | нет | `30s` | Grace после Admit до revoke orphan без peer; `0` — сразу при sweep |
+| `RESERVATION_ORPHAN_SWEEP_INTERVAL` | нет | `10s` | Период фонового sweep; `0` — отключить |
+
+Валидация — `reservation.ReservationConfig.Validate()`.
+
+Wiring — `cmd/rooms`: `LoadFromEnv()` → `httplimits.New(cfg.HTTPLimits)` → `NewCreateUseCase(..., limits)`, `RegisterRoutes(app, cfg.HTTPAuth, limits)`, `StartOrphanAdmittedSweep(..., cfg.Reservation)`.

@@ -17,4 +17,5 @@ type Reservation interface {
 	Revoke(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) error
 
 	State(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) (domain.ReservationSlot, error)
+	ListAdmittedPeers(ctx context.Context, roomID domain.RoomID) ([]domain.AdmittedSlot, error)
 }

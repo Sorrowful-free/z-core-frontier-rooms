@@ -253,6 +253,47 @@ func TestState(t *testing.T) {
 	}
 }
 
+func TestListAdmittedPeers(t *testing.T) {
+	t.Parallel()
+
+	const (
+		roomID   = domain.RoomID(10)
+		admitted = domain.PeerID(100)
+		reserved = domain.PeerID(101)
+	)
+	ctx := context.Background()
+	res := newTestReservation()
+
+	if err := res.RegisterRoom(ctx, roomID, 2, ""); err != nil {
+		t.Fatalf("RegisterRoom: %v", err)
+	}
+	expires := time.Now().Add(time.Hour)
+
+	if err := res.Reserve(ctx, roomID, admitted, expires); err != nil {
+		t.Fatalf("Reserve admitted: %v", err)
+	}
+	if err := res.Admit(ctx, roomID, admitted); err != nil {
+		t.Fatalf("Admit: %v", err)
+	}
+	if err := res.Reserve(ctx, roomID, reserved, expires); err != nil {
+		t.Fatalf("Reserve reserved: %v", err)
+	}
+
+	slots, err := res.ListAdmittedPeers(ctx, roomID)
+	if err != nil {
+		t.Fatalf("ListAdmittedPeers: %v", err)
+	}
+	if len(slots) != 1 {
+		t.Fatalf("len(slots) = %d, want 1", len(slots))
+	}
+	if slots[0].PeerID != admitted {
+		t.Fatalf("peerID = %v, want %v", slots[0].PeerID, admitted)
+	}
+	if slots[0].AdmittedAt.IsZero() {
+		t.Fatal("admittedAt is zero")
+	}
+}
+
 func TestVerifyRoomPassword(t *testing.T) {
 	t.Parallel()
 

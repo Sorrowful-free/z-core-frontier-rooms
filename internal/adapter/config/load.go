@@ -10,6 +10,7 @@ import (
 	admissionadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/admission"
 	httpauthadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httpauth"
 	httplimitsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httplimits"
+	reservationadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
 )
 
 const (
@@ -23,6 +24,9 @@ const (
 	envMaxRooms              = "MAX_ROOMS"
 	envHTTPCreateRatePerMin  = "HTTP_CREATE_RATE_PER_MIN"
 	envHTTPIssueRatePerMin   = "HTTP_ISSUE_RATE_PER_MIN"
+
+	envReservationOrphanAdmittedTTL    = "RESERVATION_ORPHAN_ADMITTED_TTL"
+	envReservationOrphanSweepInterval  = "RESERVATION_ORPHAN_SWEEP_INTERVAL"
 )
 
 // LoadFromEnv читает переменные окружения и собирает Config.
@@ -39,10 +43,15 @@ func LoadFromEnv() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	reservationCfg, err := loadReservationFromEnv()
+	if err != nil {
+		return nil, err
+	}
 	return &Config{
-		Admission:  admission,
-		HTTPAuth:   httpAuth,
-		HTTPLimits: httpLimits,
+		Admission:   admission,
+		HTTPAuth:    httpAuth,
+		HTTPLimits:  httpLimits,
+		Reservation: reservationCfg,
 	}, nil
 }
 
@@ -99,6 +108,35 @@ func loadHTTPLimitsFromEnv() (httplimitsadapter.HTTPLimitsConfig, error) {
 	}
 	if err := cfg.Validate(); err != nil {
 		return httplimitsadapter.HTTPLimitsConfig{}, err
+	}
+	return cfg, nil
+}
+
+func loadReservationFromEnv() (reservationadapter.ReservationConfig, error) {
+	orphanTTL := reservationadapter.DefaultOrphanAdmittedTTL
+	if raw := os.Getenv(envReservationOrphanAdmittedTTL); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil {
+			return reservationadapter.ReservationConfig{}, fmt.Errorf("%s: %w", envReservationOrphanAdmittedTTL, err)
+		}
+		orphanTTL = parsed
+	}
+
+	sweepInterval := reservationadapter.DefaultOrphanSweepInterval
+	if raw := os.Getenv(envReservationOrphanSweepInterval); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil {
+			return reservationadapter.ReservationConfig{}, fmt.Errorf("%s: %w", envReservationOrphanSweepInterval, err)
+		}
+		sweepInterval = parsed
+	}
+
+	cfg := reservationadapter.ReservationConfig{
+		OrphanAdmittedTTL:   orphanTTL,
+		OrphanSweepInterval: sweepInterval,
+	}
+	if err := cfg.Validate(); err != nil {
+		return reservationadapter.ReservationConfig{}, err
 	}
 	return cfg, nil
 }
