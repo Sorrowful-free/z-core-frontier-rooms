@@ -8,6 +8,7 @@ import (
 	appconfig "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/config"
 	httplimitsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httplimits"
 	reservationadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
+	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
 )
 
 func validSecret() string {
@@ -159,6 +160,9 @@ func TestLoadFromEnv_SuccessDefaults(t *testing.T) {
 	}
 	if cfg.Reservation.OrphanSweepInterval != reservationadapter.DefaultOrphanSweepInterval {
 		t.Fatalf("orphan sweep interval = %v", cfg.Reservation.OrphanSweepInterval)
+	}
+	if cfg.Transport.MaxIncomingFrameBytes != adaptertransport.DefaultMaxIncomingFrameBytes {
+		t.Fatalf("max incoming frame bytes = %d", cfg.Transport.MaxIncomingFrameBytes)
 	}
 }
 

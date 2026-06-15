@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 
+	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
 	deliveryerrors "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/errors"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/ws"
@@ -16,15 +17,24 @@ type RoomsHandler struct {
 	joinRoomUseCase   *room.JoinRoomUseCase
 	leaveRoomUseCase  *room.LeaveRoomUseCase
 	connectionFactory ws.WsConnectionFactory
+	transportCfg      adaptertransport.TransportConfig
 	logger            logging.Logger
 }
 
-func NewRoomsHandler(ctx context.Context, joinRoomUseCase *room.JoinRoomUseCase, leaveRoomUseCase *room.LeaveRoomUseCase, connectionFactory ws.WsConnectionFactory, logger logging.Logger) *RoomsHandler {
+func NewRoomsHandler(
+	ctx context.Context,
+	joinRoomUseCase *room.JoinRoomUseCase,
+	leaveRoomUseCase *room.LeaveRoomUseCase,
+	connectionFactory ws.WsConnectionFactory,
+	transportCfg adaptertransport.TransportConfig,
+	logger logging.Logger,
+) *RoomsHandler {
 	return &RoomsHandler{
 		ctx:               ctx,
 		joinRoomUseCase:   joinRoomUseCase,
 		leaveRoomUseCase:  leaveRoomUseCase,
 		connectionFactory: connectionFactory,
+		transportCfg:      transportCfg,
 		logger:            logger,
 	}
 }
@@ -44,6 +54,11 @@ func (h *RoomsHandler) handleConnect(c *websocket.Conn) {
 	token := []byte(c.Query("token"))
 	if len(token) == 0 {
 		h.logger.Warn("websocket connect: missing token")
+		_ = c.Close()
+		return
+	}
+	if h.transportCfg.MaxIncomingFrameBytes > 0 && len(token) > h.transportCfg.MaxIncomingFrameBytes {
+		h.logger.Warn("websocket connect: token too large", "bytes", len(token))
 		_ = c.Close()
 		return
 	}

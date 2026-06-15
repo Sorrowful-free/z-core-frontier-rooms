@@ -11,6 +11,7 @@ import (
 	httpauthadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httpauth"
 	httplimitsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httplimits"
 	reservationadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
+	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
 )
 
 const (
@@ -27,6 +28,8 @@ const (
 
 	envReservationOrphanAdmittedTTL    = "RESERVATION_ORPHAN_ADMITTED_TTL"
 	envReservationOrphanSweepInterval  = "RESERVATION_ORPHAN_SWEEP_INTERVAL"
+
+	envTransportMaxIncomingFrameBytes = "TRANSPORT_MAX_INCOMING_FRAME_BYTES"
 )
 
 // LoadFromEnv читает переменные окружения и собирает Config.
@@ -47,11 +50,16 @@ func LoadFromEnv() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	transportCfg, err := loadTransportFromEnv()
+	if err != nil {
+		return nil, err
+	}
 	return &Config{
 		Admission:   admission,
 		HTTPAuth:    httpAuth,
 		HTTPLimits:  httpLimits,
 		Reservation: reservationCfg,
+		Transport:   transportCfg,
 	}, nil
 }
 
@@ -108,6 +116,21 @@ func loadHTTPLimitsFromEnv() (httplimitsadapter.HTTPLimitsConfig, error) {
 	}
 	if err := cfg.Validate(); err != nil {
 		return httplimitsadapter.HTTPLimitsConfig{}, err
+	}
+	return cfg, nil
+}
+
+func loadTransportFromEnv() (adaptertransport.TransportConfig, error) {
+	maxBytes, err := intFromEnv(envTransportMaxIncomingFrameBytes, adaptertransport.DefaultMaxIncomingFrameBytes)
+	if err != nil {
+		return adaptertransport.TransportConfig{}, err
+	}
+
+	cfg := adaptertransport.TransportConfig{
+		MaxIncomingFrameBytes: maxBytes,
+	}
+	if err := cfg.Validate(); err != nil {
+		return adaptertransport.TransportConfig{}, err
 	}
 	return cfg, nil
 }

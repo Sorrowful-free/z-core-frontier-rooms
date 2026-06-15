@@ -2,11 +2,11 @@ package ws
 
 import (
 	"encoding/binary"
-	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/gofiber/contrib/v3/websocket"
 )
@@ -17,16 +17,23 @@ const (
 )
 
 type WsConnection struct {
-	conn      *websocket.Conn
-	closed    chan struct{}
-	closeOnce sync.Once
-	pingMs    atomic.Int64
+	conn                  *websocket.Conn
+	closed                chan struct{}
+	closeOnce             sync.Once
+	pingMs                atomic.Int64
+	maxIncomingFrameBytes int
 }
 
-func NewWsConnection(conn *websocket.Conn) *WsConnection {
+func NewWsConnection(conn *websocket.Conn, cfg adaptertransport.TransportConfig) *WsConnection {
+	maxBytes := cfg.MaxIncomingFrameBytes
+	if maxBytes > 0 {
+		conn.SetReadLimit(int64(maxBytes))
+	}
+
 	c := &WsConnection{
-		conn:   conn,
-		closed: make(chan struct{}),
+		conn:                  conn,
+		closed:                make(chan struct{}),
+		maxIncomingFrameBytes: maxBytes,
 	}
 	c.pingMs.Store(-1)
 
@@ -68,10 +75,12 @@ func (c *WsConnection) Receive() (domain.Frame, error) {
 		return domain.Frame{}, err
 	}
 
-	if len(payload) == 0 {
-		return domain.Frame{}, errors.New("ws: empty payload")
+	frame, err := domain.DecodeIncomingFrame(payload, c.maxIncomingFrameBytes)
+	if err != nil {
+		c.Close()
+		return domain.Frame{}, err
 	}
-	return domain.Frame{OpCode: domain.OpCode(payload[0]), Delivery: domain.DeliveryDefault, Payload: domain.Payload(payload[1:])}, nil
+	return frame, nil
 }
 
 func (c *WsConnection) Ping() int64 {

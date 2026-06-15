@@ -7,7 +7,8 @@ UDP host (отдельный порт от Fiber). Build tag `enet` + CGO.
 | Параметр | Значение |
 |----------|----------|
 | Порт | `7777` |
-| Первый пакет | сырой ticket (`admit`) |
+| Первый пакет | сырой ticket (`admit`), max `TRANSPORT_MAX_INCOMING_FRAME_BYTES` |
+| Oversized packet/frame | disconnect (+ `LeaveRoom` если уже admitted) |
 | Ошибка admit | OpCode `0x40`–`0x51` → disconnect |
 | После admit | binary `OpCode` + payload |
 

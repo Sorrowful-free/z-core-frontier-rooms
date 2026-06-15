@@ -5,6 +5,7 @@
 ## Ключевые типы
 
 - `RoomID`, `PeerID`, `Frame`, `OpCode`
+- `DecodeIncomingFrame` — разбор data plane кадра (`frame_wire.go`)
 - `Claims` — `RoomID`, `PeerID`, `NickName`, `IssuedAt`, `ExpiresAt`
 - `events` — `RoomEvent`, `PeerEvent`
 
@@ -18,6 +19,7 @@
 | Файл | Назначение |
 |------|------------|
 | `join_errors.go` | Join/admit (`ErrJoinDenied`, `ErrTicketSlotHeld`, …) |
+| `frame_wire.go` | Data plane (`ErrIncomingFrameTooLarge`) |
 | `room_errors.go` | In-room (`ErrNotMaster`, …), control (`ErrRoomsLimitReached`, …) |
 | `reservation_error.go` | Слоты (`ErrReservationFull`, …) |
 

@@ -54,4 +54,12 @@
 
 Валидация — `reservation.ReservationConfig.Validate()`.
 
-Wiring — `cmd/rooms`: `LoadFromEnv()` → `httplimits.New(cfg.HTTPLimits)` → `NewCreateUseCase(..., limits)`, `RegisterRoutes(app, cfg.HTTPAuth, limits)`, `StartOrphanAdmittedSweep(..., cfg.Reservation)`.
+## Env (transport / data plane)
+
+| Переменная | Обязательна | Default | Описание |
+|------------|-------------|---------|----------|
+| `TRANSPORT_MAX_INCOMING_FRAME_BYTES` | нет | `262144` (256 KiB) | Макс. входящий кадр WS/ENet и ENet admit-пакет; `0` — без лимита |
+
+Валидация — `transport.TransportConfig.Validate()`.
+
+Wiring — `cmd/rooms`: `LoadFromEnv()` → `ws.NewWsConnectionFactory(..., cfg.Transport)`, `enetCfg.MaxIncomingFrameBytes = cfg.Transport.MaxIncomingFrameBytes`.

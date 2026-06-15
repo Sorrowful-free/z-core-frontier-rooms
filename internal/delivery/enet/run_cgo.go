@@ -4,6 +4,7 @@ package enet
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	deliveryerrors "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/errors"
@@ -65,6 +66,11 @@ func (h *RoomsHandler) run(ctx context.Context) error {
 			if !sess.admitted {
 				data := append([]byte(nil), packet.GetData()...)
 				packet.Destroy()
+				if h.packetTooLarge(len(data)) {
+					h.logger.Warn("enet admit packet too large", "enet_peer_id", id, "bytes", len(data))
+					h.disconnectSession(ctx, &mu, sessions, id, sess)
+					continue
+				}
 				if err := h.admit(ctx, sess, data); err != nil {
 					deliveryerrors.SendJoinReject(sess.conn, err)
 					_ = sess.close()
@@ -76,10 +82,15 @@ func (h *RoomsHandler) run(ctx context.Context) error {
 				continue
 			}
 
-			frame, err := frameFromPacket(packet)
+			frame, err := frameFromPacket(packet, h.cfg.MaxIncomingFrameBytes)
 			packet.Destroy()
 			if err != nil {
-				h.logger.Warn("enet invalid frame", "error", err, "enet_peer_id", id)
+				if errors.Is(err, domain.ErrIncomingFrameTooLarge) {
+					h.logger.Warn("enet frame too large", "enet_peer_id", id)
+				} else {
+					h.logger.Warn("enet invalid frame", "error", err, "enet_peer_id", id)
+				}
+				h.disconnectSession(ctx, &mu, sessions, id, sess)
 				continue
 			}
 			if !sess.deliver(frame) {
@@ -123,4 +134,28 @@ func (h *RoomsHandler) admit(ctx context.Context, sess *peerSession, token []byt
 	sess.peerID = peerID
 	h.logger.Info("enet peer admitted", "enet_peer_id", sess.id)
 	return nil
+}
+
+func (h *RoomsHandler) packetTooLarge(size int) bool {
+	max := h.cfg.MaxIncomingFrameBytes
+	return max > 0 && size > max
+}
+
+func (h *RoomsHandler) disconnectSession(
+	ctx context.Context,
+	mu *sync.Mutex,
+	sessions map[uint16]*peerSession,
+	id uint16,
+	sess *peerSession,
+) {
+	if sess.admitted && sess.roomID.IsValid() && sess.peerID.IsValid() {
+		if err := h.leaveRoomUseCase.LeaveRoom(ctx, sess.roomID, sess.peerID); err != nil {
+			h.logger.Error("enet leave room failed", "error", err, "enet_peer_id", id, "roomID", sess.roomID, "peerID", sess.peerID)
+		}
+	}
+	_ = sess.close()
+	sess.clearPeerData()
+	mu.Lock()
+	delete(sessions, id)
+	mu.Unlock()
 }

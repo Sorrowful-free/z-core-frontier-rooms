@@ -8,7 +8,7 @@
 tests/
   mocks/                — mockgen из internal/port (gomock), go generate ./tests/mocks/...
   delivery/errors/      — join_reject, reservation_reject, in_room, wire helpers
-  adapter/config/       — LoadFromEnv, admission + http auth env
+  adapter/config/       — LoadFromEnv, admission + http auth + transport env
   adapter/httpauth/     — HTTPAuthConfig.Validate
   adapter/httplimits/   — HTTPLimitsConfig, Limiter
   adapter/admission/    — ticket Issue/Validate, AdmissionConfig
@@ -17,7 +17,7 @@ tests/
   adapter/realtime/     — Room Join/Replace, policy без deadlock, peer factory nick
   adapter/realtime/policy/state/ — StateRoomPolicy, master election, tick intervals
   adapter/realtime/codec/ — round-trip state/input/rpc/room wire codec
-  domain/               — ValidateNickName
+  domain/               — ValidateNickName, DecodeIncomingFrame
   domain/state/         — atomic apply patch (entity/component)
   adapter/registry/     — RoomRegistry, Shutdown
   usecase/room/         — Create, Delete, GetList, IssueTicket, JoinRoom, LeaveRoom (gomock)

@@ -57,13 +57,13 @@ func run() error {
 
 	roomRegistry := registry.NewRoomRegistry(appCtx, roomFactory, zaplog.NewFrom(z, "rooms registry"))
 
-	wsConnectionFactory := ws.NewWsConnectionFactory(zaplog.NewFrom(z, "ws connection factory"))
-	enetConnectionFactory := enet.NewEnetConnectionFactory(zaplog.NewFrom(z, "enet connection factory"))
-
 	cfg, err := appconfig.LoadFromEnv()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+
+	wsConnectionFactory := ws.NewWsConnectionFactory(zaplog.NewFrom(z, "ws connection factory"), cfg.Transport)
+	enetConnectionFactory := enet.NewEnetConnectionFactory(zaplog.NewFrom(z, "enet connection factory"))
 
 	admission := admissionadapter.NewAdmission(cfg.Admission)
 	reservation := reservationadapter.NewReservation(zaplog.NewFrom(z, "reservation"))
@@ -95,15 +95,17 @@ func run() error {
 	roomsHandler := http.NewRoomsHandler(createUseCase, issueTicketUseCase, deleteUseCase, getListUseCase, zaplog.NewFrom(z, "rooms handler"))
 	roomsHandler.RegisterRoutes(fiberApp, cfg.HTTPAuth, httpLimits)
 
-	wsHandler := deliveryws.NewRoomsHandler(appCtx, joinRoomUseCase, leaveRoomUseCase, wsConnectionFactory, zaplog.NewFrom(z, "ws rooms handler"))
+	wsHandler := deliveryws.NewRoomsHandler(appCtx, joinRoomUseCase, leaveRoomUseCase, wsConnectionFactory, cfg.Transport, zaplog.NewFrom(z, "ws rooms handler"))
 	wsHandler.RegisterRoutes(fiberApp)
 
+	enetCfg := deliveryenet.DefaultConfig()
+	enetCfg.MaxIncomingFrameBytes = cfg.Transport.MaxIncomingFrameBytes
 	enetHandler := deliveryenet.NewRoomsHandler(
 		appCtx,
 		joinRoomUseCase,
 		leaveRoomUseCase,
 		enetConnectionFactory,
-		deliveryenet.DefaultConfig(),
+		enetCfg,
 		zaplog.NewFrom(z, "enet rooms handler"),
 	)
 	enetHandler.Listen()
