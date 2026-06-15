@@ -7,7 +7,7 @@
 | Файл | Плоскость | Кратко |
 |------|-----------|--------|
 | `create.go` | Control | `limits.AllowCreateRoom` → `RegisterRoom` → registry; откат `UnregisterRoom` |
-| `delete.go` | Control | `DeleteRoom` → `UnregisterRoom` |
+| `delete.go` | Control | kick peers (`LeaveRoom`) → `DeleteRoom` → `UnregisterRoom` |
 | `get_list.go` | Control | Список комнат |
 | `issue_ticket.go` | Control | `ValidateNickName` → Reserve → Issue |
 | `join_room.go` | Data | Validate → Admit → CreatePeer(nick) → Join/Replace → Start |
@@ -36,6 +36,15 @@ Validate → GetRoom → Admit → CreatePeer(..., claims.NickName)
 ## LeaveRoom
 
 `GetPeer` → `Leave` → `Stop` → `Revoke` (идемпотентно при отсутствии слота).
+
+## Delete
+
+```text
+VerifyRoomPassword (только Delete) → GetRoom → kick all peers (LeaveRoom)
+→ DeleteRoom → UnregisterRoom
+```
+
+Ошибки kick логируются; комната всё равно удаляется. `DeleteForShutdown` — без пароля, тот же kick.
 
 ## HTTP / transport
 

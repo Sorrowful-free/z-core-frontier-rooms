@@ -66,7 +66,8 @@ func newTestEnvWithLimits(t *testing.T, httpLimits httplimitsadapter.HTTPLimitsC
 
 	createUC := useroom.NewCreateUseCase(registry, allocator, reservation, limits, logger)
 	issueUC := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
-	deleteUC := useroom.NewDeleteUseCase(registry, reservation, logger)
+	leaveUC := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
+	deleteUC := useroom.NewDeleteUseCase(registry, reservation, leaveUC, logger)
 	getListUC := useroom.NewGetListUseCase(registry, logger)
 
 	handler := deliveryhttp.NewRoomsHandler(createUC, issueUC, deleteUC, getListUC, logger)

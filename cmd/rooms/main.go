@@ -76,9 +76,9 @@ func run() error {
 
 	createUseCase := room.NewCreateUseCase(roomRegistry, allocator, reservation, httpLimits, zaplog.NewFrom(z, "create use case"))
 	issueTicketUseCase := room.NewIssueTicketUseCase(roomRegistry, allocator, admission, reservation, zaplog.NewFrom(z, "issue ticket use case"))
-	joinRoomUseCase := room.NewJoinRoomUseCase(admission, peerFactory, roomRegistry, reservation, zaplog.NewFrom(z, "join room use case"))
 	leaveRoomUseCase := room.NewLeaveRoomUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "leave room use case"))
-	deleteUseCase := room.NewDeleteUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "delete use case"))
+	deleteUseCase := room.NewDeleteUseCase(roomRegistry, reservation, leaveRoomUseCase, zaplog.NewFrom(z, "delete use case"))
+	joinRoomUseCase := room.NewJoinRoomUseCase(admission, peerFactory, roomRegistry, reservation, zaplog.NewFrom(z, "join room use case"))
 	getListUseCase := room.NewGetListUseCase(roomRegistry, zaplog.NewFrom(z, "get list use case"))
 	sweepOrphanAdmittedUseCase := room.NewSweepOrphanAdmittedUseCase(
 		roomRegistry,
