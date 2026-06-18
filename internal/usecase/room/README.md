@@ -35,7 +35,7 @@ Validate → GetRoom → Admit → CreatePeer(..., claims.NickName)
 
 ## LeaveRoom
 
-`GetPeer` → `Leave` → `Stop` → `Revoke` (идемпотентно при отсутствии слота).
+`GetPeer` → `Leave` → `Stop` → `Revoke`. Идемпотентно: комната или peer уже сняты → `Revoke` + `nil`; слот reservation отсутствует → `nil`.
 
 ## Delete
 

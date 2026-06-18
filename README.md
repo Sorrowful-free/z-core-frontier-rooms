@@ -66,7 +66,5 @@ go test ./tests/...
 ## TODO
 
 - Health-check
-- Идемпотентный `LeaveRoom` если peer уже снят
-- Ping/idle eviction для zombie `admitted`
+- Ping/idle eviction для zombie peers (отдельный пункт после hardening)
 - WS e2e: issue → join
-- Буфер `Room.incoming` под нагрузку

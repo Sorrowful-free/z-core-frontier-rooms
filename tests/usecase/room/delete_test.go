@@ -76,6 +76,7 @@ func TestDelete_KicksPeersBeforeDelete(t *testing.T) {
 
 	gomock.InOrder(
 		registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil),
+		room.EXPECT().HasPeer(peerIDA).Return(true),
 		room.EXPECT().GetPeer(peerIDA).Return(peerA, nil),
 		room.EXPECT().Leave(peerA).Return(nil),
 		peerA.EXPECT().Stop().Return(nil),
@@ -83,6 +84,7 @@ func TestDelete_KicksPeersBeforeDelete(t *testing.T) {
 		logger.EXPECT().Info(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()),
 
 		registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil),
+		room.EXPECT().HasPeer(peerIDB).Return(true),
 		room.EXPECT().GetPeer(peerIDB).Return(peerB, nil),
 		room.EXPECT().Leave(peerB).Return(nil),
 		peerB.EXPECT().Stop().Return(nil),

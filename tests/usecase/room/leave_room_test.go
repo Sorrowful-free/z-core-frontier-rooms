@@ -27,6 +27,7 @@ func TestLeaveRoom_Success(t *testing.T) {
 	)
 
 	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
+	room.EXPECT().HasPeer(peerID).Return(true)
 	room.EXPECT().GetPeer(peerID).Return(peer, nil)
 	room.EXPECT().Leave(peer).Return(nil)
 	peer.EXPECT().Stop().Return(nil)
@@ -39,26 +40,7 @@ func TestLeaveRoom_Success(t *testing.T) {
 	}
 }
 
-func TestLeaveRoom_RoomNotFound(t *testing.T) {
-	t.Parallel()
-
-	ctrl := gomock.NewController(t)
-	registry := mocks.NewMockRoomRegistry(ctrl)
-	reservation := mocks.NewMockReservation(ctrl)
-	logger := mocks.NewMockLogger(ctrl)
-
-	registry.EXPECT().
-		GetRoom(gomock.Any(), domain.RoomID(1)).
-		Return(nil, domain.ErrRoomNotFound)
-
-	uc := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
-	err := uc.LeaveRoom(context.Background(), domain.RoomID(1), domain.PeerID(2))
-	if !errors.Is(err, domain.ErrRoomNotFound) {
-		t.Fatalf("err = %v, want ErrRoomNotFound", err)
-	}
-}
-
-func TestLeaveRoom_PeerNotFound(t *testing.T) {
+func TestLeaveRoom_PeerAlreadyLeft(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
@@ -73,6 +55,57 @@ func TestLeaveRoom_PeerNotFound(t *testing.T) {
 	)
 
 	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
+	room.EXPECT().HasPeer(peerID).Return(false)
+	reservation.EXPECT().Revoke(gomock.Any(), roomID, peerID).Return(nil)
+	logger.EXPECT().Warn(gomock.Any(), gomock.Any()).AnyTimes()
+
+	uc := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
+	if err := uc.LeaveRoom(context.Background(), roomID, peerID); err != nil {
+		t.Fatalf("LeaveRoom: %v", err)
+	}
+}
+
+func TestLeaveRoom_RoomNotFound_RevokesAndSucceeds(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	registry := mocks.NewMockRoomRegistry(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
+	logger := mocks.NewMockLogger(ctrl)
+
+	const (
+		roomID = domain.RoomID(1)
+		peerID = domain.PeerID(2)
+	)
+
+	registry.EXPECT().
+		GetRoom(gomock.Any(), roomID).
+		Return(nil, domain.ErrRoomNotFound)
+	reservation.EXPECT().Revoke(gomock.Any(), roomID, peerID).Return(nil)
+	logger.EXPECT().Warn(gomock.Any(), gomock.Any()).AnyTimes()
+
+	uc := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
+	if err := uc.LeaveRoom(context.Background(), roomID, peerID); err != nil {
+		t.Fatalf("LeaveRoom: %v", err)
+	}
+}
+
+func TestLeaveRoom_GetPeerFails(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	registry := mocks.NewMockRoomRegistry(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
+	logger := mocks.NewMockLogger(ctrl)
+	room := mocks.NewMockRoom(ctrl)
+
+	const (
+		roomID = domain.RoomID(1)
+		peerID = domain.PeerID(2)
+	)
+
+	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
+	room.EXPECT().HasPeer(peerID).Return(true)
 	room.EXPECT().GetPeer(peerID).Return(nil, errors.New("peer not found"))
 
 	uc := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
@@ -97,6 +130,7 @@ func TestLeaveRoom_RevokeNotFoundStillSuccess(t *testing.T) {
 	)
 
 	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
+	room.EXPECT().HasPeer(peerID).Return(true)
 	room.EXPECT().GetPeer(peerID).Return(peer, nil)
 	room.EXPECT().Leave(peer).Return(nil)
 	peer.EXPECT().Stop().Return(nil)
@@ -104,6 +138,7 @@ func TestLeaveRoom_RevokeNotFoundStillSuccess(t *testing.T) {
 		Revoke(gomock.Any(), roomID, peerID).
 		Return(domain.ErrReservationNotFound)
 	logger.EXPECT().Warn(gomock.Any(), gomock.Any()).AnyTimes()
+	logger.EXPECT().Info(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
 
 	uc := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
 	if err := uc.LeaveRoom(context.Background(), roomID, peerID); err != nil {
