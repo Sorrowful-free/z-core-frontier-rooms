@@ -63,6 +63,55 @@ go test -tags enet ./tests/...
 
 Без `-tags enet` в `tests/delivery/enet` — один skip-тест с подсказкой.
 
+## Бенчмарки
+
+Файлы `*_bench_test.go` — перформанс-тесты hot path (codec, patch, policy tick, room loop). Production-код не меняется.
+
+Запуск всех бенчмарков:
+
+```bash
+go test -bench=Benchmark -benchmem -count=1 ./tests/...
+```
+
+Выборочно:
+
+```bash
+go test -bench=BenchmarkDecodeIncomingFrame -benchmem -count=1 ./tests/domain/...
+go test -bench=BenchmarkRoomState_ -benchmem -count=1 ./tests/domain/state/...
+go test -bench=BenchmarkRoomStateCodec_ -benchmem -count=1 ./tests/adapter/realtime/codec/...
+go test -bench=BenchmarkOnTickPatchState -benchmem -count=1 ./tests/adapter/realtime/policy/state/...
+go test -bench=BenchmarkRoom_ -benchmem -count=1 ./tests/adapter/realtime/...
+```
+
+Сравнение до/после (локально): `go install golang.org/x/perf/cmd/benchstat@latest`, затем `-count=10` и `benchstat`.
+
+### Tiers
+
+| Tier | Пакет | Что измеряется |
+|------|-------|----------------|
+| A — CPU | `tests/domain`, `tests/domain/state`, `tests/adapter/realtime/codec` | `DecodeIncomingFrame`, `MakePatch`/`ApplyPatch`/`Clone`, wire encode/decode |
+| B — policy | `tests/adapter/realtime/policy/state` | `OnTickPatchState`, `OnMessage` PatchInput (без сети) |
+| C — room | `tests/adapter/realtime` | `Room.Send` broadcast, `Deliver`, `Join` |
+
+Фикстуры комнаты с N peers: [`tests/testutil/bench/room_state.go`](testutil/bench/room_state.go) (`BuildRoomState`).
+
+**Не в скоупе:** CI regression (benchstat baseline), нагрузочные soak-тесты, ENet/WS e2e perf.
+
+### Файлы бенчмарков
+
+| Шаг | Файл | Benchmark |
+|-----|------|-----------|
+| bench-01 | `tests/domain/frame_wire_bench_test.go` | `BenchmarkDecodeIncomingFrame` |
+| bench-02…03 | `tests/domain/state/room_state_bench_test.go` | `BenchmarkRoomState_MakePatch`, `ApplyPatch`, `Clone` |
+| bench-04…05 | `tests/adapter/realtime/codec/room_state_codec_bench_test.go` | `BenchmarkRoomStateCodec_Encode/Decode/EncodePatch/DecodePatch` |
+| bench-06 | `tests/adapter/realtime/codec/input_state_codec_bench_test.go` | `BenchmarkInputStateCodec_EncodePatch/DecodePatch` |
+| bench-07 | `tests/adapter/realtime/policy/state/harness_bench_test.go` | harness для bench |
+| bench-08…09 | `tests/adapter/realtime/policy/state/tick_bench_test.go` | `BenchmarkOnTickPatchState`, `NoChanges` |
+| bench-10 | `tests/adapter/realtime/policy/state/message_bench_test.go` | `BenchmarkOnMessage_PatchInput` |
+| bench-11 | `tests/adapter/realtime/room_send_bench_test.go` | `BenchmarkRoom_Send_Broadcast` |
+| bench-12 | `tests/adapter/realtime/room_deliver_bench_test.go` | `BenchmarkRoom_Deliver` |
+| bench-13 | `tests/adapter/realtime/room_join_bench_test.go` | `BenchmarkRoom_Join` |
+
 ## Покрытие по пакетам
 
 | Пакет | Сценарии |
