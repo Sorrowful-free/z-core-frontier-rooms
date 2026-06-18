@@ -26,14 +26,17 @@ type Peer struct {
 	wg       sync.WaitGroup
 }
 
-func NewPeer(ctx context.Context, id domain.PeerID, nickName string, connection transport.Connection, room realtime.Room, logger logging.Logger) *Peer {
+func NewPeer(ctx context.Context, id domain.PeerID, nickName string, connection transport.Connection, room realtime.Room, outboundQueue int, logger logging.Logger) *Peer {
 	ctx, cancel := context.WithCancel(ctx)
+	if outboundQueue < 0 {
+		outboundQueue = 0
+	}
 	return &Peer{
 		id:         id,
 		nickName:   nickName,
 		connection: connection,
 		room:       room,
-		outbound:   make(chan events.PeerEvent),
+		outbound:   make(chan events.PeerEvent, outboundQueue),
 		logger:     logger,
 		ctx:        ctx,
 		cancel:     cancel,
@@ -71,7 +74,13 @@ func (p *Peer) Stop() error {
 }
 
 func (p *Peer) Deliver(peerEvent events.PeerEvent) error {
-	if !p.tryDeliver(peerEvent) {
+	if p.ctx.Err() != nil {
+		return fmt.Errorf("peer stopped: %d", p.id)
+	}
+	if p.tryDeliver(peerEvent) {
+		return nil
+	}
+	if p.ctx.Err() != nil {
 		return fmt.Errorf("peer stopped: %d", p.id)
 	}
 	return nil
@@ -117,5 +126,8 @@ func (p *Peer) tryDeliver(ev events.PeerEvent) bool {
 		return false
 	case p.outbound <- ev:
 		return true
+	default:
+		p.logger.Warn("peer outbound queue full, dropping frame", "peerID", p.id)
+		return false
 	}
 }

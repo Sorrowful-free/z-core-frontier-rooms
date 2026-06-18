@@ -6,11 +6,12 @@ import (
 
 // Config — параметры ENet host (отдельный слушатель, не Fiber).
 type Config struct {
-	ListenPort              uint16
-	PeerLimit               uint64
-	ChannelLimit            uint64
-	ServiceTimeoutMs        uint32
-	MaxIncomingFrameBytes   int
+	ListenPort            uint16
+	PeerLimit             uint64
+	ChannelLimit          uint64
+	ServiceTimeoutMs      uint32
+	MaxIncomingFrameBytes int
+	EnetIncomingQueueSize int
 }
 
 func DefaultConfig() Config {
@@ -20,5 +21,6 @@ func DefaultConfig() Config {
 		ChannelLimit:          2,
 		ServiceTimeoutMs:      10,
 		MaxIncomingFrameBytes: adaptertransport.DefaultMaxIncomingFrameBytes,
+		EnetIncomingQueueSize: adaptertransport.DefaultEnetIncomingQueueSize,
 	}
 }

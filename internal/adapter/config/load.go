@@ -22,14 +22,17 @@ const (
 	envHTTPAPIKey       = "HTTP_API_KEY"
 	envHTTPAuthDisabled = "HTTP_AUTH_DISABLED"
 
-	envMaxRooms              = "MAX_ROOMS"
-	envHTTPCreateRatePerMin  = "HTTP_CREATE_RATE_PER_MIN"
-	envHTTPIssueRatePerMin   = "HTTP_ISSUE_RATE_PER_MIN"
+	envMaxRooms             = "MAX_ROOMS"
+	envHTTPCreateRatePerMin = "HTTP_CREATE_RATE_PER_MIN"
+	envHTTPIssueRatePerMin  = "HTTP_ISSUE_RATE_PER_MIN"
 
-	envReservationOrphanAdmittedTTL    = "RESERVATION_ORPHAN_ADMITTED_TTL"
-	envReservationOrphanSweepInterval  = "RESERVATION_ORPHAN_SWEEP_INTERVAL"
+	envReservationOrphanAdmittedTTL   = "RESERVATION_ORPHAN_ADMITTED_TTL"
+	envReservationOrphanSweepInterval = "RESERVATION_ORPHAN_SWEEP_INTERVAL"
 
 	envTransportMaxIncomingFrameBytes = "TRANSPORT_MAX_INCOMING_FRAME_BYTES"
+	envTransportRoomIncomingQueue     = "TRANSPORT_ROOM_INCOMING_QUEUE"
+	envTransportPeerOutboundQueue     = "TRANSPORT_PEER_OUTBOUND_QUEUE"
+	envTransportEnetIncomingQueue     = "TRANSPORT_ENET_INCOMING_QUEUE"
 )
 
 // LoadFromEnv читает переменные окружения и собирает Config.
@@ -125,9 +128,24 @@ func loadTransportFromEnv() (adaptertransport.TransportConfig, error) {
 	if err != nil {
 		return adaptertransport.TransportConfig{}, err
 	}
+	roomQueue, err := intFromEnv(envTransportRoomIncomingQueue, adaptertransport.DefaultRoomIncomingQueueSize)
+	if err != nil {
+		return adaptertransport.TransportConfig{}, err
+	}
+	peerQueue, err := intFromEnv(envTransportPeerOutboundQueue, adaptertransport.DefaultPeerOutboundQueueSize)
+	if err != nil {
+		return adaptertransport.TransportConfig{}, err
+	}
+	enetQueue, err := intFromEnv(envTransportEnetIncomingQueue, adaptertransport.DefaultEnetIncomingQueueSize)
+	if err != nil {
+		return adaptertransport.TransportConfig{}, err
+	}
 
 	cfg := adaptertransport.TransportConfig{
 		MaxIncomingFrameBytes: maxBytes,
+		RoomIncomingQueueSize: roomQueue,
+		PeerOutboundQueueSize: peerQueue,
+		EnetIncomingQueueSize: enetQueue,
 	}
 	if err := cfg.Validate(); err != nil {
 		return adaptertransport.TransportConfig{}, err

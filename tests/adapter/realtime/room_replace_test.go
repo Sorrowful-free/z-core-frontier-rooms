@@ -31,7 +31,7 @@ func TestReplace_SendsFullStateToNewPeerNotOld(t *testing.T) {
 		time.Hour,
 		time.Hour,
 	)
-	room := adapterrealtime.NewRoom(context.Background(), domain.RoomID(30), policy, 4, logger)
+	room := adapterrealtime.NewRoom(context.Background(), domain.RoomID(30), policy, 4, 0, logger)
 
 	if err := room.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -64,7 +64,7 @@ func TestReplace_FailedJoinRestoresPeersMapAndPolicyState(t *testing.T) {
 
 	logger := stdlib.New("replace-rollback-test")
 	policy := &trackingReplacePolicy{rejectNick: "reject"}
-	room := adapterrealtime.NewRoom(context.Background(), domain.RoomID(32), policy, 4, logger)
+	room := adapterrealtime.NewRoom(context.Background(), domain.RoomID(32), policy, 4, 0, logger)
 
 	if err := room.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -108,7 +108,7 @@ func TestReplace_SecondPeerRoom_NewGetsFullState(t *testing.T) {
 		time.Hour,
 		time.Hour,
 	)
-	room := adapterrealtime.NewRoom(context.Background(), domain.RoomID(31), policy, 4, logger)
+	room := adapterrealtime.NewRoom(context.Background(), domain.RoomID(31), policy, 4, 0, logger)
 
 	if err := room.Start(); err != nil {
 		t.Fatalf("Start: %v", err)

@@ -6,7 +6,7 @@ Runtime комнаты: `Room`, `Peer`, фабрики.
 
 Один goroutine event loop (`processRoomEvents`):
 
-- `incoming` — кадры от peers → `RoomPolicy.OnMessage`
+- `incoming` — буфер `RoomIncomingQueueSize` (default 128); полный → drop; кадры → `OnMessage`
 - `lifecycle` — Join / Leave / Replace (сериализация с OnMessage)
 - tickers — `OnTickFullState` / `OnTickPatchState` из `policy.TickIntervals()`
 
@@ -21,6 +21,7 @@ Runtime комнаты: `Room`, `Peer`, фабрики.
 
 - `NickName` задаётся в `NewPeer` из ticket (`JoinRoom` → `claims.NickName`)
 - I/O через `transport.Connection`
+- `outbound` — буфер `PeerOutboundQueueSize` (default 128); полный → drop (room loop не стопорится)
 - `Ping()` для refresh в policy patch tick
 
 ## Policy

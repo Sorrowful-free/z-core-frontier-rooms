@@ -164,6 +164,15 @@ func TestLoadFromEnv_SuccessDefaults(t *testing.T) {
 	if cfg.Transport.MaxIncomingFrameBytes != adaptertransport.DefaultMaxIncomingFrameBytes {
 		t.Fatalf("max incoming frame bytes = %d", cfg.Transport.MaxIncomingFrameBytes)
 	}
+	if cfg.Transport.RoomIncomingQueueSize != adaptertransport.DefaultRoomIncomingQueueSize {
+		t.Fatalf("room incoming queue = %d", cfg.Transport.RoomIncomingQueueSize)
+	}
+	if cfg.Transport.PeerOutboundQueueSize != adaptertransport.DefaultPeerOutboundQueueSize {
+		t.Fatalf("peer outbound queue = %d", cfg.Transport.PeerOutboundQueueSize)
+	}
+	if cfg.Transport.EnetIncomingQueueSize != adaptertransport.DefaultEnetIncomingQueueSize {
+		t.Fatalf("enet incoming queue = %d", cfg.Transport.EnetIncomingQueueSize)
+	}
 }
 
 func TestLoadFromEnv_SuccessCustomTTLAndPassword(t *testing.T) {

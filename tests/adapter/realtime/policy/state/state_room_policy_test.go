@@ -387,7 +387,7 @@ func newHarness(t *testing.T, roomID domain.RoomID, capacity int) *harness {
 		time.Hour,
 		time.Hour,
 	)
-	room := realtime.NewRoom(context.Background(), roomID, policy, capacity, logger)
+	room := realtime.NewRoom(context.Background(), roomID, policy, capacity, 0, logger)
 	if err := room.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
 	}

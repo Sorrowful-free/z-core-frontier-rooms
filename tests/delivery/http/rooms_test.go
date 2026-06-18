@@ -55,7 +55,7 @@ func newTestEnvWithLimits(t *testing.T, httpLimits httplimitsadapter.HTTPLimitsC
 
 	logger := stdlib.New("http-test")
 	roomPolicyFactory := statepolicy.NewStateRoomPolicyFactory(logger)
-	roomFactory := adapterrealtime.NewRoomFactory(logger, roomPolicyFactory)
+	roomFactory := adapterrealtime.NewRoomFactory(logger, roomPolicyFactory, 0)
 	registry := adapterregistry.NewRoomRegistry(context.Background(), roomFactory, logger)
 	reservation := adapterreservation.NewReservation(logger)
 	admission := admissionadapter.NewAdmission(admissionadapter.AdmissionConfig{

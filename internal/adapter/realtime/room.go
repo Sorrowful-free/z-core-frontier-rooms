@@ -15,11 +15,11 @@ import (
 )
 
 type Room struct {
-	id       domain.RoomID
-	policy   policy.RoomPolicy
-	mutex    sync.RWMutex
-	peers    map[domain.PeerID]realtime.Peer
-	capacity int
+	id               domain.RoomID
+	policy           policy.RoomPolicy
+	mutex            sync.RWMutex
+	peers            map[domain.PeerID]realtime.Peer
+	capacity         int
 	incoming         chan events.RoomEvent
 	lifecycle        chan lifecycleRequest
 	logger           logging.Logger
@@ -32,19 +32,22 @@ type Room struct {
 	wg       sync.WaitGroup
 }
 
-func NewRoom(ctx context.Context, id domain.RoomID, policy policy.RoomPolicy, capacity int, logger logging.Logger) *Room {
+func NewRoom(ctx context.Context, id domain.RoomID, policy policy.RoomPolicy, capacity int, incomingQueue int, logger logging.Logger) *Room {
 	ctx, cancel := context.WithCancel(ctx)
+	if incomingQueue < 0 {
+		incomingQueue = 0
+	}
 	return &Room{
-		id:       id,
-		policy:   policy,
-		mutex:    sync.RWMutex{},
-		peers:    make(map[domain.PeerID]realtime.Peer),
-		capacity: capacity,
-		incoming:  make(chan events.RoomEvent),
+		id:        id,
+		policy:    policy,
+		mutex:     sync.RWMutex{},
+		peers:     make(map[domain.PeerID]realtime.Peer),
+		capacity:  capacity,
+		incoming:  make(chan events.RoomEvent, incomingQueue),
 		lifecycle: make(chan lifecycleRequest),
 		logger:    logger,
-		ctx:      ctx,
-		cancel:   cancel,
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 }
 
@@ -262,7 +265,13 @@ func (r *Room) snapshotPeersForSend(target, exclude domain.PeerID) ([]realtime.P
 }
 
 func (r *Room) Deliver(roomEvent events.RoomEvent) error {
-	if !r.tryDeliver(roomEvent) {
+	if r.ctx.Err() != nil {
+		return fmt.Errorf("room stopped: %d", r.id)
+	}
+	if r.tryDeliver(roomEvent) {
+		return nil
+	}
+	if r.ctx.Err() != nil {
 		return fmt.Errorf("room stopped: %d", r.id)
 	}
 	return nil
@@ -315,5 +324,8 @@ func (r *Room) tryDeliver(ev events.RoomEvent) bool {
 		return false
 	case r.incoming <- ev:
 		return true
+	default:
+		r.logger.Warn("room incoming queue full, dropping frame", "roomID", r.id, "peerID", ev.PeerID)
+		return false
 	}
 }

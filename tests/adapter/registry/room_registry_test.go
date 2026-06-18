@@ -16,7 +16,7 @@ func newTestRegistry(t *testing.T) *adapterregistry.RoomRegistry {
 	t.Helper()
 	logger := stdlib.New("test")
 	roomPolicyFactory := statepolicy.NewStateRoomPolicyFactory(logger)
-	roomFactory := adapterrealtime.NewRoomFactory(logger, roomPolicyFactory)
+	roomFactory := adapterrealtime.NewRoomFactory(logger, roomPolicyFactory, 0)
 	return adapterregistry.NewRoomRegistry(context.Background(), roomFactory, logger)
 }
 

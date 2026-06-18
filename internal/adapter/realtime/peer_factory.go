@@ -10,12 +10,14 @@ import (
 )
 
 type PeerFactory struct {
-	logger logging.Logger
+	logger        logging.Logger
+	outboundQueue int
 }
 
-func NewPeerFactory(logger logging.Logger) *PeerFactory {
+func NewPeerFactory(logger logging.Logger, outboundQueue int) *PeerFactory {
 	return &PeerFactory{
-		logger: logger,
+		logger:        logger,
+		outboundQueue: outboundQueue,
 	}
 }
 
@@ -27,5 +29,5 @@ func (f *PeerFactory) CreatePeer(ctx context.Context, id domain.PeerID, nickName
 	if logger == nil {
 		logger = f.logger
 	}
-	return NewPeer(ctx, id, nickName, connection, room, logger), nil
+	return NewPeer(ctx, id, nickName, connection, room, f.outboundQueue, logger), nil
 }

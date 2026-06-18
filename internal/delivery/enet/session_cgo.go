@@ -20,8 +20,8 @@ type peerSession struct {
 }
 
 func newPeerSession(peer libenet.Peer, connectionFactory enet.EnetConnectionFactory, queueCap int) *peerSession {
-	if queueCap <= 0 {
-		queueCap = 256
+	if queueCap < 0 {
+		queueCap = 0
 	}
 	incoming := make(chan domain.Frame, queueCap)
 	connection := connectionFactory.CreateConnection(peer, incoming)

@@ -59,6 +59,9 @@
 | Переменная | Обязательна | Default | Описание |
 |------------|-------------|---------|----------|
 | `TRANSPORT_MAX_INCOMING_FRAME_BYTES` | нет | `262144` (256 KiB) | Макс. входящий кадр WS/ENet и ENet admit-пакет; `0` — без лимита |
+| `TRANSPORT_ROOM_INCOMING_QUEUE` | нет | `128` | Буфер `room.incoming`; `0` — unbuffered; полный → drop |
+| `TRANSPORT_PEER_OUTBOUND_QUEUE` | нет | `128` | Буфер `peer.outbound`; `0` — unbuffered; полный → drop |
+| `TRANSPORT_ENET_INCOMING_QUEUE` | нет | `256` | Буфер ENet session; полный → drop кадра |
 
 Валидация — `transport.TransportConfig.Validate()`.
 

@@ -12,12 +12,14 @@ import (
 type RoomFactory struct {
 	logger        logging.Logger
 	policyFactory policy.RoomPolicyFactory
+	incomingQueue int
 }
 
-func NewRoomFactory(logger logging.Logger, policyFactory policy.RoomPolicyFactory) *RoomFactory {
+func NewRoomFactory(logger logging.Logger, policyFactory policy.RoomPolicyFactory, incomingQueue int) *RoomFactory {
 	return &RoomFactory{
 		logger:        logger,
 		policyFactory: policyFactory,
+		incomingQueue: incomingQueue,
 	}
 }
 
@@ -27,5 +29,5 @@ func (f *RoomFactory) CreateRoom(ctx context.Context, id domain.RoomID, capacity
 	}
 
 	policy := f.policyFactory.CreateRoomPolicy()
-	return NewRoom(ctx, id, policy, capacity, f.logger), nil
+	return NewRoom(ctx, id, policy, capacity, f.incomingQueue, f.logger), nil
 }

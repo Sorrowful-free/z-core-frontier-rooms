@@ -52,15 +52,16 @@ func run() error {
 	fiberApp.Use(fibzap.New(fibzap.Config{Logger: z}))
 
 	roomPolicyFactory := statepolicy.NewStateRoomPolicyFactory(zaplog.NewFrom(z, "rooms policy factory"))
-	roomFactory := realtime.NewRoomFactory(zaplog.NewFrom(z, "rooms factory"), roomPolicyFactory)
-	peerFactory := realtime.NewPeerFactory(zaplog.NewFrom(z, "peer factory"))
-
-	roomRegistry := registry.NewRoomRegistry(appCtx, roomFactory, zaplog.NewFrom(z, "rooms registry"))
 
 	cfg, err := appconfig.LoadFromEnv()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+
+	roomFactory := realtime.NewRoomFactory(zaplog.NewFrom(z, "rooms factory"), roomPolicyFactory, cfg.Transport.RoomIncomingQueueSize)
+	peerFactory := realtime.NewPeerFactory(zaplog.NewFrom(z, "peer factory"), cfg.Transport.PeerOutboundQueueSize)
+
+	roomRegistry := registry.NewRoomRegistry(appCtx, roomFactory, zaplog.NewFrom(z, "rooms registry"))
 
 	wsConnectionFactory := ws.NewWsConnectionFactory(zaplog.NewFrom(z, "ws connection factory"), cfg.Transport)
 	enetConnectionFactory := enet.NewEnetConnectionFactory(zaplog.NewFrom(z, "enet connection factory"))
@@ -100,6 +101,7 @@ func run() error {
 
 	enetCfg := deliveryenet.DefaultConfig()
 	enetCfg.MaxIncomingFrameBytes = cfg.Transport.MaxIncomingFrameBytes
+	enetCfg.EnetIncomingQueueSize = cfg.Transport.EnetIncomingQueueSize
 	enetHandler := deliveryenet.NewRoomsHandler(
 		appCtx,
 		joinRoomUseCase,
