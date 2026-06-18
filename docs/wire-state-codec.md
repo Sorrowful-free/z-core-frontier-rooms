@@ -1,8 +1,9 @@
 # Wire: state codec (room sync)
 
 Бинарный контракт для игрового state между **Go-сервером** и **Godot-клиентом**.  
+E2e-поток (HTTP → join → sync): [client-protocol/README.md](client-protocol/README.md).  
 Реализация: [internal/adapter/realtime/codec/README.md](../internal/adapter/realtime/codec/README.md).  
-OpCode таблица: [internal/delivery/errors/README.md](../internal/delivery/errors/README.md).  
+OpCode ошибок: [internal/delivery/errors/README.md](../internal/delivery/errors/README.md).  
 Кадр транспорта: `domain.Frame` = `OpCode` (1 байт) + `Payload` (этот документ описывает **payload** state/input/rpc).
 
 ## Общие правила
@@ -29,6 +30,7 @@ u16  — 2 bytes BE
 u32  — 4 bytes BE
 i8   — 1 byte (room capacity)
 i64  — 8 bytes BE (peer ping)
+bool — 1 byte (0 = false, 1 = true; Go `binary.Write` для bool)
 
 string — u8 len + bytes (max len 255)
 value  — u8 len + bytes (max len 255)
@@ -65,8 +67,8 @@ Max components: **64** (`EntityStateMaxComponents`).
 
 ```text
 flags u8
-  bit0 (1)   — owner u32 present
-  bit2 (4)   — components map patch present
+  bit0 (1) — owner u32 present
+  bit1 (2) — components map patch present
 
 [owner u32]
 [components patch]
@@ -77,8 +79,9 @@ flags u8
 ## Peer (payload в room.Peers map)
 
 ```text
-nick  string
-ping  i64
+nick      string
+is_master bool
+ping      i64
 ```
 
 Ключ map: `peer_id u32`. Max peers in room map: **255**.
@@ -87,11 +90,14 @@ ping  i64
 
 ```text
 flags u8
-  bit0 — nick string
-  bit1 — ping i64
+  bit0 (1) — nick string
+  bit1 (2) — is_master bool
+  bit2 (4) — ping i64
 
 [optional fields in flag order]
 ```
+
+Флаги: `PeerStateFlagsNickName = 1`, `PeerStateFlagsIsMaster = 2`, `PeerStateFlagsPing = 4`.
 
 ## Input (opcode `0x05` full / `0x06` patch)
 
@@ -110,7 +116,7 @@ peer_id   u32  — 0 = нет целевого peer
 
 Max values: **32** (`RpcStateMaxValues`).
 
-## Room full (`OpCodeFullState` = `0x03`)
+## Room full (`OpCodeFullState` = `0x01`)
 
 ```text
 room_id   u32
@@ -123,7 +129,7 @@ entities  map EntityID → entity payload
 
 Лимиты: peers/inputs **255**, entities **65535**.
 
-## Room patch (`OpCodePatchState` = `0x04`)
+## Room patch (`OpCodePatchState` = `0x02`)
 
 ```text
 flags u8
@@ -138,19 +144,32 @@ flags u8
 
 Секция пишется/читается **только если** соответствующий bit в `flags`.
 
-## OpCodes (state traffic)
+## Entities standalone (`OpCodeFullEntities` = `0x03` / `OpCodePatchEntities` = `0x04`)
+
+Отдельные opcodes **только от master** к серверу. Payload — **не** room header, только entities map:
 
 | OpCode | Hex | Payload |
 |--------|-----|---------|
-| `OpCodePeerListFullState` | `0x01` | (зарезервирован; peers в room map) |
-| `OpCodePeerListPatchState` | `0x02` | (зарезервирован) |
-| `OpCodeFullState` | `0x03` | Room full (этот документ) |
-| `OpCodePatchState` | `0x04` | Room patch |
-| `OpCodeFullInput` | `0x05` | Input map |
-| `OpCodePatchInput` | `0x06` | Input map patch |
-| `OpCodeRpc` | `0x07` | RPC |
+| `OpCodeFullEntities` | `0x03` | `entities` map (full), как секция entities в room full |
+| `OpCodePatchEntities` | `0x04` | `entities` map patch, как секция entities в room patch |
 
-Ошибки join/reservation: `0x40+`, `0x70+` — см. [README.md](../README.md).
+После приёма сервер рассылает `OpCodePatchState` (`0x02`) остальным peer (master исключается из broadcast entities).
+
+## OpCodes (state traffic)
+
+| OpCode | Hex | Направление | Payload |
+|--------|-----|-------------|---------|
+| `OpCodeFullState` | `0x01` | server → client | Room full |
+| `OpCodePatchState` | `0x02` | server → client | Room patch |
+| `OpCodeFullEntities` | `0x03` | master → server | Entities map only |
+| `OpCodePatchEntities` | `0x04` | master → server | Entities map patch only |
+| `OpCodeFullInput` | `0x05` | client → server | Input map |
+| `OpCodePatchInput` | `0x06` | client → server | Input map patch |
+| `OpCodeRpc` | `0x07` | client → server → relay | RPC |
+
+Источник истины: [internal/domain/state/opcodes.go](../internal/domain/state/opcodes.go).
+
+Ошибки join/reservation/in-room: `0x40+` — см. [client-protocol/errors.md](client-protocol/errors.md).
 
 ## Godot (кратко)
 

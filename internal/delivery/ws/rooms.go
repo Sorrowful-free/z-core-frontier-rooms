@@ -2,6 +2,7 @@ package ws
 
 import (
 	"context"
+	"encoding/base64"
 
 	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
 	deliveryerrors "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/errors"
@@ -51,9 +52,16 @@ func (h *RoomsHandler) RegisterRoutes(app *fiber.App) {
 }
 
 func (h *RoomsHandler) handleConnect(c *websocket.Conn) {
-	token := []byte(c.Query("token"))
-	if len(token) == 0 {
+	tokenQuery := c.Query("token")
+	if tokenQuery == "" {
 		h.logger.Warn("websocket connect: missing token")
+		_ = c.Close()
+		return
+	}
+
+	token, err := base64.RawURLEncoding.DecodeString(tokenQuery)
+	if err != nil {
+		h.logger.Warn("websocket connect: invalid token encoding")
 		_ = c.Close()
 		return
 	}

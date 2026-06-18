@@ -55,4 +55,6 @@
 
 Игровой payload — `domain/state/opcodes.go`, layout [docs/wire-state-codec.md](../../../docs/wire-state-codec.md).
 
+Клиентская спека (Godot): [docs/client-protocol/errors.md](../../../docs/client-protocol/errors.md).
+
 Чеклист изменений: [.cursor/rules/join-error-opcodes.mdc](../../../.cursor/rules/join-error-opcodes.mdc).

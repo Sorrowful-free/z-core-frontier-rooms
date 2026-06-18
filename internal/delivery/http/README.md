@@ -2,6 +2,8 @@
 
 REST control plane (Fiber v3), адрес — env `HTTP_ADDR` (default `:3000`).
 
+Клиентская спека (Godot): [docs/client-protocol/http.md](../../../docs/client-protocol/http.md).
+
 ## Аутентификация
 
 Все endpoints ниже защищены API key (`adapter/httpauth`), если не `HTTP_AUTH_DISABLED=true`.

@@ -37,6 +37,7 @@ CGO_ENABLED=1 go test -tags enet ./tests/delivery/enet/...
 
 | Область | Документ |
 |---------|----------|
+| **Client protocol (Godot)** | [docs/client-protocol/README.md](docs/client-protocol/README.md) → [enet.md](docs/client-protocol/enet.md) (основной), [llms.txt](docs/llms.txt) |
 | Composition root | [cmd/rooms/README.md](cmd/rooms/README.md) |
 | Домен | [internal/domain/README.md](internal/domain/README.md) |
 | State model | [internal/domain/state/README.md](internal/domain/state/README.md) |

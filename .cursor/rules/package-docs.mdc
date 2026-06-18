@@ -9,6 +9,7 @@ alwaysApply: true
 
 - Индекс: [README.md](../../README.md) (корень) — только обзор, сборка, ссылки.
 - Архитектура слоёв: [docs/architecture.md](../../docs/architecture.md).
+- **Клиент (Godot):** [docs/client-protocol/README.md](../../docs/client-protocol/README.md), индекс для LLM: [docs/llms.txt](../../docs/llms.txt).
 - **Пакет:** `README.md` в каталоге пакета, например `internal/usecase/room/README.md`.
 - Wire layout state: [docs/wire-state-codec.md](../../docs/wire-state-codec.md) (codec).
 
@@ -22,8 +23,10 @@ alwaysApply: true
 
 | Изменили | Обновить |
 |----------|----------|
-| HTTP routes, DTO, коды ошибок | `internal/delivery/http/README.md` |
-| Join/admit/in-room OpCode, мапперы | `internal/delivery/errors/README.md`, чеклист [join-error-opcodes.mdc](join-error-opcodes.mdc) |
+| Binary codec полей | `docs/wire-state-codec.md`, `docs/client-protocol/`, `internal/adapter/realtime/codec/README.md` |
+| HTTP routes, DTO (клиент) | `docs/client-protocol/http.md`, `internal/delivery/http/README.md` |
+| Join/admit/in-room OpCode (клиент) | `docs/client-protocol/errors.md`, `internal/delivery/errors/README.md`, [join-error-opcodes.mdc](join-error-opcodes.mdc) |
+| WS/ENet transport (клиент) | `docs/client-protocol/enet.md` (основной), `docs/client-protocol/realtime.md`, `internal/delivery/ws/README.md`, `internal/delivery/enet/README.md` |
 | Env, `LoadFromEnv`, новый `*Config` модуля | `internal/adapter/config/README.md`, README модуля, [.cursor/rules/config.mdc](config.mdc) |
 | HTTP API key, `HTTPAuthConfig` | `internal/adapter/httpauth/README.md`, `internal/delivery/http/README.md` |
 | HTTP limits, `HTTPLimitsConfig`, `port/httplimits.Limits` | `internal/adapter/httplimits/README.md`, `internal/port/httplimits`, `internal/delivery/http/README.md` |
@@ -31,8 +34,7 @@ alwaysApply: true
 | Ticket, Claims, ValidateNickName, `AdmissionConfig` | `internal/adapter/admission/README.md`, `internal/domain/README.md` |
 | Reservation слоты | `internal/adapter/reservation/README.md` |
 | Room, Peer, lifecycle, Replace | `internal/adapter/realtime/README.md` |
-| StateRoomPolicy, master, ticks | `internal/adapter/realtime/policy/state/README.md` |
-| Binary codec полей | `docs/wire-state-codec.md`, `internal/adapter/realtime/codec/README.md` |
+| StateRoomPolicy, master, ticks | `internal/adapter/realtime/policy/state/README.md`, `docs/client-protocol/state-sync.md` |
 | Use case потоки | `internal/usecase/room/README.md` |
 | Новый sentinel в domain | `internal/domain/README.md` + маппер в delivery/errors |
 

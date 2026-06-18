@@ -1,0 +1,17 @@
+# z-core-frontier-rooms
+
+> Игровой сервис комнат: HTTP control plane (Fiber), **data plane ENet UDP** (основной), WebSocket для отладки. Authoritative room state, ticket admission, binary wire codec для Godot-клиента.
+
+Документация для реализации **клиента** (Godot / ИИ-агент):
+
+- [Client protocol index](client-protocol/README.md) — e2e-поток, чеклист Godot
+- [HTTP control plane](client-protocol/http.md) — REST JSON, ticket, auth
+- **[ENet data plane](client-protocol/enet.md)** — **основной транспорт** (UDP :7777, admit, reliable)
+- [Realtime overview](client-protocol/realtime.md) — общий кадр; WebSocket smoke-test
+- [State sync](client-protocol/state-sync.md) — master, ticks, input/entities/RPC
+- [Wire errors](client-protocol/errors.md) — OpCode 0x40+, 0x60+, 0x70+
+- [Wire state codec](wire-state-codec.md) — бинарный layout payload (BE, maps)
+
+Источник истины при расхождениях: Go codec `internal/adapter/realtime/codec/` и тесты `tests/adapter/realtime/codec/`. ENet: `internal/delivery/enet/`.
+
+Серверная архитектура: [architecture.md](architecture.md). Пакетные README — [../README.md](../README.md).
