@@ -9,8 +9,8 @@ import (
 )
 
 func BenchmarkRoomState_MakePatch(b *testing.B) {
-	for _, peers := range []int{0, 8} {
-		b.Run(peersLabel(peers), func(b *testing.B) {
+	for _, peers := range []int{0, 8, 64} {
+		b.Run(benchfixtures.PeerCountLabel(peers), func(b *testing.B) {
 			current := benchfixtures.BuildRoomState(peers)
 			prev := current.Clone()
 
@@ -29,7 +29,7 @@ func BenchmarkRoomState_MakePatch(b *testing.B) {
 }
 
 func BenchmarkRoomState_ApplyPatch(b *testing.B) {
-	b.Run(peersLabel(8), func(b *testing.B) {
+	b.Run(benchfixtures.PeerCountLabel(8), func(b *testing.B) {
 		current := benchfixtures.BuildRoomState(8)
 		prev := current.Clone()
 		patch, err := prev.MakePatch(current)
@@ -53,21 +53,16 @@ func BenchmarkRoomState_ApplyPatch(b *testing.B) {
 }
 
 func BenchmarkRoomState_Clone(b *testing.B) {
-	b.Run(peersLabel(8), func(b *testing.B) {
-		room := benchfixtures.BuildRoomState(8)
+	for _, peers := range []int{8, 64} {
+		b.Run(benchfixtures.PeerCountLabel(peers), func(b *testing.B) {
+			room := benchfixtures.BuildRoomState(peers)
 
-		var sink *state.RoomState
-		b.ResetTimer()
-		for b.Loop() {
-			sink = room.Clone()
-		}
-		_ = sink
-	})
-}
-
-func peersLabel(n int) string {
-	if n == 0 {
-		return "peers=0"
+			var sink *state.RoomState
+			b.ResetTimer()
+			for b.Loop() {
+				sink = room.Clone()
+			}
+			_ = sink
+		})
 	}
-	return "peers=8"
 }

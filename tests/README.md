@@ -102,14 +102,18 @@ go test -bench=BenchmarkRoom_ -benchmem -count=1 ./tests/adapter/realtime/...
 | Шаг | Файл | Benchmark |
 |-----|------|-----------|
 | bench-01 | `tests/domain/frame_wire_bench_test.go` | `BenchmarkDecodeIncomingFrame` |
-| bench-02…03 | `tests/domain/state/room_state_bench_test.go` | `BenchmarkRoomState_MakePatch`, `ApplyPatch`, `Clone` |
-| bench-04…05 | `tests/adapter/realtime/codec/room_state_codec_bench_test.go` | `BenchmarkRoomStateCodec_Encode/Decode/EncodePatch/DecodePatch` |
+| bench-02…03 | `tests/domain/state/room_state_bench_test.go` | `BenchmarkRoomState_MakePatch` (0/8/64), `ApplyPatch`, `Clone` (8/64) |
+| bench-04…05 | `tests/adapter/realtime/codec/room_state_codec_bench_test.go` | `BenchmarkRoomStateCodec_*` (peers 0/8/64; patch ping + add_entity) |
 | bench-06 | `tests/adapter/realtime/codec/input_state_codec_bench_test.go` | `BenchmarkInputStateCodec_EncodePatch/DecodePatch` |
+| bench-06b | `tests/adapter/realtime/codec/rpc_state_codec_bench_test.go` | `BenchmarkRpcStateCodec_Encode/Decode` |
+| bench-06c | `tests/adapter/realtime/codec/entities_state_codec_bench_test.go` | `BenchmarkEntitiesStateCodec_Encode/Decode/EncodePatch` |
 | bench-07 | `tests/adapter/realtime/policy/state/harness_bench_test.go` | harness для bench |
-| bench-08…09 | `tests/adapter/realtime/policy/state/tick_bench_test.go` | `BenchmarkOnTickPatchState`, `NoChanges` |
+| bench-08…09 | `tests/adapter/realtime/policy/state/tick_bench_test.go` | `BenchmarkOnTickPatchState`, `NoChanges` (8/64 peers) |
 | bench-10 | `tests/adapter/realtime/policy/state/message_bench_test.go` | `BenchmarkOnMessage_PatchInput` |
-| bench-11 | `tests/adapter/realtime/room_send_bench_test.go` | `BenchmarkRoom_Send_Broadcast` |
-| bench-12 | `tests/adapter/realtime/room_deliver_bench_test.go` | `BenchmarkRoom_Deliver` |
+| bench-10b | `tests/adapter/realtime/policy/state/message_bench_test.go` | `BenchmarkOnMessage_PatchEntities` (`add_entity` / `update_value`) |
+| bench-11 | `tests/adapter/realtime/room_send_bench_test.go` | `BenchmarkRoom_Send_Broadcast` (8/32/64 peers) |
+| bench-12 | `tests/adapter/realtime/room_deliver_bench_test.go` | `BenchmarkRoom_Deliver` (`queue_empty` / `queue_full`) |
+| bench-12b | см. bench-12 | sub-bench `queue_full` |
 | bench-13 | `tests/adapter/realtime/room_join_bench_test.go` | `BenchmarkRoom_Join` |
 
 ## Покрытие по пакетам

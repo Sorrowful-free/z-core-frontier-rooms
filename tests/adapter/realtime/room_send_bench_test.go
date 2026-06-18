@@ -8,6 +8,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
+	benchfixtures "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/bench"
 )
 
 type sendBenchPeer struct {
@@ -51,8 +52,8 @@ func setupBroadcastRoom(b *testing.B, peerCount int) *adapterrealtime.Room {
 func BenchmarkRoom_Send_Broadcast(b *testing.B) {
 	ev := events.PeerEvent{Frame: domain.Frame{OpCode: 0x01, Payload: []byte{0xAA}}}
 
-	for _, peerCount := range []int{8, 32} {
-		b.Run(peersLabel(peerCount), func(b *testing.B) {
+	for _, peerCount := range []int{8, 32, 64} {
+		b.Run(benchfixtures.PeerCountLabel(peerCount), func(b *testing.B) {
 			room := setupBroadcastRoom(b, peerCount)
 
 			var sink error
@@ -62,16 +63,5 @@ func BenchmarkRoom_Send_Broadcast(b *testing.B) {
 			}
 			_ = sink
 		})
-	}
-}
-
-func peersLabel(n int) string {
-	switch n {
-	case 8:
-		return "peers=8"
-	case 32:
-		return "peers=32"
-	default:
-		return "peers=other"
 	}
 }
