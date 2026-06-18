@@ -39,6 +39,30 @@ go test ./tests/...
 go test -race ./tests/...
 ```
 
+ENet (cgo, tag `enet`) — smoke компиляции `go-enet` пакетов:
+
+```bash
+# Linux/macOS / MSYS2: нужны gcc и CGO_ENABLED=1
+CGO_ENABLED=1 go test -tags enet ./tests/delivery/enet/...
+```
+
+Полный прогон тестов с тем же тегом (пересборка зависимостей под `enet`):
+
+```bash
+CGO_ENABLED=1 go test -tags enet ./tests/...
+```
+
+Windows (PowerShell, MSYS2 gcc не в PATH сессии):
+
+```powershell
+$env:Path = "C:\msys64\mingw64\bin;" + $env:Path
+$env:CGO_ENABLED = "1"
+go test -tags enet ./tests/delivery/enet/...
+go test -tags enet ./tests/...
+```
+
+Без `-tags enet` в `tests/delivery/enet` — один skip-тест с подсказкой.
+
 ## Покрытие по пакетам
 
 | Пакет | Сценарии |
@@ -58,6 +82,7 @@ go test -race ./tests/...
 | `tests/adapter/identity` | первый ID = 1; независимые room/peer; ctx cancel; wrap `MaxUint32` → 1; уникальность под конкуренцией |
 | `tests/usecase/room` | **Create** — success, rooms limit, ctx cancel, registry rollback + `errors.Join` на unregister; **Delete** — success, kick peers, room not found; **GetList**; **IssueTicket** — success, room/peer errors, slot held, orphan admitted cleanup, issue+revoke join; **JoinRoom** — validate error, success, admit/join/revoke откаты; **LeaveRoom** — success, not found, revoke idempotent |
 | `tests/delivery/http` | API key; rate limit 429; rooms limit 503; create → list → delete; issue ticket; 409/404/400; `invalid_capacity` (0 и >127) |
+| `tests/delivery/enet` | smoke `TestEnetPackagesCompile` при `-tags enet` + cgo; без тега — skip с инструкцией |
 
 После изменения `internal/port/*` интерфейсов:
 

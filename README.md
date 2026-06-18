@@ -21,6 +21,8 @@ go run ./cmd/rooms
 
 ```bash
 go test ./tests/...
+# ENet cgo (gcc + CGO_ENABLED=1):
+CGO_ENABLED=1 go test -tags enet ./tests/delivery/enet/...
 ```
 
 Требования: Go 1.25+; ENet — CGO, `github.com/codecat/go-enet`, tag `enet`.

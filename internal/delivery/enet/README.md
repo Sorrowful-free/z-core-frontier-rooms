@@ -16,6 +16,7 @@ UDP host (отдельный порт от Fiber). Build tag `enet` + CGO.
 
 ```bash
 CGO_ENABLED=1 go build -tags enet -o bin/rooms-enet ./cmd/rooms
+CGO_ENABLED=1 go test -tags enet ./tests/delivery/enet/...
 ```
 
 Поток join/leave — тот же `JoinRoomUseCase` / `LeaveRoomUseCase`, что WS.
