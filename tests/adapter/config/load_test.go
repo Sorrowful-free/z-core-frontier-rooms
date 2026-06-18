@@ -7,7 +7,9 @@ import (
 
 	appconfig "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/config"
 	httplimitsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httplimits"
+	zaplogadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/zap"
 	reservationadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
+	serveradapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/server"
 	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
 )
 
@@ -172,6 +174,44 @@ func TestLoadFromEnv_SuccessDefaults(t *testing.T) {
 	}
 	if cfg.Transport.EnetIncomingQueueSize != adaptertransport.DefaultEnetIncomingQueueSize {
 		t.Fatalf("enet incoming queue = %d", cfg.Transport.EnetIncomingQueueSize)
+	}
+	if cfg.Logging.Mode != zaplogadapter.LogModeProd {
+		t.Fatalf("log mode = %q, want prod", cfg.Logging.Mode)
+	}
+	if cfg.Server.HTTPAddr != serveradapter.DefaultHTTPAddr {
+		t.Fatalf("http addr = %q", cfg.Server.HTTPAddr)
+	}
+}
+
+func TestLoadFromEnv_LoggingAndServerCustom(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthEnabled(t)
+	t.Setenv("LOG_MODE", "dev")
+	t.Setenv("HTTP_ADDR", "127.0.0.1:8080")
+
+	cfg, err := appconfig.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv: %v", err)
+	}
+	if cfg.Logging.Mode != zaplogadapter.LogModeDev {
+		t.Fatalf("log mode = %q", cfg.Logging.Mode)
+	}
+	if cfg.Server.HTTPAddr != "127.0.0.1:8080" {
+		t.Fatalf("http addr = %q", cfg.Server.HTTPAddr)
+	}
+}
+
+func TestLoadFromEnv_InvalidLogMode(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	t.Setenv("LOG_MODE", "verbose")
+
+	_, err := appconfig.LoadFromEnv()
+	if err == nil {
+		t.Fatal("expected error for invalid LOG_MODE")
+	}
+	if !strings.Contains(err.Error(), "LOG_MODE") {
+		t.Fatalf("err = %v", err)
 	}
 }
 

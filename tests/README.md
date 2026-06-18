@@ -48,16 +48,16 @@ go test -race ./tests/...
 | `tests/adapter/httpauth` | `HTTPAuthConfig.Validate` |
 | `tests/adapter/httplimits` | `HTTPLimitsConfig.Validate`, `Limits` rate + max rooms |
 | `tests/adapter/admission` | `AdmissionConfig.Validate`; round-trip ticket + NickName, invalid nick, invalid/expired token, invalid credentials |
-| `tests/adapter/realtime` | `OnJoin` → `room.Send` без deadlock; откат map при `ErrJoinDenied`; Replace rollback policy; `PeerFactory` nick |
+| `tests/adapter/realtime` | `OnJoin` → `room.Send` без deadlock; откат map при `ErrJoinDenied`; Replace rollback policy; `PeerFactory` nick; concurrent `Deliver`/`Join`/`Leave` + `Stop` без паники; `Deliver` → `ErrQueueFull` / stopped |
 | `tests/adapter/realtime/policy/state` | join/full/patch/master; `NewStateRoomPolicy` zero intervals → defaults |
 | `tests/domain` | `ValidateNickName` |
 | `tests/domain/state` | atomic `ApplyPatch` rollback на entity/component |
 | `tests/adapter/realtime/codec` | Round-trip `InputStateCodec`, `RpcStateCodec`, `RoomStateCodec` (full + patch) |
-| `tests/adapter/registry` | `GetRoom` → `ErrRoomNotFound`; `Shutdown` |
-| `tests/adapter/reservation` | Reserve → Admit → Revoke; expiry sweep; идемпотентный `Revoke`; `State` (none / reserved / admitted) |
+| `tests/adapter/registry` | `GetRoom` → `ErrRoomNotFound`; `Shutdown`; `DeleteRoom` при concurrent `Deliver` без паники |
+| `tests/adapter/reservation` | Reserve → Admit → Revoke; expiry sweep; идемпотентный `Revoke`; `State` (none / reserved / admitted); concurrent ops по разным комнатам |
 | `tests/adapter/identity` | первый ID = 1; независимые room/peer; ctx cancel; wrap `MaxUint32` → 1; уникальность под конкуренцией |
 | `tests/usecase/room` | **Create** — success, rooms limit, ctx cancel, registry rollback + `errors.Join` на unregister; **Delete** — success, kick peers, room not found; **GetList**; **IssueTicket** — success, room/peer errors, slot held, orphan admitted cleanup, issue+revoke join; **JoinRoom** — validate error, success, admit/join/revoke откаты; **LeaveRoom** — success, not found, revoke idempotent |
-| `tests/delivery/http` | API key; rate limit 429; rooms limit 503; create → list → delete; issue ticket; 409/404/400 |
+| `tests/delivery/http` | API key; rate limit 429; rooms limit 503; create → list → delete; issue ticket; 409/404/400; `invalid_capacity` (0 и >127) |
 
 После изменения `internal/port/*` интерфейсов:
 

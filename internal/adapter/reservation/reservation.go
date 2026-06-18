@@ -23,24 +23,35 @@ type peerSlot struct {
 	expiresAt  time.Time
 	admittedAt time.Time
 }
-type roomSlot struct {
+
+type reservationRoom struct {
+	mu       sync.Mutex
 	capacity int
 	password string
 	peers    map[domain.PeerID]peerSlot
 }
 
 type Reservation struct {
-	rooms  map[domain.RoomID]roomSlot
-	mutex  sync.Mutex
-	logger logging.Logger
+	rooms   map[domain.RoomID]*reservationRoom
+	roomsMu sync.RWMutex
+	logger  logging.Logger
 }
 
 func NewReservation(logger logging.Logger) *Reservation {
 	return &Reservation{
-		rooms:  make(map[domain.RoomID]roomSlot),
-		mutex:  sync.Mutex{},
+		rooms:  make(map[domain.RoomID]*reservationRoom),
 		logger: logger,
 	}
+}
+
+func (r *Reservation) lookupRoom(roomID domain.RoomID) (*reservationRoom, error) {
+	r.roomsMu.RLock()
+	room, ok := r.rooms[roomID]
+	r.roomsMu.RUnlock()
+	if !ok {
+		return nil, reservationErrRoom(domain.ErrReservationNotFound, roomID)
+	}
+	return room, nil
 }
 
 func (r *Reservation) RegisterRoom(ctx context.Context, roomID domain.RoomID, capacity int, password string) error {
@@ -48,15 +59,14 @@ func (r *Reservation) RegisterRoom(ctx context.Context, roomID domain.RoomID, ca
 		return err
 	}
 
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.roomsMu.Lock()
+	defer r.roomsMu.Unlock()
 
-	_, ok := r.rooms[roomID]
-	if ok {
+	if _, ok := r.rooms[roomID]; ok {
 		return reservationErrRoom(domain.ErrReservationAlreadyExists, roomID)
 	}
 
-	r.rooms[roomID] = roomSlot{
+	r.rooms[roomID] = &reservationRoom{
 		capacity: capacity,
 		password: password,
 		peers:    make(map[domain.PeerID]peerSlot),
@@ -69,13 +79,14 @@ func (r *Reservation) VerifyRoomPassword(ctx context.Context, roomID domain.Room
 		return err
 	}
 
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	room, ok := r.rooms[roomID]
-	if !ok {
-		return reservationErrRoom(domain.ErrReservationNotFound, roomID)
+	room, err := r.lookupRoom(roomID)
+	if err != nil {
+		return err
 	}
+
+	room.mu.Lock()
+	defer room.mu.Unlock()
+
 	if room.password == "" {
 		return nil
 	}
@@ -90,11 +101,10 @@ func (r *Reservation) UnregisterRoom(ctx context.Context, roomID domain.RoomID) 
 		return err
 	}
 
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.roomsMu.Lock()
+	defer r.roomsMu.Unlock()
 
-	_, ok := r.rooms[roomID]
-	if !ok {
+	if _, ok := r.rooms[roomID]; !ok {
 		return reservationErrRoom(domain.ErrReservationNotFound, roomID)
 	}
 
@@ -107,22 +117,21 @@ func (r *Reservation) Reserve(ctx context.Context, roomID domain.RoomID, peerID 
 		return err
 	}
 
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	room, ok := r.rooms[roomID]
-	if !ok {
-		return reservationErrRoom(domain.ErrReservationNotFound, roomID)
+	room, err := r.lookupRoom(roomID)
+	if err != nil {
+		return err
 	}
 
-	r.sweepExpiredLocked(&room)
+	room.mu.Lock()
+	defer room.mu.Unlock()
+
+	room.sweepExpiredLocked()
 
 	if len(room.peers) >= room.capacity {
 		return reservationErrRoom(domain.ErrReservationFull, roomID)
 	}
 
-	_, ok = room.peers[peerID]
-	if ok {
+	if _, ok := room.peers[peerID]; ok {
 		return reservationErrPeer(domain.ErrReservationAlreadyExists, roomID, peerID)
 	}
 
@@ -139,13 +148,13 @@ func (r *Reservation) Admit(ctx context.Context, roomID domain.RoomID, peerID do
 		return err
 	}
 
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	room, ok := r.rooms[roomID]
-	if !ok {
-		return reservationErrRoom(domain.ErrReservationNotFound, roomID)
+	room, err := r.lookupRoom(roomID)
+	if err != nil {
+		return err
 	}
+
+	room.mu.Lock()
+	defer room.mu.Unlock()
 
 	peer, ok := room.peers[peerID]
 	if !ok {
@@ -178,13 +187,13 @@ func (r *Reservation) State(ctx context.Context, roomID domain.RoomID, peerID do
 		return domain.ReservationSlotNone, err
 	}
 
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	room, ok := r.rooms[roomID]
-	if !ok {
-		return domain.ReservationSlotNone, reservationErrRoom(domain.ErrReservationNotFound, roomID)
+	room, err := r.lookupRoom(roomID)
+	if err != nil {
+		return domain.ReservationSlotNone, err
 	}
+
+	room.mu.Lock()
+	defer room.mu.Unlock()
 
 	peer, ok := room.peers[peerID]
 	if !ok {
@@ -206,13 +215,13 @@ func (r *Reservation) ListAdmittedPeers(ctx context.Context, roomID domain.RoomI
 		return nil, err
 	}
 
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	room, ok := r.rooms[roomID]
-	if !ok {
-		return nil, reservationErrRoom(domain.ErrReservationNotFound, roomID)
+	room, err := r.lookupRoom(roomID)
+	if err != nil {
+		return nil, err
 	}
+
+	room.mu.Lock()
+	defer room.mu.Unlock()
 
 	slots := make([]domain.AdmittedSlot, 0, len(room.peers))
 	for peerID, peer := range room.peers {
@@ -232,16 +241,15 @@ func (r *Reservation) Revoke(ctx context.Context, roomID domain.RoomID, peerID d
 		return err
 	}
 
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	room, ok := r.rooms[roomID]
-	if !ok {
-		return reservationErrRoom(domain.ErrReservationNotFound, roomID)
+	room, err := r.lookupRoom(roomID)
+	if err != nil {
+		return err
 	}
 
-	_, ok = room.peers[peerID]
-	if !ok {
+	room.mu.Lock()
+	defer room.mu.Unlock()
+
+	if _, ok := room.peers[peerID]; !ok {
 		return nil
 	}
 
@@ -257,7 +265,7 @@ func reservationErrPeer(err error, roomID domain.RoomID, peerID domain.PeerID) e
 	return fmt.Errorf("%w: room %d peer %d", err, roomID, peerID)
 }
 
-func (r *Reservation) sweepExpiredLocked(room *roomSlot) {
+func (room *reservationRoom) sweepExpiredLocked() {
 	for peerID, peer := range room.peers {
 		if peer.state == reservationStateReserved && !peer.expiresAt.IsZero() && peer.expiresAt.Before(time.Now()) {
 			delete(room.peers, peerID)

@@ -39,7 +39,12 @@ func main() {
 }
 
 func run() error {
-	z, err := zap.NewDevelopment()
+	cfg, err := appconfig.LoadFromEnv()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	z, err := cfg.Logging.NewLogger()
 	if err != nil {
 		return err
 	}
@@ -49,14 +54,13 @@ func run() error {
 	defer appCancel()
 
 	fiberApp := fiber.New()
-	fiberApp.Use(fibzap.New(fibzap.Config{Logger: z}))
+	fiberApp.Use(fibzap.New(fibzap.Config{
+		Logger: z,
+		// path без query — ticket в GET /ws?token=... не попадает в access-лог
+		Fields: []string{"ip", "latency", "status", "method", "path"},
+	}))
 
 	roomPolicyFactory := statepolicy.NewStateRoomPolicyFactory(zaplog.NewFrom(z, "rooms policy factory"))
-
-	cfg, err := appconfig.LoadFromEnv()
-	if err != nil {
-		return fmt.Errorf("load config: %w", err)
-	}
 
 	roomFactory := realtime.NewRoomFactory(zaplog.NewFrom(z, "rooms factory"), roomPolicyFactory, cfg.Transport.RoomIncomingQueueSize)
 	peerFactory := realtime.NewPeerFactory(zaplog.NewFrom(z, "peer factory"), cfg.Transport.PeerOutboundQueueSize)
@@ -114,7 +118,7 @@ func run() error {
 
 	listenErr := make(chan error, 1)
 	go func() {
-		listenErr <- fiberApp.Listen(":3000")
+		listenErr <- fiberApp.Listen(cfg.Server.HTTPAddr)
 	}()
 
 	sigCh := make(chan os.Signal, 1)
@@ -132,6 +136,10 @@ func run() error {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
+	if err := fiberApp.ShutdownWithContext(shutdownCtx); err != nil {
+		z.Error("fiber shutdown", zap.Error(err))
+	}
+
 	var shutdownErr error
 	summaries, listErr := getListUseCase.GetList(shutdownCtx)
 	if listErr != nil {
@@ -148,9 +156,6 @@ func run() error {
 	}
 	if shutdownErr != nil {
 		z.Error("shutdown cleanup", zap.Error(shutdownErr))
-	}
-	if err := fiberApp.ShutdownWithContext(shutdownCtx); err != nil {
-		z.Error("fiber shutdown", zap.Error(err))
 	}
 	appCancel()
 

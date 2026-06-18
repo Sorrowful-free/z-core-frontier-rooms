@@ -355,6 +355,20 @@ func TestHTTP_CreateInvalidCapacity(t *testing.T) {
 	assertErrorCode(t, body, "invalid_capacity")
 }
 
+func TestHTTP_CreateCapacityExceedsMax(t *testing.T) {
+	t.Parallel()
+
+	env := newTestEnv(t)
+
+	resp, body := env.do(t, http.MethodPost, "/rooms", map[string]any{
+		"capacity": 128,
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", resp.StatusCode, body)
+	}
+	assertErrorCode(t, body, "invalid_capacity")
+}
+
 func TestHTTP_IssueTicketReservationFull(t *testing.T) {
 	t.Parallel()
 

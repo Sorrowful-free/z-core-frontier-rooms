@@ -5,6 +5,7 @@
 ## Ключевые типы
 
 - `RoomID`, `PeerID`, `Frame`, `OpCode`
+- `MaxRoomCapacity` (127) — верхняя граница вместимости комнаты (wire/state: `int8`)
 - `DecodeIncomingFrame` — разбор data plane кадра (`frame_wire.go`)
 - `Claims` — `RoomID`, `PeerID`, `NickName`, `IssuedAt`, `ExpiresAt`
 - `events` — `RoomEvent`, `PeerEvent`
@@ -20,7 +21,7 @@
 |------|------------|
 | `join_errors.go` | Join/admit (`ErrJoinDenied`, `ErrTicketSlotHeld`, …) |
 | `frame_wire.go` | Data plane (`ErrIncomingFrameTooLarge`) |
-| `room_errors.go` | In-room (`ErrNotMaster`, …), control (`ErrRoomsLimitReached`, …) |
+| `room_errors.go` | In-room (`ErrNotMaster`, …), control (`ErrRoomsLimitReached`, …), `ErrQueueFull` |
 | `reservation_error.go` | Слоты (`ErrReservationFull`, …) |
 
 Wire OpCode: `opcodes.go` (join `0x40+`, in-room `0x60+`, reservation `0x70+`).  

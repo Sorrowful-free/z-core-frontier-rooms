@@ -10,11 +10,16 @@ import (
 	admissionadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/admission"
 	httpauthadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httpauth"
 	httplimitsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httplimits"
+	zaplogadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/zap"
 	reservationadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
+	serveradapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/server"
 	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
 )
 
 const (
+	envLogMode  = "LOG_MODE"
+	envHTTPAddr = "HTTP_ADDR"
+
 	envAdmissionSecret   = "ADMISSION_SECRET"
 	envAdmissionTTL      = "ADMISSION_TTL"
 	envAdmissionPassword = "ADMISSION_PASSWORD"
@@ -37,6 +42,14 @@ const (
 
 // LoadFromEnv читает переменные окружения и собирает Config.
 func LoadFromEnv() (*Config, error) {
+	logging, err := loadLoggingFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	serverCfg, err := loadServerFromEnv()
+	if err != nil {
+		return nil, err
+	}
 	admission, err := loadAdmissionFromEnv()
 	if err != nil {
 		return nil, err
@@ -58,12 +71,38 @@ func LoadFromEnv() (*Config, error) {
 		return nil, err
 	}
 	return &Config{
+		Logging:     logging,
+		Server:      serverCfg,
 		Admission:   admission,
 		HTTPAuth:    httpAuth,
 		HTTPLimits:  httpLimits,
 		Reservation: reservationCfg,
 		Transport:   transportCfg,
 	}, nil
+}
+
+func loadLoggingFromEnv() (zaplogadapter.RootConfig, error) {
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv(envLogMode)))
+	if mode == "" {
+		mode = zaplogadapter.DefaultLogMode
+	}
+	cfg := zaplogadapter.RootConfig{Mode: mode}
+	if err := cfg.Validate(); err != nil {
+		return zaplogadapter.RootConfig{}, err
+	}
+	return cfg, nil
+}
+
+func loadServerFromEnv() (serveradapter.ServerConfig, error) {
+	addr := os.Getenv(envHTTPAddr)
+	if addr == "" {
+		addr = serveradapter.DefaultHTTPAddr
+	}
+	cfg := serveradapter.ServerConfig{HTTPAddr: addr}
+	if err := cfg.Validate(); err != nil {
+		return serveradapter.ServerConfig{}, err
+	}
+	return cfg, nil
 }
 
 func loadAdmissionFromEnv() (admissionadapter.AdmissionConfig, error) {

@@ -3,6 +3,7 @@ package reservation_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -320,4 +321,36 @@ func TestVerifyRoomPassword(t *testing.T) {
 	if err := res.VerifyRoomPassword(ctx, domain.RoomID(9), "anything"); err != nil {
 		t.Fatalf("Verify open room any password: %v", err)
 	}
+}
+
+func TestReservation_ConcurrentDifferentRooms(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	res := newTestReservation()
+	const rooms = 32
+
+	for id := domain.RoomID(1); id <= rooms; id++ {
+		if err := res.RegisterRoom(ctx, id, 8, ""); err != nil {
+			t.Fatalf("RegisterRoom %d: %v", id, err)
+		}
+	}
+
+	expires := time.Now().Add(time.Hour)
+	var wg sync.WaitGroup
+	for id := domain.RoomID(1); id <= rooms; id++ {
+		wg.Add(1)
+		go func(roomID domain.RoomID) {
+			defer wg.Done()
+			peerID := domain.PeerID(roomID * 100)
+			if err := res.Reserve(ctx, roomID, peerID, expires); err != nil {
+				t.Errorf("Reserve room %d: %v", roomID, err)
+				return
+			}
+			if err := res.Admit(ctx, roomID, peerID); err != nil {
+				t.Errorf("Admit room %d: %v", roomID, err)
+			}
+		}(id)
+	}
+	wg.Wait()
 }

@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -74,16 +75,7 @@ func (p *Peer) Stop() error {
 }
 
 func (p *Peer) Deliver(peerEvent events.PeerEvent) error {
-	if p.ctx.Err() != nil {
-		return fmt.Errorf("peer stopped: %d", p.id)
-	}
-	if p.tryDeliver(peerEvent) {
-		return nil
-	}
-	if p.ctx.Err() != nil {
-		return fmt.Errorf("peer stopped: %d", p.id)
-	}
-	return nil
+	return p.tryDeliver(peerEvent)
 }
 
 func processIncomingEvents(peer *Peer) {
@@ -97,6 +89,10 @@ func processIncomingEvents(peer *Peer) {
 			PeerID: peer.id,
 			Frame:  frame,
 		}); err != nil {
+			if errors.Is(err, domain.ErrQueueFull) {
+				peer.logger.Warn("room incoming queue full, dropping frame", "peerID", peer.id)
+				continue
+			}
 			peer.logger.Error("error delivering room event", "error", err)
 			return
 		}
@@ -120,14 +116,17 @@ func processOutgoingEvents(peer *Peer) {
 	}
 }
 
-func (p *Peer) tryDeliver(ev events.PeerEvent) bool {
+func (p *Peer) tryDeliver(ev events.PeerEvent) error {
+	if err := p.ctx.Err(); err != nil {
+		return fmt.Errorf("peer stopped: %d: %w", p.id, err)
+	}
 	select {
 	case <-p.ctx.Done():
-		return false
+		return fmt.Errorf("peer stopped: %d: %w", p.id, p.ctx.Err())
 	case p.outbound <- ev:
-		return true
+		return nil
 	default:
 		p.logger.Warn("peer outbound queue full, dropping frame", "peerID", p.id)
-		return false
+		return domain.ErrQueueFull
 	}
 }

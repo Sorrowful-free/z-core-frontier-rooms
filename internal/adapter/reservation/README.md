@@ -2,6 +2,13 @@
 
 In-memory слоты комнаты. Порт: `port/reservation`.
 
+## Блокировки
+
+- `roomsMu` (`sync.RWMutex`) — только map `roomID → *reservationRoom` (register / unregister / lookup).
+- `reservationRoom.mu` — слоты и пароль одной комнаты (`Reserve`, `Admit`, `Revoke`, `State`, `ListAdmittedPeers`, `VerifyRoomPassword`).
+
+Операции в разных комнатах не сериализуют друг друга.
+
 ## Методы
 
 | Метод | Кто вызывает |

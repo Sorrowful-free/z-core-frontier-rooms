@@ -60,8 +60,8 @@ func (r *Room) GetID() domain.RoomID {
 }
 
 func (r *Room) GetCapacity() int8 {
-	if r.capacity > 127 {
-		return 127
+	if r.capacity > domain.MaxRoomCapacity {
+		return int8(domain.MaxRoomCapacity)
 	}
 	if r.capacity < -128 {
 		return -128
@@ -107,8 +107,6 @@ func (r *Room) Stop() error {
 			r.patchStateTicker.Stop()
 		}
 		r.wg.Wait()
-		close(r.incoming)
-		close(r.lifecycle)
 		err = r.policy.OnStop(r)
 	})
 	return err
@@ -236,6 +234,10 @@ func (r *Room) Send(peerEvent events.PeerEvent) error {
 	}
 	for _, peer := range peers {
 		if err := peer.Deliver(peerEvent); err != nil {
+			if errors.Is(err, domain.ErrQueueFull) {
+				r.logger.Warn("peer outbound queue full during send", "roomID", r.id, "peerID", peer.GetID())
+				continue
+			}
 			return err
 		}
 	}
@@ -265,16 +267,7 @@ func (r *Room) snapshotPeersForSend(target, exclude domain.PeerID) ([]realtime.P
 }
 
 func (r *Room) Deliver(roomEvent events.RoomEvent) error {
-	if r.ctx.Err() != nil {
-		return fmt.Errorf("room stopped: %d", r.id)
-	}
-	if r.tryDeliver(roomEvent) {
-		return nil
-	}
-	if r.ctx.Err() != nil {
-		return fmt.Errorf("room stopped: %d", r.id)
-	}
-	return nil
+	return r.tryDeliver(roomEvent)
 }
 
 func processRoomEvents(room *Room) {
@@ -318,14 +311,17 @@ func processRoomEvents(room *Room) {
 	}
 }
 
-func (r *Room) tryDeliver(ev events.RoomEvent) bool {
+func (r *Room) tryDeliver(ev events.RoomEvent) error {
+	if err := r.ctx.Err(); err != nil {
+		return fmt.Errorf("room stopped: %d: %w", r.id, err)
+	}
 	select {
 	case <-r.ctx.Done():
-		return false
+		return fmt.Errorf("room stopped: %d: %w", r.id, r.ctx.Err())
 	case r.incoming <- ev:
-		return true
+		return nil
 	default:
 		r.logger.Warn("room incoming queue full, dropping frame", "roomID", r.id, "peerID", ev.PeerID)
-		return false
+		return domain.ErrQueueFull
 	}
 }

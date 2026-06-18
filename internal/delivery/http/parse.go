@@ -27,5 +27,8 @@ func validateCapacity(capacity int) error {
 	if capacity <= 0 {
 		return fmt.Errorf("capacity must be positive, got %d", capacity)
 	}
+	if capacity > domain.MaxRoomCapacity {
+		return fmt.Errorf("capacity must be at most %d, got %d", domain.MaxRoomCapacity, capacity)
+	}
 	return nil
 }

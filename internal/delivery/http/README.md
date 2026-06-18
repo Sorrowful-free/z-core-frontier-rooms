@@ -1,6 +1,6 @@
 # delivery/http
 
-REST control plane (Fiber v3), порт `:3000`.
+REST control plane (Fiber v3), адрес — env `HTTP_ADDR` (default `:3000`).
 
 ## Аутентификация
 
@@ -28,7 +28,7 @@ Env — [adapter/httplimits/README.md](../../adapter/httplimits/README.md).
 
 | Метод | Путь | Use case | Успех | Body запроса | Body ответа |
 |-------|------|----------|-------|--------------|-------------|
-| `POST` | `/rooms` | Create | `201` | `capacity`, `password?` | `id`, `peers` |
+| `POST` | `/rooms` | Create | `201` | `capacity` (1…`domain.MaxRoomCapacity`), `password?` | `id`, `peers` |
 | `GET` | `/rooms` | GetList | `200` | — | `rooms[]` |
 | `DELETE` | `/rooms/:id` | Delete | `204` | `password?` | — |
 | `POST` | `/rooms/:id/tickets` | IssueTicket | `201` | `nick_name`, `password` | `token` (base64url) |
@@ -39,7 +39,9 @@ Env — [adapter/httplimits/README.md](../../adapter/httplimits/README.md).
 
 ## Ошибки JSON
 
-`{"code":"…","message":"…"}` — маппинг в `errors.go` (`room_not_found`, `ticket_slot_held`, `invalid_nick_name`, …).
+`{"code":"…","message":"…"}` — маппинг в `errors.go` (`room_not_found`, `ticket_slot_held`, `invalid_nick_name`, `invalid_capacity`, …).
+
+`POST /rooms`: `capacity` ≤ 0 или > `domain.MaxRoomCapacity` (127) → `400` / `invalid_capacity`.
 
 ## Файлы
 

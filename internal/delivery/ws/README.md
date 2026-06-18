@@ -6,6 +6,8 @@ WebSocket data plane на том же `*fiber.App`, что HTTP.
 
 `GET /ws?token=<base64url>`
 
+Ticket по-прежнему в query (контракт клиента). Access-лог Fiber (`fibzap`) пишет `path` без query, чтобы token не попадал в логи.
+
 1. Декодировать token (ticket v2, сырые байты)
 2. `JoinRoomUseCase`
 3. Цикл `connection.Receive` → `room.Deliver`

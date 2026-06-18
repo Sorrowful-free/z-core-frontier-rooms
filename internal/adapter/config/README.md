@@ -8,7 +8,16 @@
 
 ## Структура
 
-`Config` содержит поля типов из adapter-пакетов модулей (`Admission`, `HTTPAuth`, …).
+`Config` содержит поля типов из adapter-пакетов модулей (`Logging`, `Server`, `Admission`, `HTTPAuth`, …).
+
+## Env (process)
+
+| Переменная | Обязательна | Default | Описание |
+|------------|-------------|---------|----------|
+| `LOG_MODE` | нет | `prod` | Корневой zap: `prod` или `dev` |
+| `HTTP_ADDR` | нет | `:3000` | Адрес `fiber.App.Listen` |
+
+Валидация — `logging/zap.RootConfig.Validate()`, `server.ServerConfig.Validate()`.
 
 ## Env (admission)
 
