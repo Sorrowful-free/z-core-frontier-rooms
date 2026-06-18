@@ -81,9 +81,20 @@ go test -bench=BenchmarkRoomState_ -benchmem -count=1 ./tests/domain/state/...
 go test -bench=BenchmarkRoomStateCodec_ -benchmem -count=1 ./tests/adapter/realtime/codec/...
 go test -bench=BenchmarkOnTickPatchState -benchmem -count=1 ./tests/adapter/realtime/policy/state/...
 go test -bench=BenchmarkRoom_ -benchmem -count=1 ./tests/adapter/realtime/...
+go test -bench=BenchmarkReservation -benchmem -count=1 ./tests/adapter/reservation/...
 ```
 
 Сравнение до/после (локально): `go install golang.org/x/perf/cmd/benchstat@latest`, затем `-count=10` и `benchstat`.
+
+Reservation (per-room lock vs legacy global mutex в одном прогоне):
+
+```bash
+go test -bench=BenchmarkReservation_Reserve_ParallelSpread -benchmem -count=10 ./tests/adapter/reservation/... > bench.txt
+go install golang.org/x/perf/cmd/benchstat@latest
+benchstat bench.txt
+```
+
+Смотреть sub-bench `per_room_lock` vs `global_legacy` при `rooms=32` / `rooms=128`.
 
 ### Tiers
 
@@ -92,6 +103,7 @@ go test -bench=BenchmarkRoom_ -benchmem -count=1 ./tests/adapter/realtime/...
 | A — CPU | `tests/domain`, `tests/domain/state`, `tests/adapter/realtime/codec` | `DecodeIncomingFrame`, `MakePatch`/`ApplyPatch`/`Clone`, wire encode/decode |
 | B — policy | `tests/adapter/realtime/policy/state` | `OnTickPatchState`, `OnMessage` PatchInput (без сети) |
 | C — room | `tests/adapter/realtime` | `Room.Send` broadcast, `Deliver`, `Join` |
+| D — reservation | `tests/adapter/reservation` | `Reserve` / issue-join path; parallel spread `per_room_lock` vs `global_legacy` |
 
 Фикстуры комнаты с N peers: [`tests/testutil/bench/room_state.go`](testutil/bench/room_state.go) (`BuildRoomState`).
 
@@ -115,6 +127,7 @@ go test -bench=BenchmarkRoom_ -benchmem -count=1 ./tests/adapter/realtime/...
 | bench-12 | `tests/adapter/realtime/room_deliver_bench_test.go` | `BenchmarkRoom_Deliver` (`queue_empty` / `queue_full`) |
 | bench-12b | см. bench-12 | sub-bench `queue_full` |
 | bench-13 | `tests/adapter/realtime/room_join_bench_test.go` | `BenchmarkRoom_Join` |
+| bench-14 | `tests/adapter/reservation/reservation_bench_test.go` | `BenchmarkReservation_Reserve`, `IssueJoinPath`, `Reserve_ParallelSpread`, `Reserve_ParallelSameRoom` |
 
 ## Покрытие по пакетам
 
