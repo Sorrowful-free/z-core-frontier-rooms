@@ -158,6 +158,152 @@ func TestOnMessage_FullEntities_RejectsNonMaster(t *testing.T) {
 	}
 }
 
+func TestOnMessage_PatchEntities_BroadcastsPatchExcludingMaster(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, domain.RoomID(14), 8)
+	master := newCapturePeer(1, "master")
+	client := newCapturePeer(2, "client")
+	mustJoin(t, h.room, master, client)
+	master.clear()
+	client.clear()
+
+	components := state.NewMapState[state.ComponentID, state.ComponentState]()
+	components[state.ComponentID(1)] = state.ComponentState{
+		Values: state.NewMapState[state.ValueId, state.ValueState](),
+	}
+	components[state.ComponentID(1)].Values[state.ValueId(1)] = state.ValueState([]byte{0xAB})
+
+	patch := state.NewMapStatePatch[state.EntityID, state.EntityState, state.EntityStatePatch]()
+	patch.Added[state.EntityID(10)] = state.EntityState{
+		Owner:      domain.PeerID(1),
+		Components: components,
+	}
+	payload, err := h.entitiesCodec.EncodePatch(patch)
+	if err != nil {
+		t.Fatalf("EncodePatch entities: %v", err)
+	}
+
+	if err := h.policy.OnMessage(events.RoomEvent{
+		PeerID: domain.PeerID(1),
+		Frame:  domain.Frame{OpCode: state.OpCodePatchEntities, Payload: payload},
+	}); err != nil {
+		t.Fatalf("OnMessage patch entities: %v", err)
+	}
+
+	clientPatches := filterOpcode(client.snapshot(), state.OpCodePatchState)
+	if len(clientPatches) != 1 {
+		t.Fatalf("client patches = %d, want 1", len(clientPatches))
+	}
+	got, err := h.roomCodec.DecodePatch(clientPatches[0].Frame.Payload)
+	if err != nil {
+		t.Fatalf("DecodePatch: %v", err)
+	}
+	if _, ok := got.Entities.Added[state.EntityID(10)]; !ok {
+		t.Fatalf("entities.added = %#v", got.Entities.Added)
+	}
+
+	if len(filterOpcode(master.snapshot(), state.OpCodePatchState)) != 0 {
+		t.Fatal("master should not receive entities patch")
+	}
+}
+
+func TestOnMessage_PatchEntities_UpdatesExistingEntity(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, domain.RoomID(15), 8)
+	master := newCapturePeer(1, "master")
+	client := newCapturePeer(2, "client")
+	mustJoin(t, h.room, master, client)
+
+	seed := state.NewMapState[state.EntityID, state.EntityState]()
+	seedComponents := state.NewMapState[state.ComponentID, state.ComponentState]()
+	seedComponents[state.ComponentID(1)] = state.ComponentState{
+		Values: state.NewMapState[state.ValueId, state.ValueState](),
+	}
+	seedComponents[state.ComponentID(1)].Values[state.ValueId(1)] = state.ValueState([]byte{0x01})
+	seed[state.EntityID(10)] = state.EntityState{
+		Owner:      domain.PeerID(1),
+		Components: seedComponents,
+	}
+	seedPayload, err := h.entitiesCodec.Encode(seed)
+	if err != nil {
+		t.Fatalf("Encode seed entities: %v", err)
+	}
+	if err := h.policy.OnMessage(events.RoomEvent{
+		PeerID: domain.PeerID(1),
+		Frame:  domain.Frame{OpCode: state.OpCodeFullEntities, Payload: seedPayload},
+	}); err != nil {
+		t.Fatalf("OnMessage full entities seed: %v", err)
+	}
+	master.clear()
+	client.clear()
+
+	valuePatch := state.NewMapStatePatch[state.ValueId, state.ValueState, state.ValueState]()
+	valuePatch.Updated[state.ValueId(1)] = state.ValueState([]byte{0xFF})
+
+	compPatch := state.NewMapStatePatch[state.ComponentID, state.ComponentState, state.ComponentStatePatch]()
+	compPatch.Updated[state.ComponentID(1)] = state.ComponentStatePatch{Values: *valuePatch}
+
+	entityPatch := state.NewMapStatePatch[state.EntityID, state.EntityState, state.EntityStatePatch]()
+	entityPatch.Updated[state.EntityID(10)] = state.EntityStatePatch{Components: *compPatch}
+
+	payload, err := h.entitiesCodec.EncodePatch(entityPatch)
+	if err != nil {
+		t.Fatalf("EncodePatch entities update: %v", err)
+	}
+	if err := h.policy.OnMessage(events.RoomEvent{
+		PeerID: domain.PeerID(1),
+		Frame:  domain.Frame{OpCode: state.OpCodePatchEntities, Payload: payload},
+	}); err != nil {
+		t.Fatalf("OnMessage patch entities update: %v", err)
+	}
+
+	clientPatches := filterOpcode(client.snapshot(), state.OpCodePatchState)
+	if len(clientPatches) != 1 {
+		t.Fatalf("client patches = %d, want 1", len(clientPatches))
+	}
+	got, err := h.roomCodec.DecodePatch(clientPatches[0].Frame.Payload)
+	if err != nil {
+		t.Fatalf("DecodePatch: %v", err)
+	}
+	updated, ok := got.Entities.Updated[state.EntityID(10)]
+	if !ok {
+		t.Fatalf("entities.updated = %#v", got.Entities.Updated)
+	}
+	gotVal := updated.Components.Updated[state.ComponentID(1)].Values.Updated[state.ValueId(1)]
+	if len(gotVal) != 1 || gotVal[0] != 0xFF {
+		t.Fatalf("updated value = %v, want [255]", []byte(gotVal))
+	}
+}
+
+func TestOnMessage_PatchEntities_RejectsNonMaster(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, domain.RoomID(16), 4)
+	master := newCapturePeer(1, "master")
+	client := newCapturePeer(2, "client")
+	mustJoin(t, h.room, master, client)
+
+	patch := state.NewMapStatePatch[state.EntityID, state.EntityState, state.EntityStatePatch]()
+	patch.Added[state.EntityID(10)] = state.EntityState{
+		Owner:      domain.PeerID(2),
+		Components: state.NewMapState[state.ComponentID, state.ComponentState](),
+	}
+	payload, err := h.entitiesCodec.EncodePatch(patch)
+	if err != nil {
+		t.Fatalf("EncodePatch: %v", err)
+	}
+
+	err = h.policy.OnMessage(events.RoomEvent{
+		PeerID: domain.PeerID(2),
+		Frame:  domain.Frame{OpCode: state.OpCodePatchEntities, Payload: payload},
+	})
+	if !errors.Is(err, domain.ErrNotMaster) {
+		t.Fatalf("err = %v, want ErrNotMaster", err)
+	}
+}
+
 func TestOnTickFullState_BroadcastsToAllPeers(t *testing.T) {
 	t.Parallel()
 

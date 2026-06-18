@@ -126,7 +126,7 @@ go test -bench=BenchmarkRoom_ -benchmem -count=1 ./tests/adapter/realtime/...
 | `tests/adapter/httplimits` | `HTTPLimitsConfig.Validate`, `Limits` rate + max rooms |
 | `tests/adapter/admission` | `AdmissionConfig.Validate`; round-trip ticket + NickName, invalid nick, invalid/expired token, invalid credentials |
 | `tests/adapter/realtime` | `OnJoin` → `room.Send` без deadlock; откат map при `ErrJoinDenied`; Replace rollback policy; `PeerFactory` nick; concurrent `Deliver`/`Join`/`Leave` + `Stop` без паники; `Deliver` → `ErrQueueFull` / stopped |
-| `tests/adapter/realtime/policy/state` | join/full/patch/master; `NewStateRoomPolicy` zero intervals → defaults |
+| `tests/adapter/realtime/policy/state` | join/full/patch/master; `NewStateRoomPolicy` zero intervals → defaults; `PatchEntities` add/update/reject non-master |
 | `tests/domain` | `ValidateNickName` |
 | `tests/domain/state` | atomic `ApplyPatch` rollback на entity/component |
 | `tests/adapter/realtime/codec` | Round-trip `InputStateCodec`, `RpcStateCodec`, `RoomStateCodec` (full + patch) |
