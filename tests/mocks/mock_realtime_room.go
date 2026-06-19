@@ -119,6 +119,44 @@ func (c *MockRoomDeliverCall) DoAndReturn(f func(events.RoomEvent) error) *MockR
 	return c
 }
 
+// GetAttributes mocks base method.
+func (m *MockRoom) GetAttributes() domain.RoomAttributes {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAttributes")
+	ret0, _ := ret[0].(domain.RoomAttributes)
+	return ret0
+}
+
+// GetAttributes indicates an expected call of GetAttributes.
+func (mr *MockRoomMockRecorder) GetAttributes() *MockRoomGetAttributesCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAttributes", reflect.TypeOf((*MockRoom)(nil).GetAttributes))
+	return &MockRoomGetAttributesCall{Call: call}
+}
+
+// MockRoomGetAttributesCall wrap *gomock.Call
+type MockRoomGetAttributesCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockRoomGetAttributesCall) Return(arg0 domain.RoomAttributes) *MockRoomGetAttributesCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockRoomGetAttributesCall) Do(f func() domain.RoomAttributes) *MockRoomGetAttributesCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockRoomGetAttributesCall) DoAndReturn(f func() domain.RoomAttributes) *MockRoomGetAttributesCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // GetCapacity mocks base method.
 func (m *MockRoom) GetCapacity() int8 {
 	m.ctrl.T.Helper()

@@ -78,6 +78,7 @@ func TestJoinRoom_Success(t *testing.T) {
 
 	room.EXPECT().GetID().Return(roomID).AnyTimes()
 	room.EXPECT().GetPeers().Return([]realtime.Peer{peer}).AnyTimes()
+	room.EXPECT().GetAttributes().Return(nil).AnyTimes()
 	peer.EXPECT().GetID().Return(peerID).AnyTimes()
 	peer.EXPECT().GetNickName().Return(nickName).AnyTimes()
 	peer.EXPECT().Ping().Return(int64(0)).AnyTimes()

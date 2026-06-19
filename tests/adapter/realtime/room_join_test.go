@@ -19,7 +19,7 @@ func TestJoinCallsSendFromOnJoinWithoutDeadlock(t *testing.T) {
 
 	logger := stdlib.New("test")
 	policy := &sendOnJoinPolicy{}
-	room := adapterrealtime.NewRoom(context.Background(), domain.RoomID(1), policy, 8, 0, logger)
+	room := adapterrealtime.NewRoom(context.Background(), domain.RoomID(1), policy, 8, nil, 0, logger)
 	policy.room = room
 
 	if err := room.Start(); err != nil {
@@ -51,7 +51,7 @@ func TestJoinRollbackOnHandlerError(t *testing.T) {
 
 	logger := stdlib.New("test")
 	policy := &failOnJoinPolicy{err: domain.ErrJoinDenied}
-	room := adapterrealtime.NewRoom(context.Background(), domain.RoomID(1), policy, 8, 0, logger)
+	room := adapterrealtime.NewRoom(context.Background(), domain.RoomID(1), policy, 8, nil, 0, logger)
 
 	if err := room.Start(); err != nil {
 		t.Fatalf("Start: %v", err)

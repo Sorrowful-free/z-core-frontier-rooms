@@ -32,6 +32,7 @@ func setupBroadcastRoom(b *testing.B, peerCount int) *adapterrealtime.Room {
 		domain.RoomID(1),
 		noopPolicy{},
 		peerCount,
+		nil,
 		64,
 		queueTestLogger{},
 	)

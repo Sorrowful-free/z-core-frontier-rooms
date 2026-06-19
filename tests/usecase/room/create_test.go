@@ -37,13 +37,14 @@ func TestCreate_Success(t *testing.T) {
 	registry.EXPECT().GetList(gomock.Any()).Return(nil, nil)
 	allocator.EXPECT().AllocateRoomID(gomock.Any()).Return(roomID, nil)
 	reservation.EXPECT().RegisterRoom(gomock.Any(), roomID, capacity, "").Return(nil)
-	registry.EXPECT().CreateRoom(gomock.Any(), roomID, capacity).Return(room, nil)
+	registry.EXPECT().CreateRoom(gomock.Any(), roomID, capacity, gomock.Nil()).Return(room, nil)
 	room.EXPECT().GetPeers().Return(nil)
 	room.EXPECT().GetID().Return(roomID)
+	room.EXPECT().GetAttributes().Return(nil).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewCreateUseCase(registry, allocator, reservation, limits, logger)
-	summary, err := uc.Create(context.Background(), capacity, "")
+	summary, err := uc.Create(context.Background(), capacity, "", nil)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -66,7 +67,7 @@ func TestCreate_CancelledContext(t *testing.T) {
 	cancel()
 
 	uc := useroom.NewCreateUseCase(registry, allocator, reservation, limits, logger)
-	_, err := uc.Create(ctx, 4, "")
+	_, err := uc.Create(ctx, 4, "", nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
@@ -90,7 +91,7 @@ func TestCreate_AllocatorError(t *testing.T) {
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewCreateUseCase(registry, allocator, reservation, limits, logger)
-	_, err := uc.Create(context.Background(), 4, "")
+	_, err := uc.Create(context.Background(), 4, "", nil)
 	if !errors.Is(err, allocateErr) {
 		t.Fatalf("err = %v, want allocate error", err)
 	}
@@ -115,13 +116,13 @@ func TestCreate_RegistryError(t *testing.T) {
 	allocator.EXPECT().AllocateRoomID(gomock.Any()).Return(roomID, nil)
 	reservation.EXPECT().RegisterRoom(gomock.Any(), roomID, capacity, "").Return(nil)
 	registry.EXPECT().
-		CreateRoom(gomock.Any(), roomID, capacity).
+		CreateRoom(gomock.Any(), roomID, capacity, gomock.Nil()).
 		Return(nil, domain.ErrRoomAlreadyExists)
 	reservation.EXPECT().UnregisterRoom(gomock.Any(), roomID).Return(nil)
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewCreateUseCase(registry, allocator, reservation, limits, logger)
-	_, err := uc.Create(context.Background(), capacity, "")
+	_, err := uc.Create(context.Background(), capacity, "", nil)
 	if !errors.Is(err, domain.ErrRoomAlreadyExists) {
 		t.Fatalf("err = %v, want ErrRoomAlreadyExists", err)
 	}
@@ -146,7 +147,7 @@ func TestCreate_RegistryErrorJoinsUnregisterError(t *testing.T) {
 	allocator.EXPECT().AllocateRoomID(gomock.Any()).Return(roomID, nil)
 	reservation.EXPECT().RegisterRoom(gomock.Any(), roomID, capacity, "").Return(nil)
 	registry.EXPECT().
-		CreateRoom(gomock.Any(), roomID, capacity).
+		CreateRoom(gomock.Any(), roomID, capacity, gomock.Nil()).
 		Return(nil, domain.ErrRoomAlreadyExists)
 	reservation.EXPECT().
 		UnregisterRoom(gomock.Any(), roomID).
@@ -154,7 +155,7 @@ func TestCreate_RegistryErrorJoinsUnregisterError(t *testing.T) {
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewCreateUseCase(registry, allocator, reservation, limits, logger)
-	_, err := uc.Create(context.Background(), capacity, "")
+	_, err := uc.Create(context.Background(), capacity, "", nil)
 	if !errors.Is(err, domain.ErrRoomAlreadyExists) {
 		t.Fatalf("err = %v, want ErrRoomAlreadyExists", err)
 	}
@@ -180,7 +181,7 @@ func TestCreate_RoomsLimitReached(t *testing.T) {
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewCreateUseCase(registry, allocator, reservation, limits, logger)
-	_, err := uc.Create(context.Background(), 4, "")
+	_, err := uc.Create(context.Background(), 4, "", nil)
 	if !errors.Is(err, domain.ErrRoomsLimitReached) {
 		t.Fatalf("err = %v, want ErrRoomsLimitReached", err)
 	}

@@ -5,6 +5,7 @@
 ## Ключевые типы
 
 - `RoomID`, `PeerID`, `Frame`, `OpCode`
+- `RoomAttributes` — произвольный JSON-словарь аргументов комнаты (`room_attributes.go`)
 - `MaxRoomCapacity` (127) — верхняя граница вместимости комнаты (wire/state: `int8`)
 - `DecodeIncomingFrame` — разбор data plane кадра (`frame_wire.go`)
 - `Claims` — `RoomID`, `PeerID`, `NickName`, `IssuedAt`, `ExpiresAt`

@@ -12,6 +12,7 @@ type Room interface {
 
 	GetID() domain.RoomID
 	GetCapacity() int8
+	GetAttributes() domain.RoomAttributes
 	GetPeers() []Peer
 
 	Start() error

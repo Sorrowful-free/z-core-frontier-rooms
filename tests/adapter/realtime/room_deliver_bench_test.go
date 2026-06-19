@@ -17,6 +17,7 @@ func BenchmarkRoom_Deliver(b *testing.B) {
 			domain.RoomID(10),
 			noopPolicy{},
 			8,
+			nil,
 			64,
 			queueTestLogger{},
 		)
@@ -44,6 +45,7 @@ func BenchmarkRoom_Deliver(b *testing.B) {
 			domain.RoomID(11),
 			noopPolicy{},
 			8,
+			nil,
 			1,
 			queueTestLogger{},
 		)

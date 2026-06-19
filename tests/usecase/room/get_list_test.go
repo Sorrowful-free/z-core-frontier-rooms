@@ -43,6 +43,7 @@ func TestGetList_ReturnsSummaries(t *testing.T) {
 	const roomID = domain.RoomID(5)
 	registry.EXPECT().GetList(gomock.Any()).Return([]realtime.Room{room}, nil)
 	room.EXPECT().GetPeers().Return(nil)
+	room.EXPECT().GetAttributes().Return(nil).AnyTimes()
 	room.EXPECT().GetID().Return(roomID)
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 

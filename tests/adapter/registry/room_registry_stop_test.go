@@ -16,7 +16,7 @@ func TestRegistry_DeleteRoom_ConcurrentDeliver_NoPanic(t *testing.T) {
 	reg := newTestRegistry(t)
 	const roomID = domain.RoomID(50)
 
-	room, err := reg.CreateRoom(context.Background(), roomID, 8)
+	room, err := reg.CreateRoom(context.Background(), roomID, 8, nil)
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

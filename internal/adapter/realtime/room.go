@@ -20,6 +20,7 @@ type Room struct {
 	mutex            sync.RWMutex
 	peers            map[domain.PeerID]realtime.Peer
 	capacity         int
+	attributes       domain.RoomAttributes
 	incoming         chan events.RoomEvent
 	lifecycle        chan lifecycleRequest
 	logger           logging.Logger
@@ -32,18 +33,19 @@ type Room struct {
 	wg       sync.WaitGroup
 }
 
-func NewRoom(ctx context.Context, id domain.RoomID, policy policy.RoomPolicy, capacity int, incomingQueue int, logger logging.Logger) *Room {
+func NewRoom(ctx context.Context, id domain.RoomID, policy policy.RoomPolicy, capacity int, attributes domain.RoomAttributes, incomingQueue int, logger logging.Logger) *Room {
 	ctx, cancel := context.WithCancel(ctx)
 	if incomingQueue < 0 {
 		incomingQueue = 0
 	}
 	return &Room{
-		id:        id,
-		policy:    policy,
-		mutex:     sync.RWMutex{},
-		peers:     make(map[domain.PeerID]realtime.Peer),
-		capacity:  capacity,
-		incoming:  make(chan events.RoomEvent, incomingQueue),
+		id:         id,
+		policy:     policy,
+		mutex:      sync.RWMutex{},
+		peers:      make(map[domain.PeerID]realtime.Peer),
+		capacity:   capacity,
+		attributes: domain.CloneRoomAttributes(attributes),
+		incoming:   make(chan events.RoomEvent, incomingQueue),
 		lifecycle: make(chan lifecycleRequest),
 		logger:    logger,
 		ctx:       ctx,
@@ -67,6 +69,10 @@ func (r *Room) GetCapacity() int8 {
 		return -128
 	}
 	return int8(r.capacity)
+}
+
+func (r *Room) GetAttributes() domain.RoomAttributes {
+	return domain.CloneRoomAttributes(r.attributes)
 }
 
 func (r *Room) GetPeers() []realtime.Peer {

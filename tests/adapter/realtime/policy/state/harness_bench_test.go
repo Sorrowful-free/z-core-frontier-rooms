@@ -37,7 +37,7 @@ func newBenchHarness(b *testing.B, roomID domain.RoomID, capacity int) *benchHar
 		time.Hour,
 		time.Hour,
 	)
-	room := realtime.NewRoom(context.Background(), roomID, policy, capacity, 0, logger)
+	room := realtime.NewRoom(context.Background(), roomID, policy, capacity, nil, 0, logger)
 	if err := room.Start(); err != nil {
 		b.Fatalf("Start: %v", err)
 	}

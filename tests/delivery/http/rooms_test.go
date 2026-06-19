@@ -174,6 +174,83 @@ func TestHTTP_CreateGetListDeleteRoom(t *testing.T) {
 	}
 }
 
+func TestHTTP_CreateRoomWithAttributes(t *testing.T) {
+	t.Parallel()
+
+	env := newTestEnv(t)
+
+	resp, body := env.do(t, http.MethodPost, "/rooms", map[string]any{
+		"capacity": 4,
+		"attributes": map[string]any{
+			"map":  "de_dust2",
+			"mode": "deathmatch",
+		},
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", resp.StatusCode, body)
+	}
+
+	var created struct {
+		ID         int64          `json:"id"`
+		Attributes map[string]any `json:"attributes"`
+	}
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatalf("unmarshal create: %v", err)
+	}
+	if created.Attributes["map"] != "de_dust2" {
+		t.Fatalf("attributes.map = %v, want de_dust2", created.Attributes["map"])
+	}
+	if created.Attributes["mode"] != "deathmatch" {
+		t.Fatalf("attributes.mode = %v, want deathmatch", created.Attributes["mode"])
+	}
+
+	resp, body = env.do(t, http.MethodGet, "/rooms", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list status = %d, body = %s", resp.StatusCode, body)
+	}
+
+	var list struct {
+		Rooms []struct {
+			ID         int64          `json:"id"`
+			Attributes map[string]any `json:"attributes"`
+		} `json:"rooms"`
+	}
+	if err := json.Unmarshal(body, &list); err != nil {
+		t.Fatalf("unmarshal list: %v", err)
+	}
+	if len(list.Rooms) != 1 {
+		t.Fatalf("rooms count = %d, want 1", len(list.Rooms))
+	}
+	if list.Rooms[0].Attributes["map"] != "de_dust2" {
+		t.Fatalf("list attributes.map = %v, want de_dust2", list.Rooms[0].Attributes["map"])
+	}
+
+	resp, body = env.do(t, http.MethodPost, "/rooms/"+formatID(created.ID)+"/tickets", map[string]any{
+		"nick_name": "player",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("issue status = %d, body = %s", resp.StatusCode, body)
+	}
+
+	var ticket struct {
+		Token string `json:"token"`
+		Room  struct {
+			ID         int64          `json:"id"`
+			Attributes map[string]any `json:"attributes"`
+			Peers      []any          `json:"peers"`
+		} `json:"room"`
+	}
+	if err := json.Unmarshal(body, &ticket); err != nil {
+		t.Fatalf("unmarshal ticket: %v", err)
+	}
+	if ticket.Room.ID != created.ID {
+		t.Fatalf("ticket room.id = %d, want %d", ticket.Room.ID, created.ID)
+	}
+	if ticket.Room.Attributes["map"] != "de_dust2" {
+		t.Fatalf("ticket attributes.map = %v, want de_dust2", ticket.Room.Attributes["map"])
+	}
+}
+
 func TestHTTP_IssueTicket(t *testing.T) {
 	t.Parallel()
 
@@ -203,9 +280,20 @@ func TestHTTP_IssueTicket(t *testing.T) {
 
 	var ticket struct {
 		Token string `json:"token"`
+		Room  struct {
+			ID         int64          `json:"id"`
+			Attributes map[string]any `json:"attributes"`
+			Peers      []any          `json:"peers"`
+		} `json:"room"`
 	}
 	if err := json.Unmarshal(body, &ticket); err != nil {
 		t.Fatalf("unmarshal ticket: %v", err)
+	}
+	if ticket.Room.ID != created.ID {
+		t.Fatalf("room.id = %d, want %d", ticket.Room.ID, created.ID)
+	}
+	if ticket.Room.Peers == nil {
+		t.Fatalf("room.peers = nil, want empty slice")
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(ticket.Token)
 	if err != nil {

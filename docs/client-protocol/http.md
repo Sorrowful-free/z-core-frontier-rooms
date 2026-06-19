@@ -33,7 +33,11 @@ X-API-Key: <HTTP_API_KEY>
 ```json
 {
   "capacity": 8,
-  "password": "optional-secret"
+  "password": "optional-secret",
+  "attributes": {
+    "map": "de_dust2",
+    "mode": "deathmatch"
+  }
 }
 ```
 
@@ -41,6 +45,7 @@ X-API-Key: <HTTP_API_KEY>
 |------|-----|---------|
 | `capacity` | int | Обязательно, `1…127` (`domain.MaxRoomCapacity`) |
 | `password` | string | Опционально; если задан — нужен при issue ticket и delete |
+| `attributes` | object | Опционально; произвольный JSON-словарь (название карты, режим и т.п.); возвращается в create/list |
 
 Поле `id` в JSON **игнорируется** — ID выдаёт сервер.
 
@@ -49,6 +54,10 @@ X-API-Key: <HTTP_API_KEY>
 ```json
 {
   "id": 42,
+  "attributes": {
+    "map": "de_dust2",
+    "mode": "deathmatch"
+  },
   "peers": []
 }
 ```
@@ -66,6 +75,9 @@ X-API-Key: <HTTP_API_KEY>
   "rooms": [
     {
       "id": 42,
+      "attributes": {
+        "map": "de_dust2"
+      },
       "peers": [
         {"peer_id": 1, "nick_name": "Alice", "ping": 12}
       ]
@@ -110,9 +122,18 @@ X-API-Key: <HTTP_API_KEY>
 
 ```json
 {
-  "token": "AgAAAA...base64url..."
+  "token": "AgAAAA...base64url...",
+  "room": {
+    "id": 42,
+    "attributes": {
+      "map": "de_dust2"
+    },
+    "peers": []
+  }
 }
 ```
+
+`room` — тот же DTO, что в create/list: `id`, `attributes?`, `peers[]` (текущие peer **в комнате**, без только что зарезервированного слота).
 
 `token` — **base64.RawURLEncoding** (без padding `=`).
 

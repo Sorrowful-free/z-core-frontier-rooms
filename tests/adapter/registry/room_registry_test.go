@@ -40,12 +40,12 @@ func TestCreateRoomDuplicateID(t *testing.T) {
 		capacity = 8
 	)
 
-	if _, err := reg.CreateRoom(context.Background(), id, capacity); err != nil {
+	if _, err := reg.CreateRoom(context.Background(), id, capacity, nil); err != nil {
 		t.Fatalf("first CreateRoom: %v", err)
 	}
 	t.Cleanup(func() { _ = reg.DeleteRoom(context.Background(), id) })
 
-	_, err := reg.CreateRoom(context.Background(), id, capacity)
+	_, err := reg.CreateRoom(context.Background(), id, capacity, nil)
 	if !errors.Is(err, domain.ErrRoomAlreadyExists) {
 		t.Fatalf("second CreateRoom err = %v, want ErrRoomAlreadyExists", err)
 	}

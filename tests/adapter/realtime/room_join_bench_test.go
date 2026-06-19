@@ -32,6 +32,7 @@ func BenchmarkRoom_Join(b *testing.B) {
 				domain.RoomID(1),
 				noopPolicy{},
 				8,
+				nil,
 				4,
 				queueTestLogger{},
 			)

@@ -86,6 +86,7 @@ func TestRoom_Deliver_DropsWhenIncomingFull(t *testing.T) {
 		domain.RoomID(1),
 		nil,
 		4,
+		nil,
 		1,
 		logger,
 	)
@@ -108,6 +109,7 @@ func TestRoom_Deliver_ReturnsErrorWhenStopped(t *testing.T) {
 		domain.RoomID(3),
 		noopPolicy{},
 		4,
+		nil,
 		4,
 		logger,
 	)

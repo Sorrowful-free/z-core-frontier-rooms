@@ -3,9 +3,10 @@ package http
 // JSON DTO control plane (REST).
 
 type createRoomRequest struct {
-	ID       int64  `json:"id"`
-	Capacity int    `json:"capacity"`
-	Password string `json:"password,omitempty"`
+	ID         int64          `json:"id"`
+	Capacity   int            `json:"capacity"`
+	Password   string         `json:"password,omitempty"`
+	Attributes map[string]any `json:"attributes,omitempty"`
 }
 
 type deleteRoomRequest struct {
@@ -18,12 +19,14 @@ type issueTicketRequest struct {
 }
 
 type issueTicketResponse struct {
-	Token string `json:"token"`
+	Token string       `json:"token"`
+	Room  roomResponse `json:"room"`
 }
 
 type roomResponse struct {
-	ID    int64           `json:"id"`
-	Peers []peerResponse  `json:"peers"`
+	ID         int64          `json:"id"`
+	Attributes map[string]any `json:"attributes,omitempty"`
+	Peers      []peerResponse `json:"peers"`
 }
 
 type peerResponse struct {

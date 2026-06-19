@@ -6,19 +6,22 @@ import (
 )
 
 type RoomSummary struct {
-	ID    domain.RoomID
-	Peers []PeerSummary
+	ID         domain.RoomID
+	Attributes domain.RoomAttributes
+	Peers      []PeerSummary
 }
 
 var EmptyRoomSummary = RoomSummary{
-	ID:    domain.RoomIDInvalid,
-	Peers: []PeerSummary{},
+	ID:         domain.RoomIDInvalid,
+	Attributes: nil,
+	Peers:      []PeerSummary{},
 }
 
-func NewRoomSummary(id domain.RoomID, peers []PeerSummary) *RoomSummary {
+func NewRoomSummary(id domain.RoomID, attributes domain.RoomAttributes, peers []PeerSummary) *RoomSummary {
 	return &RoomSummary{
-		ID:    id,
-		Peers: peers,
+		ID:         id,
+		Attributes: domain.CloneRoomAttributes(attributes),
+		Peers:      peers,
 	}
 }
 
@@ -28,7 +31,7 @@ func NewRoomSummaryFromRoom(room realtime.Room) *RoomSummary {
 	for i, p := range peers {
 		peerSummaries[i] = *NewPeerSummaryFromPeer(p)
 	}
-	return NewRoomSummary(room.GetID(), peerSummaries)
+	return NewRoomSummary(room.GetID(), room.GetAttributes(), peerSummaries)
 }
 
 func (r *RoomSummary) IsValid() bool {

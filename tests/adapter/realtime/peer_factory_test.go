@@ -19,6 +19,7 @@ func TestPeerFactory_CreatePeerSetsNickName(t *testing.T) {
 		domain.RoomID(1),
 		nil,
 		4,
+		nil,
 		0,
 		logger,
 	)

@@ -16,8 +16,9 @@ func roomToResponse(summary useroom.RoomSummary) roomResponse {
 		}
 	}
 	return roomResponse{
-		ID:    int64(summary.ID),
-		Peers: peers,
+		ID:         int64(summary.ID),
+		Attributes: summary.Attributes,
+		Peers:      peers,
 	}
 }
 
@@ -29,8 +30,9 @@ func roomsToResponse(summaries []useroom.RoomSummary) roomListResponse {
 	return roomListResponse{Rooms: rooms}
 }
 
-func tokenToResponse(token []byte) issueTicketResponse {
+func issueTicketToResponse(result useroom.IssueTicketResult) issueTicketResponse {
 	return issueTicketResponse{
-		Token: base64.RawURLEncoding.EncodeToString(token),
+		Token: base64.RawURLEncoding.EncodeToString(result.Token),
+		Room:  roomToResponse(result.Room),
 	}
 }

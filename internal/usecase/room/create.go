@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/httplimits"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/identity"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
@@ -29,7 +30,7 @@ func NewCreateUseCase(roomRegistry registry.RoomRegistry, allocator identity.All
 	}
 }
 
-func (uc *CreateUseCase) Create(ctx context.Context, capacity int, password string) (RoomSummary, error) {
+func (uc *CreateUseCase) Create(ctx context.Context, capacity int, password string, attributes domain.RoomAttributes) (RoomSummary, error) {
 
 	if err := ctx.Err(); err != nil {
 		return EmptyRoomSummary, err
@@ -55,7 +56,7 @@ func (uc *CreateUseCase) Create(ctx context.Context, capacity int, password stri
 		return EmptyRoomSummary, err
 	}
 
-	room, err := uc.roomRegistry.CreateRoom(ctx, roomID, capacity)
+	room, err := uc.roomRegistry.CreateRoom(ctx, roomID, capacity, attributes)
 	if err != nil {
 		createErr := err
 		if unregisterErr := uc.reservation.UnregisterRoom(ctx, roomID); unregisterErr != nil {

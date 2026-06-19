@@ -23,6 +23,11 @@ import (
 //   - capacity в reservation → ErrReservationFull;
 //   - комната не в registry → ErrRoomNotFound;
 //   - комната не в reservation store → ErrReservationNotFound.
+type IssueTicketResult struct {
+	Token []byte
+	Room  RoomSummary
+}
+
 type IssueTicketUseCase struct {
 	roomRegistry registry.RoomRegistry
 	allocator    identity.Allocator
@@ -41,50 +46,53 @@ func NewIssueTicketUseCase(roomRegistry registry.RoomRegistry, allocator identit
 	}
 }
 
-func (uc *IssueTicketUseCase) IssueTicket(ctx context.Context, roomID domain.RoomID, nickName string, password string) ([]byte, error) {
+func (uc *IssueTicketUseCase) IssueTicket(ctx context.Context, roomID domain.RoomID, nickName string, password string) (IssueTicketResult, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return IssueTicketResult{}, err
 	}
 	if err := domain.ValidateNickName(nickName); err != nil {
-		return nil, err
+		return IssueTicketResult{}, err
 	}
 
 	room, err := uc.roomRegistry.GetRoom(ctx, roomID)
 	if err != nil {
 		uc.logger.Error("issue ticket: get room failed", "error", err, "roomID", roomID)
-		return nil, err
+		return IssueTicketResult{}, err
 	}
 
 	peerID, err := uc.allocator.AllocatePeerID(ctx)
 	if err != nil {
 		uc.logger.Error("issue ticket: allocate peer ID failed", "error", err, "roomID", roomID)
-		return nil, err
+		return IssueTicketResult{}, err
 	}
 
 	if room.HasPeer(peerID) {
 		uc.logger.Error("issue ticket: peer already in room", "roomID", roomID, "peerID", peerID)
-		return nil, domain.ErrPeerAlreadyInRoom
+		return IssueTicketResult{}, domain.ErrPeerAlreadyInRoom
 	}
 
 	if err := uc.reservation.VerifyRoomPassword(ctx, roomID, password); err != nil {
 		uc.logger.Error("issue ticket: invalid room password", "error", err, "roomID", roomID, "peerID", peerID)
-		return nil, err
+		return IssueTicketResult{}, err
 	}
 
 	expiresAt := time.Now().Add(uc.admission.TTL())
 	if err := uc.reserveForIssue(ctx, room, roomID, peerID, expiresAt); err != nil {
 		uc.logger.Error("issue ticket: reserve failed", "error", err, "roomID", roomID, "peerID", peerID)
-		return nil, err
+		return IssueTicketResult{}, err
 	}
 
 	token, err := uc.admission.Issue(ctx, roomID, peerID, nickName, password)
 	if err != nil {
 		uc.logger.Error("issue ticket: issue failed", "error", err, "roomID", roomID, "peerID", peerID)
-		return nil, uc.revokeIssueReservation(ctx, roomID, peerID, err)
+		return IssueTicketResult{}, uc.revokeIssueReservation(ctx, roomID, peerID, err)
 	}
 
 	uc.logger.Info("issue ticket: success", "roomID", roomID, "peerID", peerID)
-	return token, nil
+	return IssueTicketResult{
+		Token: token,
+		Room:  *NewRoomSummaryFromRoom(room),
+	}, nil
 }
 
 func (uc *IssueTicketUseCase) reserveForIssue(

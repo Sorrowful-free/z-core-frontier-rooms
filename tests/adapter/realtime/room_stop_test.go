@@ -34,6 +34,7 @@ func startTestRoom(t *testing.T, incomingQueue int) *adapterrealtime.Room {
 		domain.RoomID(99),
 		noopPolicy{},
 		32,
+		nil,
 		incomingQueue,
 		queueTestLogger{},
 	)

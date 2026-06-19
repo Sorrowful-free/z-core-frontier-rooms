@@ -30,10 +30,10 @@ Env — [adapter/httplimits/README.md](../../adapter/httplimits/README.md).
 
 | Метод | Путь | Use case | Успех | Body запроса | Body ответа |
 |-------|------|----------|-------|--------------|-------------|
-| `POST` | `/rooms` | Create | `201` | `capacity` (1…`domain.MaxRoomCapacity`), `password?` | `id`, `peers` |
+| `POST` | `/rooms` | Create | `201` | `capacity` (1…`domain.MaxRoomCapacity`), `password?`, `attributes?` | `id`, `attributes?`, `peers` |
 | `GET` | `/rooms` | GetList | `200` | — | `rooms[]` |
 | `DELETE` | `/rooms/:id` | Delete | `204` | `password?` | — |
-| `POST` | `/rooms/:id/tickets` | IssueTicket | `201` | `nick_name`, `password` | `token` (base64url) |
+| `POST` | `/rooms/:id/tickets` | IssueTicket | `201` | `nick_name`, `password` | `token`, `room` (как create/list) |
 
 `nick_name` обязателен (`domain.ValidateNickName`). Ошибка: `400` / `invalid_nick_name`.
 

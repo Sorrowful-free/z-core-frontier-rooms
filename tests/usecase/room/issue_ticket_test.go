@@ -14,6 +14,12 @@ import (
 
 const testNickName = "player"
 
+func expectIssueTicketRoomSummary(room *mocks.MockRoom, roomID domain.RoomID) {
+	room.EXPECT().GetPeers().Return(nil)
+	room.EXPECT().GetID().Return(roomID)
+	room.EXPECT().GetAttributes().Return(nil).AnyTimes()
+}
+
 func TestIssueTicket_Success(t *testing.T) {
 	t.Parallel()
 
@@ -45,14 +51,18 @@ func TestIssueTicket_Success(t *testing.T) {
 		Issue(gomock.Any(), roomID, peerID, testNickName, password).
 		Return(wantToken, nil)
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
+	expectIssueTicketRoomSummary(room, roomID)
 
 	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
-	token, err := uc.IssueTicket(context.Background(), roomID, testNickName, password)
+	result, err := uc.IssueTicket(context.Background(), roomID, testNickName, password)
 	if err != nil {
 		t.Fatalf("IssueTicket: %v", err)
 	}
-	if string(token) != string(wantToken) {
-		t.Fatalf("token = %q, want %q", token, wantToken)
+	if string(result.Token) != string(wantToken) {
+		t.Fatalf("token = %q, want %q", result.Token, wantToken)
+	}
+	if result.Room.ID != roomID {
+		t.Fatalf("room.ID = %v, want %v", result.Room.ID, roomID)
 	}
 }
 
@@ -262,14 +272,15 @@ func TestIssueTicket_OrphanAdmittedCleanup(t *testing.T) {
 		Return(wantToken, nil)
 	logger.EXPECT().Warn(gomock.Any(), gomock.Any()).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
+	expectIssueTicketRoomSummary(room, roomID)
 
 	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
-	token, err := uc.IssueTicket(context.Background(), roomID, testNickName, password)
+	result, err := uc.IssueTicket(context.Background(), roomID, testNickName, password)
 	if err != nil {
 		t.Fatalf("IssueTicket: %v", err)
 	}
-	if string(token) != string(wantToken) {
-		t.Fatalf("token = %q, want %q", token, wantToken)
+	if string(result.Token) != string(wantToken) {
+		t.Fatalf("token = %q, want %q", result.Token, wantToken)
 	}
 }
 
