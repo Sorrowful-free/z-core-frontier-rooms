@@ -42,14 +42,17 @@ func (h *RoomsHandler) CreateRoom(c fiber.Ctx) error {
 	if err := validateCapacity(req.Capacity); err != nil {
 		return writeAPIError(c, fiber.StatusBadRequest, codeInvalidCapacity, err.Error())
 	}
+	if err := domain.ValidateNickName(req.NickName); err != nil {
+		return writeAPIError(c, fiber.StatusBadRequest, codeInvalidNickName, err.Error())
+	}
 
-	summary, err := h.createUseCase.Create(c.Context(), req.Capacity, req.Password, domain.RoomAttributes(req.Attributes))
+	result, err := h.createUseCase.Create(c.Context(), req.Capacity, req.Password, domain.RoomAttributes(req.Attributes), req.NickName)
 	if err != nil {
 		h.logger.Error("http create room failed", "error", err)
 		return writeUsecaseError(c, err)
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(roomToResponse(summary))
+	return c.Status(fiber.StatusCreated).JSON(issueTicketToResponse(result))
 }
 
 func (h *RoomsHandler) IssueTicket(c fiber.Ctx) error {

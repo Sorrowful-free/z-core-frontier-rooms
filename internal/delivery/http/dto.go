@@ -5,6 +5,7 @@ package http
 type createRoomRequest struct {
 	ID         int64          `json:"id"`
 	Capacity   int            `json:"capacity"`
+	NickName   string         `json:"nick_name"`
 	Password   string         `json:"password,omitempty"`
 	Attributes map[string]any `json:"attributes,omitempty"`
 }

@@ -12,61 +12,101 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/reservation"
 )
 
+type ticketIssuer interface {
+	IssueTicket(ctx context.Context, roomID domain.RoomID, nickName string, password string) (IssueTicketResult, error)
+}
+
 type CreateUseCase struct {
 	roomRegistry registry.RoomRegistry
 	allocator    identity.Allocator
 	reservation  reservation.Reservation
 	limits       httplimits.Limits
+	ticketIssuer ticketIssuer
 	logging      logging.Logger
 }
 
-func NewCreateUseCase(roomRegistry registry.RoomRegistry, allocator identity.Allocator, reservation reservation.Reservation, limits httplimits.Limits, logging logging.Logger) *CreateUseCase {
+func NewCreateUseCase(
+	roomRegistry registry.RoomRegistry,
+	allocator identity.Allocator,
+	reservation reservation.Reservation,
+	limits httplimits.Limits,
+	ticketIssuer ticketIssuer,
+	logging logging.Logger,
+) *CreateUseCase {
 	return &CreateUseCase{
 		roomRegistry: roomRegistry,
 		allocator:    allocator,
 		reservation:  reservation,
 		limits:       limits,
+		ticketIssuer: ticketIssuer,
 		logging:      logging,
 	}
 }
 
-func (uc *CreateUseCase) Create(ctx context.Context, capacity int, password string, attributes domain.RoomAttributes) (RoomSummary, error) {
-
+func (uc *CreateUseCase) Create(
+	ctx context.Context,
+	capacity int,
+	password string,
+	attributes domain.RoomAttributes,
+	nickName string,
+) (IssueTicketResult, error) {
 	if err := ctx.Err(); err != nil {
-		return EmptyRoomSummary, err
+		return IssueTicketResult{}, err
 	}
 
 	rooms, err := uc.roomRegistry.GetList(ctx)
 	if err != nil {
-		return EmptyRoomSummary, err
+		return IssueTicketResult{}, err
 	}
 	if err := uc.limits.AllowCreateRoom(len(rooms)); err != nil {
 		uc.logging.Error("create room: rooms limit reached", "error", err, "current", len(rooms))
-		return EmptyRoomSummary, err
+		return IssueTicketResult{}, err
 	}
 
 	roomID, err := uc.allocator.AllocateRoomID(ctx)
 	if err != nil {
 		uc.logging.Error("create room: allocate room ID failed", "error", err)
-		return EmptyRoomSummary, err
+		return IssueTicketResult{}, err
 	}
 
 	if err := uc.reservation.RegisterRoom(ctx, roomID, capacity, password); err != nil {
 		uc.logging.Error("create room: register room failed", "error", err, "roomID", roomID, "capacity", capacity)
-		return EmptyRoomSummary, err
+		return IssueTicketResult{}, err
 	}
 
-	room, err := uc.roomRegistry.CreateRoom(ctx, roomID, capacity, attributes)
+	_, err = uc.roomRegistry.CreateRoom(ctx, roomID, capacity, attributes)
 	if err != nil {
 		createErr := err
 		if unregisterErr := uc.reservation.UnregisterRoom(ctx, roomID); unregisterErr != nil {
 			uc.logging.Error("create room: unregister room failed", "error", unregisterErr, "roomID", roomID)
-			return EmptyRoomSummary, errors.Join(createErr, unregisterErr)
+			return IssueTicketResult{}, errors.Join(createErr, unregisterErr)
 		}
 		uc.logging.Error("create room: create room failed", "error", createErr, "roomID", roomID, "capacity", capacity)
-		return EmptyRoomSummary, createErr
+		return IssueTicketResult{}, createErr
 	}
 
-	uc.logging.Info("create room: create room success", "roomID", roomID, "capacity", capacity)
-	return *NewRoomSummaryFromRoom(room), nil
+	result, err := uc.ticketIssuer.IssueTicket(ctx, roomID, nickName, password)
+	if err != nil {
+		uc.logging.Error("create room: issue ticket failed", "error", err, "roomID", roomID)
+		return IssueTicketResult{}, uc.rollbackCreatedRoom(ctx, roomID, err)
+	}
+
+	uc.logging.Info("create room: success", "roomID", roomID, "capacity", capacity)
+	return result, nil
+}
+
+func (uc *CreateUseCase) rollbackCreatedRoom(ctx context.Context, roomID domain.RoomID, issueErr error) error {
+	var rollbackErr error
+	if deleteErr := uc.roomRegistry.DeleteRoom(ctx, roomID); deleteErr != nil {
+		uc.logging.Error("create room: rollback delete room failed", "error", deleteErr, "roomID", roomID)
+		rollbackErr = errors.Join(rollbackErr, deleteErr)
+	}
+	if unregisterErr := uc.reservation.UnregisterRoom(ctx, roomID); unregisterErr != nil {
+		uc.logging.Error("create room: rollback unregister room failed", "error", unregisterErr, "roomID", roomID)
+		rollbackErr = errors.Join(rollbackErr, unregisterErr)
+	}
+	if rollbackErr != nil {
+		return errors.Join(issueErr, rollbackErr)
+	}
+	return issueErr
 }

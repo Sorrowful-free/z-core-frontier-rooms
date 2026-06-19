@@ -6,13 +6,22 @@
 
 | Файл | Плоскость | Кратко |
 |------|-----------|--------|
-| `create.go` | Control | `limits.AllowCreateRoom` → `RegisterRoom` → registry (с `attributes`) → откат `UnregisterRoom` |
+| `create.go` | Control | `limits.AllowCreateRoom` → `RegisterRoom` → registry → `IssueTicket` (хост); откат комнаты при ошибке issue |
 | `delete.go` | Control | kick peers (`LeaveRoom`) → `DeleteRoom` → `UnregisterRoom` |
 | `get_list.go` | Control | Список комнат |
 | `issue_ticket.go` | Control | `ValidateNickName` → Reserve → Issue → snapshot комнаты (`RoomSummary`) |
 | `join_room.go` | Data | Validate → Admit → CreatePeer(nick) → Join/Replace → Start |
 | `leave_room.go` | Data | Leave → Stop → Revoke |
 | `sweep_orphan_admitted.go` | Background | admitted без peer в room → Revoke (шаг 4A) |
+
+## Create
+
+```text
+ValidateNickName (HTTP) → limits → RegisterRoom → CreateRoom
+→ IssueTicket(nickName, password) → token + RoomSummary
+```
+
+При ошибке issue после успешного create — `DeleteRoom` + `UnregisterRoom`.
 
 ## IssueTicket
 

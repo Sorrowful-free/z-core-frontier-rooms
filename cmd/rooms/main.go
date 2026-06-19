@@ -79,8 +79,8 @@ func run() error {
 		return fmt.Errorf("http limits: %w", err)
 	}
 
-	createUseCase := room.NewCreateUseCase(roomRegistry, allocator, reservation, httpLimits, zaplog.NewFrom(z, "create use case"))
 	issueTicketUseCase := room.NewIssueTicketUseCase(roomRegistry, allocator, admission, reservation, zaplog.NewFrom(z, "issue ticket use case"))
+	createUseCase := room.NewCreateUseCase(roomRegistry, allocator, reservation, httpLimits, issueTicketUseCase, zaplog.NewFrom(z, "create use case"))
 	leaveRoomUseCase := room.NewLeaveRoomUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "leave room use case"))
 	deleteUseCase := room.NewDeleteUseCase(roomRegistry, reservation, leaveRoomUseCase, zaplog.NewFrom(z, "delete use case"))
 	joinRoomUseCase := room.NewJoinRoomUseCase(admission, peerFactory, roomRegistry, reservation, zaplog.NewFrom(z, "join room use case"))

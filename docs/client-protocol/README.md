@@ -25,10 +25,8 @@ sequenceDiagram
   participant UDP as ENet_7777
   participant Room
 
-  Client->>HTTP: POST /rooms
-  HTTP-->>Client: room_id
-  Client->>HTTP: POST /rooms/:id/tickets
-  HTTP-->>Client: token base64url
+  Client->>HTTP: POST /rooms (nick_name)
+  HTTP-->>Client: token base64url + room
   Note over Client: base64 decode
   Client->>UDP: connect + raw ticket packet
   UDP->>Room: JoinRoom
@@ -47,7 +45,7 @@ sequenceDiagram
 
 ## Чеклист реализации (Godot, ENet)
 
-1. **HTTP** — create room, issue ticket ([http.md](http.md)); API key в заголовке.
+1. **HTTP** — create room с `nick_name` (хост получает ticket), issue ticket для joiners ([http.md](http.md)); API key в заголовке.
 2. **Decode token** — base64url → `ticket_bytes` (`ticket_bytes[0] == 2`).
 3. **ENet client** — connect `host:7777`; см. [enet.md](enet.md).
 4. **Admit** — первый пакет ch0 reliable = сырые `ticket_bytes`.

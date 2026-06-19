@@ -26,13 +26,14 @@ X-API-Key: <HTTP_API_KEY>
 
 ## Endpoints
 
-### `POST /rooms` — создать комнату
+### `POST /rooms` — создать комнату и выдать ticket хосту
 
 **Запрос:**
 
 ```json
 {
   "capacity": 8,
+  "nick_name": "HostPlayer",
   "password": "optional-secret",
   "attributes": {
     "map": "de_dust2",
@@ -44,7 +45,8 @@ X-API-Key: <HTTP_API_KEY>
 | Поле | Тип | Правила |
 |------|-----|---------|
 | `capacity` | int | Обязательно, `1…127` (`domain.MaxRoomCapacity`) |
-| `password` | string | Опционально; если задан — нужен при issue ticket и delete |
+| `nick_name` | string | Обязательно; см. [Правила nick_name](#правила-nick_name) |
+| `password` | string | Опционально; если задан — нужен при join через `/tickets` и delete |
 | `attributes` | object | Опционально; произвольный JSON-словарь (название карты, режим и т.п.); возвращается в create/list |
 
 Поле `id` в JSON **игнорируется** — ID выдаёт сервер.
@@ -53,16 +55,21 @@ X-API-Key: <HTTP_API_KEY>
 
 ```json
 {
-  "id": 42,
-  "attributes": {
-    "map": "de_dust2",
-    "mode": "deathmatch"
-  },
-  "peers": []
+  "token": "AgAAAA...base64url...",
+  "room": {
+    "id": 42,
+    "attributes": {
+      "map": "de_dust2",
+      "mode": "deathmatch"
+    },
+    "peers": []
+  }
 }
 ```
 
-**Ошибки:** `400` `invalid_capacity`, `503` `rooms_limit_reached`, `429` `rate_limited`.
+`token` — **base64.RawURLEncoding** (без padding `=`). Декодировать в сырые байты ticket v2 → первый UDP-пакет ([enet.md](enet.md)) или query `?token=` для WS.
+
+**Ошибки:** `400` `invalid_capacity`, `400` `invalid_nick_name`, `503` `rooms_limit_reached`, `429` `rate_limited`, а также ошибки issue ticket (`401` `invalid_credentials`, `409` `reservation_full` и т.д.) — при сбое issue созданная комната откатывается.
 
 ---
 
@@ -102,7 +109,9 @@ X-API-Key: <HTTP_API_KEY>
 
 ---
 
-### `POST /rooms/:id/tickets` — выдать ticket
+### `POST /rooms/:id/tickets` — выдать ticket (joiners)
+
+Для игроков, присоединяющихся к **уже существующей** комнате. Хост получает ticket сразу при create.
 
 **Запрос:**
 
@@ -163,7 +172,23 @@ X-API-Key: <HTTP_API_KEY>
 
 Issue ticket резервирует слот на TTL (`ADMISSION_TTL`). Пока слот `reserved` или `admitted` без активного peer — повторный issue с другим nick может дать `ticket_slot_held`. Подробнее: [internal/adapter/reservation/README.md](../../internal/adapter/reservation/README.md).
 
-## Godot: пример issue ticket
+## Godot: пример create room (хост)
+
+```gdscript
+var http := HTTPRequest.new()
+add_child(http)
+var headers := PackedStringArray(["Authorization: Bearer " + api_key, "Content-Type: application/json"])
+var body := JSON.stringify({
+	"capacity": 8,
+	"nick_name": "HostPlayer",
+	"password": "",
+	"attributes": {"map": "de_dust2"}
+})
+http.request("http://localhost:3000/rooms", headers, HTTPClient.METHOD_POST, body)
+# В ответе JSON: var token: String = parsed["token"], var room_id: int = parsed["room"]["id"]
+```
+
+## Godot: пример issue ticket (joiner)
 
 ```gdscript
 var http := HTTPRequest.new()

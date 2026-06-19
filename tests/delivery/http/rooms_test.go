@@ -64,8 +64,8 @@ func newTestEnvWithLimits(t *testing.T, httpLimits httplimitsadapter.HTTPLimitsC
 	})
 	allocator := identityadapter.NewCounter()
 
-	createUC := useroom.NewCreateUseCase(registry, allocator, reservation, limits, logger)
 	issueUC := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
+	createUC := useroom.NewCreateUseCase(registry, allocator, reservation, limits, issueUC, logger)
 	leaveUC := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
 	deleteUC := useroom.NewDeleteUseCase(registry, reservation, leaveUC, logger)
 	getListUC := useroom.NewGetListUseCase(registry, logger)
@@ -117,27 +117,53 @@ func (e *testEnv) doWithHeader(t *testing.T, method, target string, body any, he
 	return resp, respBody
 }
 
+func createRoomRequest(extra map[string]any) map[string]any {
+	req := map[string]any{
+		"capacity":  4,
+		"nick_name": "player",
+	}
+	for k, v := range extra {
+		req[k] = v
+	}
+	return req
+}
+
+type createRoomResponse struct {
+	Token string `json:"token"`
+	Room  struct {
+		ID         int64          `json:"id"`
+		Attributes map[string]any `json:"attributes"`
+		Peers      []any          `json:"peers"`
+	} `json:"room"`
+}
+
+func parseCreateRoomResponse(t *testing.T, body []byte) createRoomResponse {
+	t.Helper()
+	var created createRoomResponse
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatalf("unmarshal create: %v", err)
+	}
+	return created
+}
+
 func TestHTTP_CreateGetListDeleteRoom(t *testing.T) {
 	t.Parallel()
 
 	env := newTestEnv(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", map[string]any{
+	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
 		"capacity": 2,
-	})
+	}))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create status = %d, body = %s", resp.StatusCode, body)
 	}
 
-	var created struct {
-		ID    int64 `json:"id"`
-		Peers []any `json:"peers"`
+	created := parseCreateRoomResponse(t, body)
+	if created.Room.ID <= 0 {
+		t.Fatalf("id = %d, want positive server-assigned id", created.Room.ID)
 	}
-	if err := json.Unmarshal(body, &created); err != nil {
-		t.Fatalf("unmarshal create: %v", err)
-	}
-	if created.ID <= 0 {
-		t.Fatalf("id = %d, want positive server-assigned id", created.ID)
+	if created.Token == "" {
+		t.Fatalf("token = empty, want non-empty")
 	}
 
 	resp, body = env.do(t, http.MethodGet, "/rooms", nil)
@@ -153,11 +179,11 @@ func TestHTTP_CreateGetListDeleteRoom(t *testing.T) {
 	if err := json.Unmarshal(body, &list); err != nil {
 		t.Fatalf("unmarshal list: %v", err)
 	}
-	if len(list.Rooms) != 1 || list.Rooms[0].ID != created.ID {
-		t.Fatalf("list = %+v, want one room id %d", list.Rooms, created.ID)
+	if len(list.Rooms) != 1 || list.Rooms[0].ID != created.Room.ID {
+		t.Fatalf("list = %+v, want one room id %d", list.Rooms, created.Room.ID)
 	}
 
-	resp, body = env.do(t, http.MethodDelete, "/rooms/"+formatID(created.ID), nil)
+	resp, body = env.do(t, http.MethodDelete, "/rooms/"+formatID(created.Room.ID), nil)
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete status = %d, body = %s", resp.StatusCode, body)
 	}
@@ -179,29 +205,26 @@ func TestHTTP_CreateRoomWithAttributes(t *testing.T) {
 
 	env := newTestEnv(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", map[string]any{
+	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
 		"capacity": 4,
 		"attributes": map[string]any{
 			"map":  "de_dust2",
 			"mode": "deathmatch",
 		},
-	})
+	}))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create status = %d, body = %s", resp.StatusCode, body)
 	}
 
-	var created struct {
-		ID         int64          `json:"id"`
-		Attributes map[string]any `json:"attributes"`
+	created := parseCreateRoomResponse(t, body)
+	if created.Room.Attributes["map"] != "de_dust2" {
+		t.Fatalf("attributes.map = %v, want de_dust2", created.Room.Attributes["map"])
 	}
-	if err := json.Unmarshal(body, &created); err != nil {
-		t.Fatalf("unmarshal create: %v", err)
+	if created.Room.Attributes["mode"] != "deathmatch" {
+		t.Fatalf("attributes.mode = %v, want deathmatch", created.Room.Attributes["mode"])
 	}
-	if created.Attributes["map"] != "de_dust2" {
-		t.Fatalf("attributes.map = %v, want de_dust2", created.Attributes["map"])
-	}
-	if created.Attributes["mode"] != "deathmatch" {
-		t.Fatalf("attributes.mode = %v, want deathmatch", created.Attributes["mode"])
+	if created.Token == "" {
+		t.Fatalf("token = empty, want non-empty")
 	}
 
 	resp, body = env.do(t, http.MethodGet, "/rooms", nil)
@@ -224,55 +247,56 @@ func TestHTTP_CreateRoomWithAttributes(t *testing.T) {
 	if list.Rooms[0].Attributes["map"] != "de_dust2" {
 		t.Fatalf("list attributes.map = %v, want de_dust2", list.Rooms[0].Attributes["map"])
 	}
-
-	resp, body = env.do(t, http.MethodPost, "/rooms/"+formatID(created.ID)+"/tickets", map[string]any{
-		"nick_name": "player",
-	})
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("issue status = %d, body = %s", resp.StatusCode, body)
-	}
-
-	var ticket struct {
-		Token string `json:"token"`
-		Room  struct {
-			ID         int64          `json:"id"`
-			Attributes map[string]any `json:"attributes"`
-			Peers      []any          `json:"peers"`
-		} `json:"room"`
-	}
-	if err := json.Unmarshal(body, &ticket); err != nil {
-		t.Fatalf("unmarshal ticket: %v", err)
-	}
-	if ticket.Room.ID != created.ID {
-		t.Fatalf("ticket room.id = %d, want %d", ticket.Room.ID, created.ID)
-	}
-	if ticket.Room.Attributes["map"] != "de_dust2" {
-		t.Fatalf("ticket attributes.map = %v, want de_dust2", ticket.Room.Attributes["map"])
-	}
 }
 
-func TestHTTP_IssueTicket(t *testing.T) {
+func TestHTTP_CreateReturnsTicket(t *testing.T) {
 	t.Parallel()
 
 	env := newTestEnv(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", map[string]any{
+	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
 		"capacity": 4,
-	})
+	}))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create status = %d, body = %s", resp.StatusCode, body)
 	}
 
-	var created struct {
-		ID int64 `json:"id"`
-	}
-	if err := json.Unmarshal(body, &created); err != nil {
-		t.Fatalf("unmarshal create: %v", err)
-	}
+	created := parseCreateRoomResponse(t, body)
 
 	const nickName = "player"
-	resp, body = env.do(t, http.MethodPost, "/rooms/"+formatID(created.ID)+"/tickets", map[string]any{
-		"nick_name": nickName,
+	if created.Room.ID <= 0 {
+		t.Fatalf("room.id = %d, want positive", created.Room.ID)
+	}
+	if created.Room.Peers == nil {
+		t.Fatalf("room.peers = nil, want empty slice")
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(created.Token)
+	if err != nil {
+		t.Fatalf("decode token: %v", err)
+	}
+	wantTokenLen := 34 + len(nickName) + 32
+	if len(raw) != wantTokenLen {
+		t.Fatalf("token len = %d, want %d", len(raw), wantTokenLen)
+	}
+}
+
+func TestHTTP_IssueTicketForJoiner(t *testing.T) {
+	t.Parallel()
+
+	env := newTestEnv(t)
+
+	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
+		"capacity":  4,
+		"nick_name": "host",
+	}))
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", resp.StatusCode, body)
+	}
+	created := parseCreateRoomResponse(t, body)
+
+	const joinerNick = "joiner"
+	resp, body = env.do(t, http.MethodPost, "/rooms/"+formatID(created.Room.ID)+"/tickets", map[string]any{
+		"nick_name": joinerNick,
 	})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("issue status = %d, body = %s", resp.StatusCode, body)
@@ -281,25 +305,27 @@ func TestHTTP_IssueTicket(t *testing.T) {
 	var ticket struct {
 		Token string `json:"token"`
 		Room  struct {
-			ID         int64          `json:"id"`
-			Attributes map[string]any `json:"attributes"`
-			Peers      []any          `json:"peers"`
+			ID    int64 `json:"id"`
+			Peers []any `json:"peers"`
 		} `json:"room"`
 	}
 	if err := json.Unmarshal(body, &ticket); err != nil {
 		t.Fatalf("unmarshal ticket: %v", err)
 	}
-	if ticket.Room.ID != created.ID {
-		t.Fatalf("room.id = %d, want %d", ticket.Room.ID, created.ID)
+	if ticket.Room.ID != created.Room.ID {
+		t.Fatalf("room.id = %d, want %d", ticket.Room.ID, created.Room.ID)
 	}
-	if ticket.Room.Peers == nil {
-		t.Fatalf("room.peers = nil, want empty slice")
+	if ticket.Token == "" {
+		t.Fatalf("token = empty, want non-empty")
+	}
+	if ticket.Token == created.Token {
+		t.Fatalf("joiner token must differ from host token")
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(ticket.Token)
 	if err != nil {
 		t.Fatalf("decode token: %v", err)
 	}
-	wantTokenLen := 34 + len(nickName) + 32
+	wantTokenLen := 34 + len(joinerNick) + 32
 	if len(raw) != wantTokenLen {
 		t.Fatalf("token len = %d, want %d", len(raw), wantTokenLen)
 	}
@@ -310,29 +336,19 @@ func TestHTTP_CreateAssignsDistinctRoomIDs(t *testing.T) {
 
 	env := newTestEnv(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", map[string]any{"capacity": 1})
+	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{"capacity": 1}))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("first create status = %d, body = %s", resp.StatusCode, body)
 	}
-	var first struct {
-		ID int64 `json:"id"`
-	}
-	if err := json.Unmarshal(body, &first); err != nil {
-		t.Fatalf("unmarshal first: %v", err)
-	}
+	first := parseCreateRoomResponse(t, body)
 
-	resp, body = env.do(t, http.MethodPost, "/rooms", map[string]any{"capacity": 1})
+	resp, body = env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{"capacity": 1, "nick_name": "host2"}))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("second create status = %d, body = %s", resp.StatusCode, body)
 	}
-	var second struct {
-		ID int64 `json:"id"`
-	}
-	if err := json.Unmarshal(body, &second); err != nil {
-		t.Fatalf("unmarshal second: %v", err)
-	}
-	if first.ID == second.ID {
-		t.Fatalf("room ids = %d, want distinct server-assigned ids", first.ID)
+	second := parseCreateRoomResponse(t, body)
+	if first.Room.ID == second.Room.ID {
+		t.Fatalf("room ids = %d, want distinct server-assigned ids", first.Room.ID)
 	}
 }
 
@@ -379,18 +395,13 @@ func TestHTTP_IssueTicketInvalidNickName(t *testing.T) {
 
 	env := newTestEnv(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", map[string]any{"capacity": 2})
+	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{"capacity": 2}))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create status = %d, body = %s", resp.StatusCode, body)
 	}
-	var created struct {
-		ID int64 `json:"id"`
-	}
-	if err := json.Unmarshal(body, &created); err != nil {
-		t.Fatalf("unmarshal create: %v", err)
-	}
+	created := parseCreateRoomResponse(t, body)
 
-	resp, body = env.do(t, http.MethodPost, "/rooms/"+formatID(created.ID)+"/tickets", map[string]any{
+	resp, body = env.do(t, http.MethodPost, "/rooms/"+formatID(created.Room.ID)+"/tickets", map[string]any{
 		"password": "secret",
 	})
 	if resp.StatusCode != http.StatusBadRequest {
@@ -409,6 +420,35 @@ func TestHTTP_IssueTicketRoomNotFound(t *testing.T) {
 		t.Fatalf("status = %d, want 404, body = %s", resp.StatusCode, body)
 	}
 	assertErrorCode(t, body, "room_not_found")
+}
+
+func TestHTTP_CreateMissingNickName(t *testing.T) {
+	t.Parallel()
+
+	env := newTestEnv(t)
+
+	resp, body := env.do(t, http.MethodPost, "/rooms", map[string]any{
+		"capacity": 2,
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", resp.StatusCode, body)
+	}
+	assertErrorCode(t, body, "invalid_nick_name")
+}
+
+func TestHTTP_CreateInvalidNickName(t *testing.T) {
+	t.Parallel()
+
+	env := newTestEnv(t)
+
+	resp, body := env.do(t, http.MethodPost, "/rooms", map[string]any{
+		"capacity":  2,
+		"nick_name": "",
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", resp.StatusCode, body)
+	}
+	assertErrorCode(t, body, "invalid_nick_name")
 }
 
 func TestHTTP_CreateInvalidBody(t *testing.T) {
@@ -434,9 +474,9 @@ func TestHTTP_CreateInvalidCapacity(t *testing.T) {
 
 	env := newTestEnv(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", map[string]any{
+	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
 		"capacity": 0,
-	})
+	}))
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400, body = %s", resp.StatusCode, body)
 	}
@@ -448,9 +488,9 @@ func TestHTTP_CreateCapacityExceedsMax(t *testing.T) {
 
 	env := newTestEnv(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", map[string]any{
+	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
 		"capacity": 128,
-	})
+	}))
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400, body = %s", resp.StatusCode, body)
 	}
@@ -462,26 +502,16 @@ func TestHTTP_IssueTicketReservationFull(t *testing.T) {
 
 	env := newTestEnv(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", map[string]any{"capacity": 1})
+	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{"capacity": 1, "nick_name": "host"}))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create status = %d, body = %s", resp.StatusCode, body)
 	}
-	var created struct {
-		ID int64 `json:"id"`
-	}
-	if err := json.Unmarshal(body, &created); err != nil {
-		t.Fatalf("unmarshal create: %v", err)
-	}
-	roomPath := "/rooms/" + formatID(created.ID) + "/tickets"
-
-	resp, body = env.do(t, http.MethodPost, roomPath, map[string]any{"nick_name": "player"})
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("first issue status = %d, body = %s", resp.StatusCode, body)
-	}
+	created := parseCreateRoomResponse(t, body)
+	roomPath := "/rooms/" + formatID(created.Room.ID) + "/tickets"
 
 	resp, body = env.do(t, http.MethodPost, roomPath, map[string]any{"nick_name": "player2"})
 	if resp.StatusCode != http.StatusConflict {
-		t.Fatalf("second issue status = %d, want 409, body = %s", resp.StatusCode, body)
+		t.Fatalf("issue status = %d, want 409, body = %s", resp.StatusCode, body)
 	}
 	assertErrorCode(t, body, "reservation_full")
 }
@@ -491,20 +521,18 @@ func TestHTTP_RoomPasswordOnCreateIssueDelete(t *testing.T) {
 
 	env := newTestEnv(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", map[string]any{
+	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
 		"capacity": 2,
 		"password": "room-pass",
-	})
+	}))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create status = %d, body = %s", resp.StatusCode, body)
 	}
-	var created struct {
-		ID int64 `json:"id"`
+	created := parseCreateRoomResponse(t, body)
+	roomPath := "/rooms/" + formatID(created.Room.ID)
+	if created.Token == "" {
+		t.Fatalf("host token = empty, want non-empty")
 	}
-	if err := json.Unmarshal(body, &created); err != nil {
-		t.Fatalf("unmarshal create: %v", err)
-	}
-	roomPath := "/rooms/" + formatID(created.ID)
 
 	resp, body = env.do(t, http.MethodPost, roomPath+"/tickets", map[string]any{
 		"nick_name": "player",
