@@ -18,7 +18,7 @@ OpCode ошибок: [internal/delivery/errors/README.md](../internal/delivery/e
 | Пустой / отсутствует ID | `PeerID(0)`, `RoomID(0)` и т.д. — невалидны; на wire `peer_id u32 = 0` = «нет целевого peer» (RPC) |
 | Лимиты | См. константы в codec; при превышении encode/decode возвращает ошибку |
 
-**ID в map:** ключ map — единственный instance id на wire. В теле value **не** дублируется `PeerID` / `EntityID` (u16) / `ComponentID` / `ValueId` (кроме ключа map). Поле `entity_id u8` в entity payload — тип сущности, не instance id.
+**ID в map:** ключ map — единственный instance id на wire. В теле value **не** дублируется `PeerID` / `EntityID` (u16) / `ComponentID` / `ValueId` (кроме ключа map). Поле `entity_type_id u8` в entity payload — тип сущности, не instance id.
 
 **Отправитель input:** `RoomEvent.PeerID` на сервере; в payload input **нет** `peer_id`.
 
@@ -57,12 +57,12 @@ payload      — writeComponentState (values map)
 ## Entity (payload в room map)
 
 ```text
-entity_id   u8   — тип сущности (игровой enum на клиенте)
-owner       u32
-components  map ComponentID → component payload
+entity_type_id u8   — тип сущности (игровой enum на клиенте)
+owner          u32
+components     map ComponentID → component payload
 ```
 
-Ключ map: `EntityID u16` — instance id. Поле `entity_id` в payload — **тип** сущности, не дублирует ключ map.
+Ключ map: `EntityID u16` — instance id. Поле `entity_type_id` в payload — **тип** сущности, не дублирует ключ map.
 
 Max components: **64** (`EntityStateMaxComponents`).
 
@@ -70,11 +70,11 @@ Max components: **64** (`EntityStateMaxComponents`).
 
 ```text
 flags u8
-  bit0 (1) — entity_id u8 present
+  bit0 (1) — entity_type_id u8 present
   bit1 (2) — owner u32 present
   bit2 (4) — components map patch present
 
-[entity_id u8]
+[entity_type_id u8]
 [owner u32]
 [components patch]
 ```

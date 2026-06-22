@@ -115,7 +115,7 @@ func TestEntityState_entityTypeID_roundTrip(t *testing.T) {
 		t.Fatalf("ApplyPatch: %v", err)
 	}
 	if cur.EntityTypeID != state.EntityTypeID(2) {
-		t.Fatalf("entity_id = %d, want 2", cur.EntityTypeID)
+		t.Fatalf("entity_type_id = %d, want 2", cur.EntityTypeID)
 	}
 }
 

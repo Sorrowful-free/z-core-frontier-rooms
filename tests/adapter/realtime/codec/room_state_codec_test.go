@@ -71,7 +71,7 @@ func TestRoomStateCodec_roundTrip_withPeerInputEntity(t *testing.T) {
 	}
 	ent := got.Entities[state.EntityID(10)]
 	if ent.EntityTypeID != state.EntityTypeID(5) {
-		t.Fatalf("entity_id = %d, want 5", ent.EntityTypeID)
+		t.Fatalf("entity_type_id = %d, want 5", ent.EntityTypeID)
 	}
 	if ent.Owner != domain.PeerID(2) {
 		t.Fatalf("entity owner = %d", ent.Owner)

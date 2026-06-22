@@ -30,7 +30,7 @@ func TestEntitiesStateCodec_roundTrip_entityTypeID(t *testing.T) {
 
 	ent := got[state.EntityID(10)]
 	if ent.EntityTypeID != state.EntityTypeID(3) {
-		t.Fatalf("entity_id = %d, want 3", ent.EntityTypeID)
+		t.Fatalf("entity_type_id = %d, want 3", ent.EntityTypeID)
 	}
 	if ent.Owner != domain.PeerID(2) {
 		t.Fatalf("owner = %d, want 2", ent.Owner)
@@ -61,6 +61,6 @@ func TestEntitiesStateCodec_patch_entityTypeIDOnly(t *testing.T) {
 		t.Fatal("expected updated entity patch")
 	}
 	if updated.EntityTypeID == nil || *updated.EntityTypeID != state.EntityTypeID(7) {
-		t.Fatalf("entity_id patch = %v, want 7", updated.EntityTypeID)
+		t.Fatalf("entity_type_id patch = %v, want 7", updated.EntityTypeID)
 	}
 }

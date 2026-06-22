@@ -71,4 +71,4 @@ sequenceDiagram
 
 ## Opaque ID
 
-`ValueId`, `ComponentID`, `EntityID`, `EntityTypeID` (`entity_id` на wire), `RpcID` — opaque на wire. Семантику задаёт игра на клиенте.
+`ValueId`, `ComponentID`, `EntityID` (u16, ключ map), `EntityTypeID` (`entity_type_id` u8 на wire), `RpcID` — opaque на wire. Семантику задаёт игра на клиенте.
