@@ -67,6 +67,8 @@ func is_local_master(room_state: Dictionary, local_peer_id: int) -> bool:
 
 OpCodes `0x03` / `0x04` несут **только** entities map (не полный room). После приёма сервер merge в authoritative state и шлёт room patch остальным.
 
+Каждая entity в map содержит `entity_id u8` — тип сущности для spawn на клиенте (игровой enum). Instance id — ключ map `EntityID u16`.
+
 ## RPC (`0x07`)
 
 ```text

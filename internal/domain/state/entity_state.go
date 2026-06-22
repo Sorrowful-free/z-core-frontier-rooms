@@ -14,14 +14,26 @@ func (e EntityID) IsValid() bool {
 	return e != EntityIDNone
 }
 
+type EntityTypeID byte
+
+const (
+	EntityTypeIDNone EntityTypeID = 0
+)
+
+func (e EntityTypeID) IsValid() bool {
+	return e != EntityTypeIDNone
+}
+
 type EntityState struct {
-	Owner      domain.PeerID
-	Components MapState[ComponentID, ComponentState]
+	EntityTypeID EntityTypeID
+	Owner        domain.PeerID
+	Components   MapState[ComponentID, ComponentState]
 }
 
 type EntityStatePatch struct {
-	Owner      *domain.PeerID
-	Components MapStatePatch[ComponentID, ComponentState, ComponentStatePatch]
+	EntityTypeID *EntityTypeID
+	Owner        *domain.PeerID
+	Components   MapStatePatch[ComponentID, ComponentState, ComponentStatePatch]
 }
 
 type EntitiesState = MapState[EntityID, EntityState]
@@ -29,7 +41,9 @@ type EntitiesState = MapState[EntityID, EntityState]
 type EntitiesStatePatch = MapStatePatch[EntityID, EntityState, EntityStatePatch]
 
 func (e *EntityState) Equals(other *EntityState, equals func(ComponentState, ComponentState) bool) bool {
-	return e.Owner == other.Owner && e.Components.Equals(other.Components, equals)
+	return e.EntityTypeID == other.EntityTypeID &&
+		e.Owner == other.Owner &&
+		e.Components.Equals(other.Components, equals)
 }
 
 func (e *EntityState) MakePatch(newEntityState *EntityState) (*EntityStatePatch, error) {
@@ -38,6 +52,11 @@ func (e *EntityState) MakePatch(newEntityState *EntityState) (*EntityStatePatch,
 	}
 
 	hasChanges := false
+
+	if e.EntityTypeID != newEntityState.EntityTypeID {
+		patch.EntityTypeID = &newEntityState.EntityTypeID
+		hasChanges = true
+	}
 
 	if e.Owner != newEntityState.Owner {
 		patch.Owner = &newEntityState.Owner
@@ -73,8 +92,9 @@ func (e *EntityState) MakePatch(newEntityState *EntityState) (*EntityStatePatch,
 
 func (e EntityState) Clone() EntityState {
 	return EntityState{
-		Owner:      e.Owner,
-		Components: CloneMapState(e.Components, func(c ComponentState) ComponentState { return c.Clone() }),
+		EntityTypeID: e.EntityTypeID,
+		Owner:        e.Owner,
+		Components:   CloneMapState(e.Components, func(c ComponentState) ComponentState { return c.Clone() }),
 	}
 }
 
@@ -94,6 +114,9 @@ func (e *EntityState) ApplyPatch(patch EntityStatePatch) error {
 	e.Components = nextComponents
 	if patch.Owner != nil && *patch.Owner != e.Owner {
 		e.Owner = *patch.Owner
+	}
+	if patch.EntityTypeID != nil {
+		e.EntityTypeID = *patch.EntityTypeID
 	}
 	return nil
 }

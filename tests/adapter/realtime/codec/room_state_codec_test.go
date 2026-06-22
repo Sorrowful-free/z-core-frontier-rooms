@@ -41,8 +41,9 @@ func TestRoomStateCodec_roundTrip_withPeerInputEntity(t *testing.T) {
 	room.Inputs[domain.PeerID(2)].Values[state.ValueId(1)] = state.ValueState([]byte{0xAA})
 
 	room.Entities[state.EntityID(10)] = state.EntityState{
-		Owner:      domain.PeerID(2),
-		Components: state.NewMapState[state.ComponentID, state.ComponentState](),
+		EntityTypeID: state.EntityTypeID(5),
+		Owner:        domain.PeerID(2),
+		Components:   state.NewMapState[state.ComponentID, state.ComponentState](),
 	}
 	room.Entities[state.EntityID(10)].Components[state.ComponentID(1)] = state.ComponentState{
 		Values: state.NewMapState[state.ValueId, state.ValueState](),
@@ -69,6 +70,9 @@ func TestRoomStateCodec_roundTrip_withPeerInputEntity(t *testing.T) {
 		t.Fatalf("input mismatch")
 	}
 	ent := got.Entities[state.EntityID(10)]
+	if ent.EntityTypeID != state.EntityTypeID(5) {
+		t.Fatalf("entity_id = %d, want 5", ent.EntityTypeID)
+	}
 	if ent.Owner != domain.PeerID(2) {
 		t.Fatalf("entity owner = %d", ent.Owner)
 	}

@@ -13,7 +13,8 @@ const (
 	EntitiesStateMaxEntities = 65535
 )
 const (
-	EntityStateFlagsOwner = 1 << iota
+	EntityStateFlagsEntityTypeID = 1 << iota
+	EntityStateFlagsOwner
 	EntityStateFlagsComponents
 )
 
@@ -83,6 +84,9 @@ func readEntityID(buf *bytes.Buffer) (state.EntityID, error) {
 }
 
 func writeEntityState(buf *bytes.Buffer, entity *state.EntityState) error {
+	if err := binary.Write(buf, binary.BigEndian, entity.EntityTypeID); err != nil {
+		return err
+	}
 	if err := writePeerID(buf, entity.Owner); err != nil {
 		return err
 	}
@@ -94,6 +98,10 @@ func writeEntityState(buf *bytes.Buffer, entity *state.EntityState) error {
 }
 
 func readEntityState(buf *bytes.Buffer) (*state.EntityState, error) {
+	var entityTypeID state.EntityTypeID
+	if err := binary.Read(buf, binary.BigEndian, &entityTypeID); err != nil {
+		return nil, err
+	}
 	owner, err := readPeerID(buf)
 	if err != nil {
 		return nil, err
@@ -106,12 +114,15 @@ func readEntityState(buf *bytes.Buffer) (*state.EntityState, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &state.EntityState{Owner: owner, Components: components}, nil
+	return &state.EntityState{EntityTypeID: entityTypeID, Owner: owner, Components: components}, nil
 }
 
 func writeEntityStatePatch(buf *bytes.Buffer, patch *state.EntityStatePatch) error {
 
 	flags := byte(0)
+	if patch.EntityTypeID != nil {
+		flags |= EntityStateFlagsEntityTypeID
+	}
 	if patch.Owner != nil {
 		flags |= EntityStateFlagsOwner
 	}
@@ -121,6 +132,11 @@ func writeEntityStatePatch(buf *bytes.Buffer, patch *state.EntityStatePatch) err
 	if err := binary.Write(buf, binary.BigEndian, flags); err != nil {
 		return err
 	}
+	if patch.EntityTypeID != nil {
+		if err := binary.Write(buf, binary.BigEndian, *patch.EntityTypeID); err != nil {
+			return err
+		}
+	}
 	if patch.Owner != nil {
 		if err := binary.Write(buf, binary.BigEndian, *patch.Owner); err != nil {
 			return err
@@ -128,13 +144,15 @@ func writeEntityStatePatch(buf *bytes.Buffer, patch *state.EntityStatePatch) err
 	}
 
 	if flags&EntityStateFlagsComponents == EntityStateFlagsComponents {
-		return writeMapPatсhState(buf, patch.Components, func(k state.ComponentID, buf *bytes.Buffer) error {
+		if err := writeMapPatсhState(buf, patch.Components, func(k state.ComponentID, buf *bytes.Buffer) error {
 			return writeComponentID(buf, k)
 		}, func(c *state.ComponentState, buf *bytes.Buffer) error {
 			return writeComponentState(buf, c)
 		}, func(c *state.ComponentStatePatch, buf *bytes.Buffer) error {
 			return writeComponentStatePatch(buf, c)
-		}, EntityStateMaxComponents)
+		}, EntityStateMaxComponents); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -144,6 +162,15 @@ func readEntityStatePatch(buf *bytes.Buffer) (*state.EntityStatePatch, error) {
 	var flags byte
 	if err := binary.Read(buf, binary.BigEndian, &flags); err != nil {
 		return nil, err
+	}
+
+	var entityTypeID *state.EntityTypeID
+	if flags&EntityStateFlagsEntityTypeID == EntityStateFlagsEntityTypeID {
+		var id state.EntityTypeID
+		if err := binary.Read(buf, binary.BigEndian, &id); err != nil {
+			return nil, err
+		}
+		entityTypeID = &id
 	}
 
 	var owner *domain.PeerID
@@ -170,5 +197,5 @@ func readEntityStatePatch(buf *bytes.Buffer) (*state.EntityStatePatch, error) {
 		}
 		components = *c
 	}
-	return &state.EntityStatePatch{Owner: owner, Components: components}, nil
+	return &state.EntityStatePatch{EntityTypeID: entityTypeID, Owner: owner, Components: components}, nil
 }

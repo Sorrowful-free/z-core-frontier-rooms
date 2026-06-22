@@ -85,6 +85,40 @@ func TestEntityState_ApplyPatch_errorPreservesOwnerAndComponents(t *testing.T) {
 	}
 }
 
+func TestEntityState_entityTypeID_roundTrip(t *testing.T) {
+	t.Parallel()
+
+	cur := &state.EntityState{
+		EntityTypeID: state.EntityTypeID(1),
+		Owner:        domain.PeerID(1),
+		Components:   state.NewMapState[state.ComponentID, state.ComponentState](),
+	}
+
+	next := &state.EntityState{
+		EntityTypeID: state.EntityTypeID(2),
+		Owner:        domain.PeerID(1),
+		Components:   state.NewMapState[state.ComponentID, state.ComponentState](),
+	}
+
+	patch, err := cur.MakePatch(next)
+	if err != nil {
+		t.Fatalf("MakePatch: %v", err)
+	}
+	if patch == nil {
+		t.Fatal("expected patch")
+	}
+	if patch.EntityTypeID == nil || *patch.EntityTypeID != state.EntityTypeID(2) {
+		t.Fatalf("EntityTypeID patch = %v, want 2", patch.EntityTypeID)
+	}
+
+	if err := cur.ApplyPatch(*patch); err != nil {
+		t.Fatalf("ApplyPatch: %v", err)
+	}
+	if cur.EntityTypeID != state.EntityTypeID(2) {
+		t.Fatalf("entity_id = %d, want 2", cur.EntityTypeID)
+	}
+}
+
 func TestEntityState_ownerAndComponentValue_roundTrip(t *testing.T) {
 	t.Parallel()
 
