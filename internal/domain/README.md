@@ -26,7 +26,8 @@
 | `reservation_error.go` | Слоты (`ErrReservationFull`, …) |
 
 Wire OpCode: `opcodes.go` (join `0x40+`, in-room `0x60+`, reservation `0x70+`).  
-Маппинг на wire — только `internal/delivery/errors`.
+In-room маппинг: `InRoomErrorOpCode` в `room_errors.go` (использует adapter/realtime).  
+Join/reservation маппинг и `Send*` — `internal/delivery/errors`.
 
 ## Игровой state
 

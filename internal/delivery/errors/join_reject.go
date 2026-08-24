@@ -57,29 +57,12 @@ func IsInRoomErrorOpCode(op domain.OpCode) bool {
 	return op >= 0x60 && op <= 0x6F
 }
 
-// InRoomErrorOpCode maps in-room errors to wire OpCode (0x60–0x6F, empty payload).
+// InRoomErrorOpCode delegates to domain.InRoomErrorOpCode (adapter/realtime uses domain directly).
 func InRoomErrorOpCode(err error) domain.OpCode {
-	switch {
-	case stderrors.Is(err, domain.ErrNotMaster):
-		return domain.OpInRoomNotMaster
-	case stderrors.Is(err, domain.ErrInRoomInvalidPayload):
-		return domain.OpInRoomInvalidPayload
-	case stderrors.Is(err, domain.ErrInvalidRpcTarget):
-		return domain.OpInRoomInvalidRpc
-	case stderrors.Is(err, domain.ErrRpcTargetPeerNotFound):
-		return domain.OpInRoomRpcPeerNotFound
-	case stderrors.Is(err, domain.ErrNoMaster):
-		return domain.OpInRoomNoMaster
-	case stderrors.Is(err, domain.ErrInRoomUnknownOpcode):
-		return domain.OpInRoomUnknownOpcode
-	case stderrors.Is(err, domain.ErrInRoomInternal):
-		return domain.OpInRoomInternal
-	default:
-		return domain.OpInRoomInternal
-	}
+	return domain.InRoomErrorOpCode(err)
 }
 
 // SendInRoomError sends one in-room error frame; connection may stay open.
 func SendInRoomError(conn transport.Connection, err error) {
-	sendErrorFrame(conn, InRoomErrorOpCode(err))
+	sendErrorFrame(conn, domain.InRoomErrorOpCode(err))
 }

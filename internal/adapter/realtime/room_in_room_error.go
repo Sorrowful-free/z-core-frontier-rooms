@@ -1,7 +1,6 @@
 package realtime
 
 import (
-	deliveryerrors "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/errors"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 )
@@ -13,7 +12,7 @@ func (r *Room) notifyInRoomError(peerID domain.PeerID, err error) {
 	if sendErr := r.Send(events.PeerEvent{
 		PeerID: peerID,
 		Frame: domain.Frame{
-			OpCode:   deliveryerrors.InRoomErrorOpCode(err),
+			OpCode:   domain.InRoomErrorOpCode(err),
 			Delivery: domain.DeliveryReliable,
 			Payload:  nil,
 		},

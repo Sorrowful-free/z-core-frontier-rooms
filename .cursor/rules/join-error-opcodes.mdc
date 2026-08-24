@@ -14,10 +14,10 @@ alwaysApply: false
 |------|----------|-----|
 | `join_reject.go` | `0x40–0x5F` (+ reservation via join) | `JoinRejectOpCode`, `SendJoinReject` |
 | `reservation_reject.go` | `0x70–0x7F` | `ReservationRejectOpCode`, `SendReservationReject` |
-| `join_reject.go` (in-room) | `0x60–0x6F` | `InRoomErrorOpCode`, `SendInRoomError` |
+| `join_reject.go` (in-room) | `0x60–0x6F` | обёртка `InRoomErrorOpCode`, `SendInRoomError` |
 | `wire.go` | — | `IsJoinRejectOpCode`, `IsReservationRejectOpCode`, `IsInRoomErrorOpCode` |
 
-Домен: `opcodes.go`, `join_errors.go`, `reservation_error.go`, `room_errors.go`.
+Домен: `opcodes.go`, `join_errors.go`, `reservation_error.go`, `room_errors.go` (`InRoomErrorOpCode`).
 
 ## Чеклист join (`0x40–0x5F`)
 
@@ -33,8 +33,8 @@ alwaysApply: false
 
 ## Чеклист in-room (`0x60–0x6F`)
 
-- [x] `room_errors.go` + `opcodes.go`
-- [x] `join_reject.go` (`InRoomErrorOpCode`) + `tests/delivery/errors/in_room_test.go`
+- [x] `room_errors.go` (`InRoomErrorOpCode`) + `opcodes.go`
+- [x] `join_reject.go` (обёртка + `SendInRoomError`) + `tests/delivery/errors/in_room_test.go`
 - [x] [internal/delivery/errors/README.md](../../internal/delivery/errors/README.md) (`0x60–0x66`)
 
 HTTP — `delivery/http`, не этот пакет.

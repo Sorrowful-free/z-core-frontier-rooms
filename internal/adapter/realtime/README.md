@@ -55,4 +55,4 @@ Wire encode/decode: [codec/README.md](codec/README.md).
 
 ## In-room errors
 
-`room_in_room_error.go` — при ошибке `OnMessage` отправителю кадр OpCode (`delivery/errors`).
+`room_in_room_error.go` — при ошибке `OnMessage` отправителю кадр OpCode (`domain.InRoomErrorOpCode`).

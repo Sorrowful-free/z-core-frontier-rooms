@@ -34,7 +34,7 @@
 | `OpInRoomNoMaster` | `0x65` | `ErrNoMaster` |
 | `OpInRoomUnknownOpcode` | `0x66` | `ErrInRoomUnknownOpcode` |
 
-`InRoomErrorOpCode`, `SendInRoomError` — `join_reject.go`.
+Маппинг: `domain.InRoomErrorOpCode` (`room_errors.go`); в этом пакете — обёртка + `SendInRoomError` (`join_reject.go`).
 
 ## Reservation (`0x70–0x7F`)
 

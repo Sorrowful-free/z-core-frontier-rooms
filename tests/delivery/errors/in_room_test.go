@@ -29,8 +29,11 @@ func TestInRoomErrorOpCode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			if got := domain.InRoomErrorOpCode(tt.err); got != tt.want {
+				t.Fatalf("domain.InRoomErrorOpCode() = %#x, want %#x", got, tt.want)
+			}
 			if got := deliveryerrors.InRoomErrorOpCode(tt.err); got != tt.want {
-				t.Fatalf("InRoomErrorOpCode() = %#x, want %#x", got, tt.want)
+				t.Fatalf("delivery.InRoomErrorOpCode() = %#x, want %#x", got, tt.want)
 			}
 		})
 	}
