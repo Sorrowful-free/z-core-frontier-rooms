@@ -7,7 +7,7 @@ alwaysApply: true
 
 ## Документация пакетов
 
-См. [.cursor/rules/package-docs.mdc](package-docs.mdc): у каждого значимого пакета — `README.md` рядом с кодом; корневой [README.md](../../README.md) — только индекс и quick start.
+См. [.cursor/rules/package-docs.mdc](package-docs.mdc): у каждого значимого пакета — `README.md` рядом с кодом; корневой [README.md](../../README.md) — только индекс и quick start. Кто правит код/docs и в каком порядке — [.cursor/rules/ai-companion.mdc](ai-companion.mdc).
 
 ## Best practices
 
