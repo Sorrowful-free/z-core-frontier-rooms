@@ -1,0 +1,54 @@
+// Devcontainer для z-core-frontier-rooms: Go 1.25 + зависимости ENet (cgo).
+// См. README.md в корне и .cursor/rules/go-standards.mdc.
+//
+// Важно для Zed: lifecycle-скрипты (onCreateCommand/postCreateCommand и т.п.)
+// Zed исполняет через `docker exec` без shell — составные команды с `&&`
+// там работают некорректно. Поэтому все apt-пакеты ставятся в Dockerfile,
+// а postCreateCommand — одна простая команда.
+{
+  "name": "z-core-frontier-rooms",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+
+  // Одна простая команда — без `&&` (см. комментарий выше).
+  "postCreateCommand": "go mod download",
+
+  // Zed форвардит только числовые порты (TCP). ENet — UDP, поэтому пробрасываем
+  // его явно через runArgs (Zed добавляет их в `docker run` как есть).
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": {
+      "label": "HTTP + WebSocket",
+      "onAutoForward": "notify"
+    }
+  },
+  // Git в образе уже есть (ставится базовым devcontainers/go) — ставить не нужно.
+  // Identity и креды не запекаем в образ, а пробрасываем с хоста монтированием:
+  //  1. ~/.gitconfig            — user.name/email и настройки (writable, как в доке devcontainers);
+  //  2. ~/.local/bin (ro)       — хост-бинарь gh: credential.helper в .gitconfig указывает
+  //                               на абсолютный путь !/home/user/.local/bin/gh auth git-credential;
+  //  3. ~/.config/gh            — hosts.yml с oauth-токеном, в HOME контейнерного юзера (vscode),
+  //                               чтобы gh внутри контейнера находил свои настройки.
+  // runArgs применяются при `docker run`, поэтому после изменения нужен пересозданный контейнер
+  // (в Zed: reopen в devcontainer), а не только пересборка образа.
+  "runArgs": [
+    "-p", "7777:7777/udp",
+    "-v", "/home/user/.gitconfig:/home/vscode/.gitconfig",
+    "-v", "/home/user/.local/bin:/home/user/.local/bin:ro",
+    "-v", "/home/user/.config/gh:/home/vscode/.config/gh"
+  ],
+
+  "remoteUser": "vscode",
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "go.useLanguageServer": true
+      },
+      "extensions": [
+        "golang.go"
+      ]
+    }
+  }
+}

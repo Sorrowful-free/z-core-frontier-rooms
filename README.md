@@ -19,6 +19,8 @@ go run ./cmd/rooms
 - HTTP + WS: `http://localhost:3000`
 - ENet (опционально): UDP `7777` — `CGO_ENABLED=1 go build -tags enet ./cmd/rooms`
 
+Devcontainer (VS Code / GitHub Codespaces): «Reopen in Container» — образ с Go 1.25, gcc/pkg-config/libenet-dev для ENet, порты 3000 и 7777/udp уже проброшены; см. [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json).
+
 ```bash
 go test ./tests/...
 # ENet cgo (gcc + CGO_ENABLED=1):
