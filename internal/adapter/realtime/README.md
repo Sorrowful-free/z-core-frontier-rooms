@@ -43,6 +43,7 @@ Runtime комнаты: `Room`, `Peer`, фабрики.
 - I/O через `transport.Connection`
 - `outbound` — буфер `PeerOutboundQueueSize` (default 128); полный → `domain.ErrQueueFull` (room loop не стопорится)
 - `Ping()` для refresh в policy patch tick
+- `IsAlive()` — делегирует в `transport.Connection`; `false` → peer подлежит idle eviction (ADR 0001)
 
 ## Policy
 

@@ -93,6 +93,11 @@ func run() error {
 	)
 	room.StartOrphanAdmittedSweep(appCtx, sweepOrphanAdmittedUseCase, cfg.Reservation.OrphanSweepInterval, zaplog.NewFrom(z, "orphan admitted sweep"))
 
+	if cfg.Transport.PeerIdleTimeout > 0 {
+		evictIdlePeersUseCase := room.NewEvictIdlePeersUseCase(roomRegistry, leaveRoomUseCase, zaplog.NewFrom(z, "idle peer sweep"))
+		room.StartIdlePeerSweep(appCtx, evictIdlePeersUseCase, cfg.Transport.PeerIdleSweepInterval, zaplog.NewFrom(z, "idle peer sweep"))
+	}
+
 	if cfg.HTTPAuth.Disabled {
 		z.Warn("HTTP control plane auth is disabled — for local development only")
 	}

@@ -38,6 +38,8 @@ const (
 	envTransportRoomIncomingQueue     = "TRANSPORT_ROOM_INCOMING_QUEUE"
 	envTransportPeerOutboundQueue     = "TRANSPORT_PEER_OUTBOUND_QUEUE"
 	envTransportEnetIncomingQueue     = "TRANSPORT_ENET_INCOMING_QUEUE"
+	envTransportPeerIdleTimeout       = "TRANSPORT_PEER_IDLE_TIMEOUT"
+	envTransportPeerIdleSweepInterval = "TRANSPORT_PEER_IDLE_SWEEP_INTERVAL"
 )
 
 // LoadFromEnv читает переменные окружения и собирает Config.
@@ -106,13 +108,9 @@ func loadServerFromEnv() (serveradapter.ServerConfig, error) {
 }
 
 func loadAdmissionFromEnv() (admissionadapter.AdmissionConfig, error) {
-	ttl := admissionadapter.DefaultAdmissionTTL()
-	if raw := os.Getenv(envAdmissionTTL); raw != "" {
-		parsed, err := time.ParseDuration(raw)
-		if err != nil {
-			return admissionadapter.AdmissionConfig{}, fmt.Errorf("%s: %w", envAdmissionTTL, err)
-		}
-		ttl = parsed
+	ttl, err := durationFromEnv(envAdmissionTTL, admissionadapter.DefaultAdmissionTTL())
+	if err != nil {
+		return admissionadapter.AdmissionConfig{}, err
 	}
 
 	cfg := admissionadapter.AdmissionConfig{
@@ -180,11 +178,22 @@ func loadTransportFromEnv() (adaptertransport.TransportConfig, error) {
 		return adaptertransport.TransportConfig{}, err
 	}
 
+	peerIdleTimeout, err := durationFromEnv(envTransportPeerIdleTimeout, adaptertransport.DefaultPeerIdleTimeout)
+	if err != nil {
+		return adaptertransport.TransportConfig{}, err
+	}
+	idleSweepInterval, err := durationFromEnv(envTransportPeerIdleSweepInterval, adaptertransport.DefaultPeerIdleSweepInterval)
+	if err != nil {
+		return adaptertransport.TransportConfig{}, err
+	}
+
 	cfg := adaptertransport.TransportConfig{
 		MaxIncomingFrameBytes: maxBytes,
 		RoomIncomingQueueSize: roomQueue,
 		PeerOutboundQueueSize: peerQueue,
 		EnetIncomingQueueSize: enetQueue,
+		PeerIdleTimeout:       peerIdleTimeout,
+		PeerIdleSweepInterval: idleSweepInterval,
 	}
 	if err := cfg.Validate(); err != nil {
 		return adaptertransport.TransportConfig{}, err
@@ -193,22 +202,14 @@ func loadTransportFromEnv() (adaptertransport.TransportConfig, error) {
 }
 
 func loadReservationFromEnv() (reservationadapter.ReservationConfig, error) {
-	orphanTTL := reservationadapter.DefaultOrphanAdmittedTTL
-	if raw := os.Getenv(envReservationOrphanAdmittedTTL); raw != "" {
-		parsed, err := time.ParseDuration(raw)
-		if err != nil {
-			return reservationadapter.ReservationConfig{}, fmt.Errorf("%s: %w", envReservationOrphanAdmittedTTL, err)
-		}
-		orphanTTL = parsed
+	orphanTTL, err := durationFromEnv(envReservationOrphanAdmittedTTL, reservationadapter.DefaultOrphanAdmittedTTL)
+	if err != nil {
+		return reservationadapter.ReservationConfig{}, err
 	}
 
-	sweepInterval := reservationadapter.DefaultOrphanSweepInterval
-	if raw := os.Getenv(envReservationOrphanSweepInterval); raw != "" {
-		parsed, err := time.ParseDuration(raw)
-		if err != nil {
-			return reservationadapter.ReservationConfig{}, fmt.Errorf("%s: %w", envReservationOrphanSweepInterval, err)
-		}
-		sweepInterval = parsed
+	sweepInterval, err := durationFromEnv(envReservationOrphanSweepInterval, reservationadapter.DefaultOrphanSweepInterval)
+	if err != nil {
+		return reservationadapter.ReservationConfig{}, err
 	}
 
 	cfg := reservationadapter.ReservationConfig{
@@ -227,6 +228,18 @@ func intFromEnv(name string, defaultValue int) (int, error) {
 		return defaultValue, nil
 	}
 	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", name, err)
+	}
+	return value, nil
+}
+
+func durationFromEnv(name string, defaultValue time.Duration) (time.Duration, error) {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return defaultValue, nil
+	}
+	value, err := time.ParseDuration(raw)
 	if err != nil {
 		return 0, fmt.Errorf("%s: %w", name, err)
 	}

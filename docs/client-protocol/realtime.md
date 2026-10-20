@@ -101,7 +101,7 @@ func send_frame(opcode: int, payload: PackedByteArray) -> void:
     ws.send(frame)
 ```
 
-WS ping/pong — транспортный RTT для `Peer.Ping()` на сервере; в игровой протокол не входит.
+WS ping/pong — транспортный RTT для `Peer.Ping()` на сервере; в игровой протокол не входит. Pong также подтверждает живость: если ни кадры, ни pong не приходят дольше `TRANSPORT_PEER_IDLE_TIMEOUT` (default 30s), сервер молча закрывает соединение (idle eviction, без опкода).
 
 ---
 

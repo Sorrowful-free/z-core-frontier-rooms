@@ -1,6 +1,9 @@
 package transport
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 const (
 	// DefaultMaxIncomingFrameBytes — 256 KiB; WS SetReadLimit и ENet packet check.
@@ -9,6 +12,11 @@ const (
 	DefaultRoomIncomingQueueSize = 128
 	DefaultPeerOutboundQueueSize = 128
 	DefaultEnetIncomingQueueSize = 256
+
+	// DefaultPeerIdleTimeout — окно живости IsAlive для WS.
+	DefaultPeerIdleTimeout = 30 * time.Second
+	// DefaultPeerIdleSweepInterval — период фонового sweep idle peer'ов.
+	DefaultPeerIdleSweepInterval = 10 * time.Second
 )
 
 // TransportConfig — лимиты data plane (WS + ENet).
@@ -21,6 +29,10 @@ type TransportConfig struct {
 	PeerOutboundQueueSize int
 	// EnetIncomingQueueSize — буфер ENet session → peer; при переполнении — drop (host loop не блокируется).
 	EnetIncomingQueueSize int
+	// PeerIdleTimeout — окно живости для IsAlive; <= 0 — механизм полностью отключён.
+	PeerIdleTimeout time.Duration
+	// PeerIdleSweepInterval — период фонового sweep idle peer'ов; <= 0 — не запускать.
+	PeerIdleSweepInterval time.Duration
 }
 
 // Validate проверяет допустимость значений.
@@ -36,6 +48,12 @@ func (c TransportConfig) Validate() error {
 	}
 	if c.EnetIncomingQueueSize < 0 {
 		return fmt.Errorf("transport config: enet incoming queue size must be >= 0")
+	}
+	if c.PeerIdleTimeout < 0 {
+		return fmt.Errorf("transport config: peer idle timeout must be >= 0")
+	}
+	if c.PeerIdleSweepInterval < 0 {
+		return fmt.Errorf("transport config: peer idle sweep interval must be >= 0")
 	}
 	return nil
 }

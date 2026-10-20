@@ -155,6 +155,44 @@ func (c *MockPeerGetNickNameCall) DoAndReturn(f func() string) *MockPeerGetNickN
 	return c
 }
 
+// IsAlive mocks base method.
+func (m *MockPeer) IsAlive() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsAlive")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsAlive indicates an expected call of IsAlive.
+func (mr *MockPeerMockRecorder) IsAlive() *MockPeerIsAliveCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsAlive", reflect.TypeOf((*MockPeer)(nil).IsAlive))
+	return &MockPeerIsAliveCall{Call: call}
+}
+
+// MockPeerIsAliveCall wrap *gomock.Call
+type MockPeerIsAliveCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockPeerIsAliveCall) Return(arg0 bool) *MockPeerIsAliveCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockPeerIsAliveCall) Do(f func() bool) *MockPeerIsAliveCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockPeerIsAliveCall) DoAndReturn(f func() bool) *MockPeerIsAliveCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // Ping mocks base method.
 func (m *MockPeer) Ping() int64 {
 	m.ctrl.T.Helper()

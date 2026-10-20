@@ -578,6 +578,7 @@ func newCapturePeerWithPing(id domain.PeerID, nick string, ping int64) *captureP
 func (p *capturePeer) GetID() domain.PeerID { return p.id }
 func (p *capturePeer) GetNickName() string  { return p.nick }
 func (p *capturePeer) Ping() int64          { return p.ping }
+func (p *capturePeer) IsAlive() bool        { return true }
 func (p *capturePeer) Start() error            { return nil }
 func (p *capturePeer) Stop() error             { return nil }
 func (p *capturePeer) Deliver(ev events.PeerEvent) error {

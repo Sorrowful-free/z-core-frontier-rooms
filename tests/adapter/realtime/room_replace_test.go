@@ -153,6 +153,7 @@ func newReplaceCapturePeer(id domain.PeerID, nick string) *replaceCapturePeer {
 func (p *replaceCapturePeer) GetID() domain.PeerID { return p.id }
 func (p *replaceCapturePeer) GetNickName() string  { return p.nick }
 func (p *replaceCapturePeer) Ping() int64          { return 0 }
+func (p *replaceCapturePeer) IsAlive() bool        { return true }
 func (p *replaceCapturePeer) Start() error         { return nil }
 func (p *replaceCapturePeer) Stop() error          { return nil }
 func (p *replaceCapturePeer) Deliver(ev events.PeerEvent) error {

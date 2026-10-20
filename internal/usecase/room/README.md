@@ -13,6 +13,7 @@
 | `join_room.go` | Data | Validate → Admit → CreatePeer(nick) → Join/Replace → Start |
 | `leave_room.go` | Data | Leave → Stop → Revoke |
 | `sweep_orphan_admitted.go` | Background | admitted без peer в room → Revoke (шаг 4A) |
+| `evict_idle_peers.go` | Background | peer с `!IsAlive()` → LeaveRoom (idle eviction, ADR 0001) |
 
 ## Create
 
@@ -54,6 +55,10 @@ VerifyRoomPassword (только Delete) → GetRoom → kick all peers (LeaveRo
 ```
 
 Ошибки kick логируются; комната всё равно удаляется. `DeleteForShutdown` — без пароля, тот же kick.
+
+## EvictIdlePeers
+
+Периодический sweep (`StartIdlePeerSweep`): `registry.GetList` → `room.GetPeers` → `!peer.IsAlive()` → `LeaveRoom` (`Leave` → `Stop` → `Revoke`, молчаливый `Close`). Ошибка одного peer логируется, sweep продолжается. `interval <= 0` — no-op; таймаут живости — внутри `WsConnection` (`TransportConfig.PeerIdleTimeout`).
 
 ## HTTP / transport
 

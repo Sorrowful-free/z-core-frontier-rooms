@@ -9,6 +9,8 @@ type Peer interface {
 	GetID() domain.PeerID
 	GetNickName() string
 	Ping() int64
+	// IsAlive — false: транспорт peer'а мёртв, peer подлежит idle eviction.
+	IsAlive() bool
 
 	Start() error
 	Stop() error

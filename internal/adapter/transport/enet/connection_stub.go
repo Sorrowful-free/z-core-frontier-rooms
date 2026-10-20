@@ -30,3 +30,7 @@ func (c *EnetConnection) Ping() int64 {
 func (c *EnetConnection) Close() error {
 	return nil
 }
+
+func (c *EnetConnection) IsAlive() bool {
+	return true
+}

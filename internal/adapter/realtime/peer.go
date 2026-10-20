@@ -56,6 +56,10 @@ func (p *Peer) Ping() int64 {
 	return p.connection.Ping()
 }
 
+func (p *Peer) IsAlive() bool {
+	return p.connection.IsAlive()
+}
+
 func (p *Peer) Start() error {
 	p.wg.Add(2)
 	go processIncomingEvents(p)

@@ -71,5 +71,4 @@ CGO_ENABLED=1 go test -tags enet ./tests/delivery/enet/...
 ## TODO
 
 - Health-check
-- Ping/idle eviction для zombie peers (отдельный пункт после hardening)
 - WS e2e: issue → join

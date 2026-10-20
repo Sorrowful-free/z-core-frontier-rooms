@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	wsPingInterval = 2 * time.Second
+	wsPingInterval  = 2 * time.Second
 	wsPingWriteWait = 5 * time.Second
 )
 
@@ -21,7 +21,9 @@ type WsConnection struct {
 	closed                chan struct{}
 	closeOnce             sync.Once
 	pingMs                atomic.Int64
+	lastSeen              atomic.Int64
 	maxIncomingFrameBytes int
+	idleTimeout           time.Duration
 }
 
 func NewWsConnection(conn *websocket.Conn, cfg adaptertransport.TransportConfig) *WsConnection {
@@ -34,16 +36,20 @@ func NewWsConnection(conn *websocket.Conn, cfg adaptertransport.TransportConfig)
 		conn:                  conn,
 		closed:                make(chan struct{}),
 		maxIncomingFrameBytes: maxBytes,
+		idleTimeout:           cfg.PeerIdleTimeout,
 	}
 	c.pingMs.Store(-1)
+	c.lastSeen.Store(time.Now().UnixNano())
 
 	conn.SetPongHandler(func(message string) error {
+		now := time.Now().UnixNano()
+		c.lastSeen.Store(now)
 		payload := []byte(message)
 		if len(payload) < 8 {
 			return nil
 		}
 		sentAt := int64(binary.BigEndian.Uint64(payload[:8]))
-		rtt := (time.Now().UnixNano() - sentAt) / int64(time.Millisecond)
+		rtt := (now - sentAt) / int64(time.Millisecond)
 		if rtt >= 0 {
 			c.pingMs.Store(rtt)
 		}
@@ -80,11 +86,26 @@ func (c *WsConnection) Receive() (domain.Frame, error) {
 		c.Close()
 		return domain.Frame{}, err
 	}
+	c.lastSeen.Store(time.Now().UnixNano())
 	return frame, nil
 }
 
 func (c *WsConnection) Ping() int64 {
 	return c.pingMs.Load()
+}
+
+// IsAlive — false: соединение закрыто или живость (входящие кадры + pong) не подтверждалась дольше idleTimeout.
+// idleTimeout <= 0 — проверка только closed (механизм выключен).
+func (c *WsConnection) IsAlive() bool {
+	select {
+	case <-c.closed:
+		return false
+	default:
+	}
+	if c.idleTimeout <= 0 {
+		return true
+	}
+	return time.Since(time.Unix(0, c.lastSeen.Load())) <= c.idleTimeout
 }
 
 func (c *WsConnection) runPingLoop() {

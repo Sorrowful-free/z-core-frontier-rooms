@@ -245,3 +245,64 @@ func TestLoadFromEnv_HTTPAuthDisabled(t *testing.T) {
 		t.Fatal("expected http auth disabled")
 	}
 }
+
+func TestLoadFromEnv_TransportIdleDefaults(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	t.Setenv("TRANSPORT_PEER_IDLE_TIMEOUT", "")
+	t.Setenv("TRANSPORT_PEER_IDLE_SWEEP_INTERVAL", "")
+
+	cfg, err := appconfig.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv: %v", err)
+	}
+	if cfg.Transport.PeerIdleTimeout != adaptertransport.DefaultPeerIdleTimeout {
+		t.Fatalf("peer idle timeout = %v", cfg.Transport.PeerIdleTimeout)
+	}
+	if cfg.Transport.PeerIdleSweepInterval != adaptertransport.DefaultPeerIdleSweepInterval {
+		t.Fatalf("peer idle sweep interval = %v", cfg.Transport.PeerIdleSweepInterval)
+	}
+}
+
+func TestLoadFromEnv_TransportIdleCustom(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	t.Setenv("TRANSPORT_PEER_IDLE_TIMEOUT", "45s")
+	t.Setenv("TRANSPORT_PEER_IDLE_SWEEP_INTERVAL", "3s")
+
+	cfg, err := appconfig.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv: %v", err)
+	}
+	if cfg.Transport.PeerIdleTimeout != 45*time.Second {
+		t.Fatalf("peer idle timeout = %v", cfg.Transport.PeerIdleTimeout)
+	}
+	if cfg.Transport.PeerIdleSweepInterval != 3*time.Second {
+		t.Fatalf("peer idle sweep interval = %v", cfg.Transport.PeerIdleSweepInterval)
+	}
+}
+
+func TestLoadFromEnv_TransportIdleInvalidDuration(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	t.Setenv("TRANSPORT_PEER_IDLE_TIMEOUT", "not-a-duration")
+
+	_, err := appconfig.LoadFromEnv()
+	if err == nil {
+		t.Fatal("expected error for invalid TRANSPORT_PEER_IDLE_TIMEOUT")
+	}
+	if !strings.Contains(err.Error(), "TRANSPORT_PEER_IDLE_TIMEOUT") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestLoadFromEnv_TransportIdleNegative(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	t.Setenv("TRANSPORT_PEER_IDLE_TIMEOUT", "-1s")
+
+	_, err := appconfig.LoadFromEnv()
+	if err == nil {
+		t.Fatal("expected error for negative TRANSPORT_PEER_IDLE_TIMEOUT")
+	}
+}

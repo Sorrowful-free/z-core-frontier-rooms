@@ -78,6 +78,44 @@ func (c *MockConnectionCloseCall) DoAndReturn(f func() error) *MockConnectionClo
 	return c
 }
 
+// IsAlive mocks base method.
+func (m *MockConnection) IsAlive() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsAlive")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsAlive indicates an expected call of IsAlive.
+func (mr *MockConnectionMockRecorder) IsAlive() *MockConnectionIsAliveCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsAlive", reflect.TypeOf((*MockConnection)(nil).IsAlive))
+	return &MockConnectionIsAliveCall{Call: call}
+}
+
+// MockConnectionIsAliveCall wrap *gomock.Call
+type MockConnectionIsAliveCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockConnectionIsAliveCall) Return(arg0 bool) *MockConnectionIsAliveCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockConnectionIsAliveCall) Do(f func() bool) *MockConnectionIsAliveCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockConnectionIsAliveCall) DoAndReturn(f func() bool) *MockConnectionIsAliveCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // Ping mocks base method.
 func (m *MockConnection) Ping() int64 {
 	m.ctrl.T.Helper()

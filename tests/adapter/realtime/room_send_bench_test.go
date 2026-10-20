@@ -18,6 +18,7 @@ type sendBenchPeer struct {
 func (p *sendBenchPeer) GetID() domain.PeerID    { return p.id }
 func (p *sendBenchPeer) GetNickName() string     { return "bench" }
 func (p *sendBenchPeer) Ping() int64             { return 0 }
+func (p *sendBenchPeer) IsAlive() bool           { return true }
 func (p *sendBenchPeer) Start() error           { return nil }
 func (p *sendBenchPeer) Stop() error            { return nil }
 func (p *sendBenchPeer) Deliver(events.PeerEvent) error { return nil }

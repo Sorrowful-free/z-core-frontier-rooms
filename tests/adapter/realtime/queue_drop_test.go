@@ -48,6 +48,7 @@ func (noopConnection) Receive() (domain.Frame, error) { return domain.Frame{}, n
 func (noopConnection) Send(domain.Frame) error        { return nil }
 func (noopConnection) Close() error                   { return nil }
 func (noopConnection) Ping() int64                    { return 0 }
+func (noopConnection) IsAlive() bool                  { return true }
 
 func TestPeer_Deliver_ReturnsErrorWhenStopped(t *testing.T) {
 	t.Parallel()

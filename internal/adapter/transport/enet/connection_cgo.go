@@ -5,6 +5,7 @@ package enet
 import (
 	"io"
 	"sync"
+	"sync/atomic"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	libenet "github.com/codecat/go-enet"
@@ -14,13 +15,16 @@ type EnetConnection struct {
 	peer      libenet.Peer
 	incoming  chan domain.Frame
 	closeOnce sync.Once
+	alive     atomic.Bool
 }
 
 func NewEnetConnection(peer libenet.Peer, incoming chan domain.Frame) *EnetConnection {
-	return &EnetConnection{
+	c := &EnetConnection{
 		peer:     peer,
 		incoming: incoming,
 	}
+	c.alive.Store(true)
+	return c
 }
 
 func (c *EnetConnection) Send(frame domain.Frame) error {
@@ -45,6 +49,7 @@ func (c *EnetConnection) Ping() int64 {
 
 func (c *EnetConnection) Close() error {
 	c.closeOnce.Do(func() {
+		c.alive.Store(false)
 		if c.incoming != nil {
 			close(c.incoming)
 		}
@@ -53,4 +58,9 @@ func (c *EnetConnection) Close() error {
 		}
 	})
 	return nil
+}
+
+// IsAlive — false после Close(); zombie на ENet вычищает собственный таймаут транспорта (EventDisconnect → LeaveRoom).
+func (c *EnetConnection) IsAlive() bool {
+	return c.alive.Load()
 }

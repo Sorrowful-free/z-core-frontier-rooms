@@ -19,4 +19,6 @@ Ticket по-прежнему в query (контракт клиента). Стр�
 
 Нет `token` в query — close **без** кадра (`0x40` не шлётся).
 
+Idle peer'ы выводятся sweep'ом (`EvictIdlePeersUseCase`), когда соединение перестаёт подтверждать живость: входящие кадры и pong двигают `lastSeen`, `Send` — нет; мёртвый транспорт → `IsAlive() = false` → молчаливый `Close` через `LeaveRoom` (ADR 0001).
+
 Импорт ошибок: `deliveryerrors ".../delivery/errors"`.

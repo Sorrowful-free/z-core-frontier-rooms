@@ -76,6 +76,7 @@ func newBenchCapturePeer(id domain.PeerID, nick string) *benchCapturePeer {
 func (p *benchCapturePeer) GetID() domain.PeerID { return p.id }
 func (p *benchCapturePeer) GetNickName() string  { return p.nick }
 func (p *benchCapturePeer) Ping() int64          { return p.ping }
+func (p *benchCapturePeer) IsAlive() bool        { return true }
 func (p *benchCapturePeer) Start() error         { return nil }
 func (p *benchCapturePeer) Stop() error          { return nil }
 func (p *benchCapturePeer) Deliver(ev events.PeerEvent) error {

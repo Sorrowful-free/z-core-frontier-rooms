@@ -24,3 +24,4 @@ vendor/
 
 # Local env (secrets)
 .env
+.scratch/
