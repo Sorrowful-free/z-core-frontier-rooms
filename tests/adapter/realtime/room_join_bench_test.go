@@ -14,12 +14,12 @@ type joinBenchPeer struct {
 	id domain.PeerID
 }
 
-func (p *joinBenchPeer) GetID() domain.PeerID    { return p.id }
-func (p *joinBenchPeer) GetNickName() string     { return "join" }
-func (p *joinBenchPeer) Ping() int64             { return 0 }
-func (p *joinBenchPeer) IsAlive() bool           { return true }
-func (p *joinBenchPeer) Start() error           { return nil }
-func (p *joinBenchPeer) Stop() error            { return nil }
+func (p *joinBenchPeer) GetID() domain.PeerID           { return p.id }
+func (p *joinBenchPeer) GetNickName() string            { return "join" }
+func (p *joinBenchPeer) Ping() int64                    { return 0 }
+func (p *joinBenchPeer) IsAlive() bool                  { return true }
+func (p *joinBenchPeer) Start() error                   { return nil }
+func (p *joinBenchPeer) Stop() error                    { return nil }
 func (p *joinBenchPeer) Deliver(events.PeerEvent) error { return nil }
 
 var _ realtime.Peer = (*joinBenchPeer)(nil)

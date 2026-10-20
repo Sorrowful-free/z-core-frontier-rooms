@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	adapterrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/stdlib"
+	adapterrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/codec"
 	statepolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy/state"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
@@ -99,7 +99,7 @@ type rejectMessagePolicy struct {
 
 func (p *rejectMessagePolicy) OnStart(realtime.Room) error { return nil }
 func (p *rejectMessagePolicy) OnStop(realtime.Room) error  { return nil }
-func (p *rejectMessagePolicy) OnJoin(realtime.Peer) error { return nil }
+func (p *rejectMessagePolicy) OnJoin(realtime.Peer) error  { return nil }
 func (p *rejectMessagePolicy) OnLeave(realtime.Peer) error {
 	return nil
 }
@@ -126,8 +126,8 @@ func (p *errorCapturePeer) GetID() domain.PeerID { return p.id }
 func (p *errorCapturePeer) GetNickName() string  { return "" }
 func (p *errorCapturePeer) Ping() int64          { return 0 }
 func (p *errorCapturePeer) IsAlive() bool        { return true }
-func (p *errorCapturePeer) Start() error       { return nil }
-func (p *errorCapturePeer) Stop() error        { return nil }
+func (p *errorCapturePeer) Start() error         { return nil }
+func (p *errorCapturePeer) Stop() error          { return nil }
 func (p *errorCapturePeer) Deliver(ev events.PeerEvent) error {
 	p.mu.Lock()
 	p.delivered = append(p.delivered, ev)

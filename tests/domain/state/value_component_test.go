@@ -51,7 +51,7 @@ func TestComponentState_ApplyPatch_errorPreservesValues(t *testing.T) {
 	patch := state.ComponentStatePatch{
 		Values: state.MapStatePatch[state.ValueId, state.ValueState, state.ValueState]{
 			Updated: map[state.ValueId]state.ValueState{
-				state.ValueId(1): state.ValueState([]byte{9}),
+				state.ValueId(1):  state.ValueState([]byte{9}),
 				state.ValueId(99): state.ValueState([]byte{0}),
 			},
 		},

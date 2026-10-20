@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	adapterrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/stdlib"
+	adapterrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
@@ -90,8 +90,8 @@ func (p *sendOnJoinPolicy) OnJoin(peer realtime.Peer) error {
 }
 
 func (p *sendOnJoinPolicy) TickIntervals() (time.Duration, time.Duration) { return 0, 0 }
-func (p *sendOnJoinPolicy) OnTickFullState() error                     { return nil }
-func (p *sendOnJoinPolicy) OnTickPatchState() error                    { return nil }
+func (p *sendOnJoinPolicy) OnTickFullState() error                        { return nil }
+func (p *sendOnJoinPolicy) OnTickPatchState() error                       { return nil }
 
 type failOnJoinPolicy struct {
 	err error
@@ -106,19 +106,19 @@ func (p *failOnJoinPolicy) OnMessage(events.RoomEvent) error {
 func (p *failOnJoinPolicy) OnJoin(realtime.Peer) error { return p.err }
 
 func (p *failOnJoinPolicy) TickIntervals() (time.Duration, time.Duration) { return 0, 0 }
-func (p *failOnJoinPolicy) OnTickFullState() error                     { return nil }
-func (p *failOnJoinPolicy) OnTickPatchState() error                    { return nil }
+func (p *failOnJoinPolicy) OnTickFullState() error                        { return nil }
+func (p *failOnJoinPolicy) OnTickPatchState() error                       { return nil }
 
 type stubPeer struct {
 	id domain.PeerID
 }
 
-func (p *stubPeer) GetID() domain.PeerID    { return p.id }
-func (p *stubPeer) GetNickName() string     { return "" }
-func (p *stubPeer) Ping() int64               { return 0 }
-func (p *stubPeer) IsAlive() bool             { return true }
-func (p *stubPeer) Start() error            { return nil }
-func (p *stubPeer) Stop() error             { return nil }
+func (p *stubPeer) GetID() domain.PeerID { return p.id }
+func (p *stubPeer) GetNickName() string  { return "" }
+func (p *stubPeer) Ping() int64          { return 0 }
+func (p *stubPeer) IsAlive() bool        { return true }
+func (p *stubPeer) Start() error         { return nil }
+func (p *stubPeer) Stop() error          { return nil }
 func (p *stubPeer) Deliver(events.PeerEvent) error {
 	return nil
 }

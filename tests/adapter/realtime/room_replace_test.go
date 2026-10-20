@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	adapterrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/stdlib"
+	adapterrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/codec"
 	statepolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy/state"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
@@ -217,7 +217,7 @@ func (p *trackingReplacePolicy) OnLeave(peer realtime.Peer) error {
 func (p *trackingReplacePolicy) OnMessage(events.RoomEvent) error { return nil }
 
 func (p *trackingReplacePolicy) TickIntervals() (time.Duration, time.Duration) { return 0, 0 }
-func (p *trackingReplacePolicy) OnTickFullState() error                      { return nil }
-func (p *trackingReplacePolicy) OnTickPatchState() error                     { return nil }
+func (p *trackingReplacePolicy) OnTickFullState() error                        { return nil }
+func (p *trackingReplacePolicy) OnTickPatchState() error                       { return nil }
 
 var _ portpolicy.RoomPolicy = (*trackingReplacePolicy)(nil)

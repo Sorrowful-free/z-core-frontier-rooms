@@ -15,14 +15,14 @@ import (
 
 type noopPolicy struct{}
 
-func (noopPolicy) OnStart(realtime.Room) error              { return nil }
-func (noopPolicy) OnStop(realtime.Room) error               { return nil }
-func (noopPolicy) OnJoin(realtime.Peer) error               { return nil }
-func (noopPolicy) OnLeave(realtime.Peer) error              { return nil }
-func (noopPolicy) OnMessage(events.RoomEvent) error         { return nil }
+func (noopPolicy) OnStart(realtime.Room) error                   { return nil }
+func (noopPolicy) OnStop(realtime.Room) error                    { return nil }
+func (noopPolicy) OnJoin(realtime.Peer) error                    { return nil }
+func (noopPolicy) OnLeave(realtime.Peer) error                   { return nil }
+func (noopPolicy) OnMessage(events.RoomEvent) error              { return nil }
 func (noopPolicy) TickIntervals() (time.Duration, time.Duration) { return 0, 0 }
-func (noopPolicy) OnTickFullState() error                   { return nil }
-func (noopPolicy) OnTickPatchState() error                  { return nil }
+func (noopPolicy) OnTickFullState() error                        { return nil }
+func (noopPolicy) OnTickPatchState() error                       { return nil }
 
 var _ portpolicy.RoomPolicy = noopPolicy{}
 
