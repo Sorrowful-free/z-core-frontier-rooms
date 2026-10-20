@@ -5,58 +5,59 @@ import (
 	"testing"
 
 	httplimitsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httplimits"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/env"
 )
 
 func TestHTTP_CreateRoom_RateLimited(t *testing.T) {
-	env := newTestEnvWithLimits(t, httplimitsadapter.HTTPLimitsConfig{
+	env := env.New(t, env.WithHTTPLimits(httplimitsadapter.HTTPLimitsConfig{
 		CreateRoomsPerMinute: 1,
-	})
+	}))
 
-	resp1, _ := env.do(t, http.MethodPost, "/rooms", createRoomRequest(nil))
+	resp1, _ := env.Do(t, http.MethodPost, "/rooms", createRoomRequest(nil))
 	if resp1.StatusCode != http.StatusCreated {
 		t.Fatalf("first create status = %d, want 201", resp1.StatusCode)
 	}
 
-	resp2, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{"nick_name": "host2"}))
+	resp2, body := env.Do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{"nick_name": "host2"}))
 	if resp2.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("second create status = %d, want 429, body = %s", resp2.StatusCode, body)
 	}
 }
 
 func TestHTTP_IssueTicket_RateLimited(t *testing.T) {
-	env := newTestEnvWithLimits(t, httplimitsadapter.HTTPLimitsConfig{
+	env := env.New(t, env.WithHTTPLimits(httplimitsadapter.HTTPLimitsConfig{
 		IssueTicketsPerMinute: 1,
-	})
+	}))
 
-	createResp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{"capacity": 4}))
+	createResp, body := env.Do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{"capacity": 4}))
 	if createResp.StatusCode != http.StatusCreated {
 		t.Fatalf("create status = %d, want 201, body = %s", createResp.StatusCode, body)
 	}
 	created := parseCreateRoomResponse(t, body)
 
-	issue1, _ := env.do(t, http.MethodPost, "/rooms/"+formatID(created.Room.ID)+"/tickets", map[string]string{"nick_name": "player1"})
+	issue1, _ := env.Do(t, http.MethodPost, "/rooms/"+formatID(created.Room.ID)+"/tickets", map[string]string{"nick_name": "player1"})
 	if issue1.StatusCode != http.StatusCreated {
 		t.Fatalf("first issue status = %d, want 201", issue1.StatusCode)
 	}
 
-	issue2, body := env.do(t, http.MethodPost, "/rooms/"+formatID(created.Room.ID)+"/tickets", map[string]string{"nick_name": "player2"})
+	issue2, body := env.Do(t, http.MethodPost, "/rooms/"+formatID(created.Room.ID)+"/tickets", map[string]string{"nick_name": "player2"})
 	if issue2.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("second issue status = %d, want 429, body = %s", issue2.StatusCode, body)
 	}
 }
 
 func TestHTTP_CreateRoom_RoomsLimitReached(t *testing.T) {
-	env := newTestEnvWithLimits(t, httplimitsadapter.HTTPLimitsConfig{
+	env := env.New(t, env.WithHTTPLimits(httplimitsadapter.HTTPLimitsConfig{
 		MaxRooms:             1,
 		CreateRoomsPerMinute: 0,
-	})
+	}))
 
-	resp1, _ := env.do(t, http.MethodPost, "/rooms", createRoomRequest(nil))
+	resp1, _ := env.Do(t, http.MethodPost, "/rooms", createRoomRequest(nil))
 	if resp1.StatusCode != http.StatusCreated {
 		t.Fatalf("first create status = %d, want 201", resp1.StatusCode)
 	}
 
-	resp2, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{"nick_name": "host2"}))
+	resp2, body := env.Do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{"nick_name": "host2"}))
 	if resp2.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("second create status = %d, want 503, body = %s", resp2.StatusCode, body)
 	}

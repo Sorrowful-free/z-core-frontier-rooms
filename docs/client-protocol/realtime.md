@@ -77,7 +77,9 @@ hmac        32 bytes SHA-256 HMAC
 
 | Исход join | Поведение |
 |------------|-----------|
-| Нет / битый token | Close без кадра |
+| Нет token | `0x40` OpEmptyToken → close |
+| Битый base64url token | `0x41` OpInvalidToken → close |
+| Token длиннее лимита | Close без кадра (как oversize-пакет в ENet) |
 | Ошибка join | 1 байт `0x40+` → close |
 | Успех | Первый кадр `0x01` FullState |
 

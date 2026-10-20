@@ -21,8 +21,10 @@ tests/
   domain/state/         — atomic apply patch (entity/component)
   adapter/registry/     — RoomRegistry, Shutdown
   usecase/room/         — Create, Delete, GetList, IssueTicket, JoinRoom, LeaveRoom (gomock)
-  delivery/http/        — REST JSON (Fiber app.Test + in-memory adapters)
-  integration/          — (планируется) сквозные сценарии
+  testutil/env/         — общий composition root: adapters + use cases + HTTP/WS routes на fiber.App
+  delivery/http/        — REST JSON (app.Test поверх testutil/env)
+  delivery/ws/          — WS join lifecycle (реальный listener + fasthttp/websocket)
+  integration/          — сквозные сценарии: room lifecycle create→issue→2×WS join→disconnect→leave
 ```
 
 Пакеты — **внешние** (`package *_test`), импорт модуля `github.com/Sorrowful-free/z-core-frontier-rooms/...`.
@@ -138,7 +140,7 @@ benchstat bench.txt
 | `tests/adapter/httpauth` | `HTTPAuthConfig.Validate` |
 | `tests/adapter/httplimits` | `HTTPLimitsConfig.Validate`, `Limits` rate + max rooms |
 | `tests/adapter/admission` | `AdmissionConfig.Validate`; round-trip ticket + NickName, invalid nick, invalid/expired token, invalid credentials |
-| `tests/adapter/realtime` | `OnJoin` → `room.Send` без deadlock; откат map при `ErrJoinDenied`; Replace rollback policy; `PeerFactory` nick; concurrent `Deliver`/`Join`/`Leave` + `Stop` без паники; `Deliver` → `ErrQueueFull` / stopped |
+| `tests/adapter/realtime` | `OnJoin` → `room.Send` без deadlock; откат map при `ErrJoinDenied`; Replace rollback policy; `PeerFactory` nick; concurrent `Deliver`/`Join`/`Leave` + `Stop` без паники; `Deliver` → `ErrQueueFull` / stopped; `Send` с `ExcludePeerID` не доставляет отправителю; `Peer.Stop` разблокирует `Receive` через `Close` |
 | `tests/adapter/realtime/policy/state` | join/full/patch/master; `NewStateRoomPolicy` zero intervals → defaults; `PatchEntities` add/update/reject non-master |
 | `tests/domain` | `ValidateNickName` |
 | `tests/domain/state` | atomic `ApplyPatch` rollback на entity/component |
@@ -146,9 +148,11 @@ benchstat bench.txt
 | `tests/adapter/registry` | `GetRoom` → `ErrRoomNotFound`; `Shutdown`; `DeleteRoom` при concurrent `Deliver` без паники |
 | `tests/adapter/reservation` | Reserve → Admit → Revoke; expiry sweep; идемпотентный `Revoke`; `State` (none / reserved / admitted); concurrent ops по разным комнатам |
 | `tests/adapter/identity` | первый ID = 1; независимые room/peer; ctx cancel; wrap `MaxUint32` → 1; уникальность под конкуренцией |
-| `tests/usecase/room` | **Create** — success, rooms limit, ctx cancel, registry rollback + `errors.Join` на unregister; **Delete** — success, kick peers, room not found; **GetList**; **IssueTicket** — success, room/peer errors, slot held, orphan admitted cleanup, issue+revoke join; **JoinRoom** — validate error, success, admit/join/revoke откаты; **LeaveRoom** — success, not found, revoke idempotent; **EvictIdlePeers** — `RunOnce`: dead evicted, alive skipped, per-peer error tolerated |
+| `tests/usecase/room` | **Create** — success, rooms limit, ctx cancel, registry rollback + `errors.Join` на unregister; **Delete** — success, kick peers, room not found; **GetList**; **IssueTicket** — success, room/peer errors, slot held, orphan admitted cleanup, issue+revoke join; **JoinRoom** — validate error, room not found после validate, success, admit/join/revoke откаты, `errors.Join` при fail Revoke; **LeaveRoom** — success, not found, revoke idempotent; **EvictIdlePeers** — `RunOnce`: dead evicted, alive skipped, per-peer error tolerated |
 | `tests/delivery/http` | API key; rate limit 429; rooms limit 503; create → list → delete; issue ticket; 409/404/400; `invalid_capacity` (0 и >127) |
+| `tests/delivery/ws` | невалидный token → `OpInvalidToken` frame + close; missing token → `OpEmptyToken`; malformed base64 → `OpInvalidToken`; issue ticket → join → peer в `Registry` → disconnect → leave |
 | `tests/delivery/enet` | smoke `TestEnetPackagesCompile` при `-tags enet` + cgo; без тега — skip с инструкцией |
+| `tests/integration` | room lifecycle: create (host) → issue (joiner) → оба join по WS → 2 peers → joiner disconnect → 1 peer (host) |
 
 После изменения `internal/port/*` интерфейсов:
 
@@ -160,11 +164,7 @@ go generate ./tests/mocks/...
 
 ## Следующий приоритет
 
-1. **`usecase/room`** — Join: `errors.Join` при fail Revoke после Admit; room not found после validate.
-2. **`adapter/realtime` `Send`** — broadcast с `ExcludePeerID` не доставляет отправителю.
-3. **`Peer.Stop`** — mock `Connection` с блокирующим `Receive`, `Stop` завершается после `Close`.
-4. **`delivery/ws`** — `app.Test`: невалидный token → opcode; join с ticket из HTTP issue.
-5. **Интеграция** — create → issue → join (дороже в поддержке).
+Очередь пуста — первый интеграционный сценарий (`tests/integration`, ADR-0002) закрыт.
 
 При новой join/reservation-ошибке — кейс в `join_reject_test.go` / `reservation_reject_test.go` (см. [.cursor/rules/join-error-opcodes.mdc](../.cursor/rules/join-error-opcodes.mdc)).
 

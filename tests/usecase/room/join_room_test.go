@@ -13,6 +13,19 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+// newTestClaims собирает валидные claims (IssuedAt = now, ExpiresAt = +1h);
+// nickName == "" — claims без ника.
+func newTestClaims(roomID domain.RoomID, peerID domain.PeerID, nickName string) domain.Claims {
+	now := time.Now()
+	return domain.Claims{
+		RoomID:    roomID,
+		PeerID:    peerID,
+		NickName:  nickName,
+		IssuedAt:  now,
+		ExpiresAt: now.Add(time.Hour),
+	}
+}
+
 func TestJoinRoom_ValidateError(t *testing.T) {
 	t.Parallel()
 
@@ -38,6 +51,36 @@ func TestJoinRoom_ValidateError(t *testing.T) {
 	}
 }
 
+func TestJoinRoom_GetRoomNotFoundAfterValidate(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	const (
+		roomID = domain.RoomID(1)
+		peerID = domain.PeerID(2)
+	)
+	claims := newTestClaims(roomID, peerID, "")
+
+	admission := mocks.NewMockAdmission(ctrl)
+	registry := mocks.NewMockRoomRegistry(ctrl)
+	peerFactory := mocks.NewMockPeerFactory(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
+	logger := mocks.NewMockLogger(ctrl)
+
+	admission.EXPECT().Validate(gomock.Any(), gomock.Any()).Return(claims, nil)
+	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(nil, domain.ErrRoomNotFound)
+
+	uc := useroom.NewJoinRoomUseCase(admission, peerFactory, registry, reservation, logger)
+	_, gotPeerID, err := uc.JoinRoom(context.Background(), mocks.NewMockConnection(ctrl), []byte("token"))
+	if !errors.Is(err, domain.ErrRoomNotFound) {
+		t.Fatalf("err = %v, want ErrRoomNotFound", err)
+	}
+	if gotPeerID.IsValid() {
+		t.Fatalf("peerID = %v, want invalid", gotPeerID)
+	}
+}
+
 func TestJoinRoom_Success(t *testing.T) {
 	t.Parallel()
 
@@ -47,15 +90,8 @@ func TestJoinRoom_Success(t *testing.T) {
 		roomID = domain.RoomID(1)
 		peerID = domain.PeerID(2)
 	)
-	now := time.Now()
 	const nickName = "player"
-	claims := domain.Claims{
-		RoomID:    roomID,
-		PeerID:    peerID,
-		NickName:  nickName,
-		IssuedAt:  now,
-		ExpiresAt: now.Add(time.Hour),
-	}
+	claims := newTestClaims(roomID, peerID, nickName)
 	token := []byte("ticket")
 
 	admission := mocks.NewMockAdmission(ctrl)
@@ -106,13 +142,7 @@ func TestJoinRoom_AdmitFailure(t *testing.T) {
 		roomID = domain.RoomID(1)
 		peerID = domain.PeerID(2)
 	)
-	now := time.Now()
-	claims := domain.Claims{
-		RoomID:    roomID,
-		PeerID:    peerID,
-		IssuedAt:  now,
-		ExpiresAt: now.Add(time.Hour),
-	}
+	claims := newTestClaims(roomID, peerID, "")
 
 	admission := mocks.NewMockAdmission(ctrl)
 	registry := mocks.NewMockRoomRegistry(ctrl)
@@ -142,13 +172,7 @@ func TestJoinRoom_CreatePeerFailureRevokesReservation(t *testing.T) {
 		roomID = domain.RoomID(1)
 		peerID = domain.PeerID(2)
 	)
-	now := time.Now()
-	claims := domain.Claims{
-		RoomID:    roomID,
-		PeerID:    peerID,
-		IssuedAt:  now,
-		ExpiresAt: now.Add(time.Hour),
-	}
+	claims := newTestClaims(roomID, peerID, "")
 	createErr := errors.New("create peer failed")
 
 	admission := mocks.NewMockAdmission(ctrl)
@@ -174,6 +198,46 @@ func TestJoinRoom_CreatePeerFailureRevokesReservation(t *testing.T) {
 	}
 }
 
+func TestJoinRoom_RevokeFailureJoinsErrors(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	const (
+		roomID = domain.RoomID(1)
+		peerID = domain.PeerID(2)
+	)
+	claims := newTestClaims(roomID, peerID, "")
+	createErr := errors.New("create peer failed")
+	revokeErr := errors.New("revoke reservation failed")
+
+	admission := mocks.NewMockAdmission(ctrl)
+	registry := mocks.NewMockRoomRegistry(ctrl)
+	peerFactory := mocks.NewMockPeerFactory(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
+	logger := mocks.NewMockLogger(ctrl)
+	room := mocks.NewMockRoom(ctrl)
+	conn := mocks.NewMockConnection(ctrl)
+
+	admission.EXPECT().Validate(gomock.Any(), gomock.Any()).Return(claims, nil)
+	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
+	reservation.EXPECT().Admit(gomock.Any(), roomID, peerID).Return(nil)
+	room.EXPECT().Context().Return(context.Background())
+	peerFactory.EXPECT().CreatePeer(gomock.Any(), peerID, gomock.Any(), conn, room, logger).Return(nil, createErr)
+	room.EXPECT().HasPeer(peerID).Return(false)
+	reservation.EXPECT().Revoke(gomock.Any(), roomID, peerID).Return(revokeErr)
+	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
+
+	uc := useroom.NewJoinRoomUseCase(admission, peerFactory, registry, reservation, logger)
+	_, _, err := uc.JoinRoom(context.Background(), conn, []byte("t"))
+	if !errors.Is(err, createErr) {
+		t.Fatalf("err = %v, want errors.Is createErr", err)
+	}
+	if !errors.Is(err, revokeErr) {
+		t.Fatalf("err = %v, want errors.Is revokeErr", err)
+	}
+}
+
 func TestJoinRoom_ReplaceFailureDoesNotRevoke(t *testing.T) {
 	t.Parallel()
 
@@ -183,13 +247,7 @@ func TestJoinRoom_ReplaceFailureDoesNotRevoke(t *testing.T) {
 		roomID = domain.RoomID(1)
 		peerID = domain.PeerID(2)
 	)
-	now := time.Now()
-	claims := domain.Claims{
-		RoomID:    roomID,
-		PeerID:    peerID,
-		IssuedAt:  now,
-		ExpiresAt: now.Add(time.Hour),
-	}
+	claims := newTestClaims(roomID, peerID, "")
 	replaceErr := domain.ErrReplaceFailed
 
 	admission := mocks.NewMockAdmission(ctrl)
@@ -226,13 +284,7 @@ func TestJoinRoom_StartFailureRevokesWhenPeerNotInRoom(t *testing.T) {
 		roomID = domain.RoomID(1)
 		peerID = domain.PeerID(2)
 	)
-	now := time.Now()
-	claims := domain.Claims{
-		RoomID:    roomID,
-		PeerID:    peerID,
-		IssuedAt:  now,
-		ExpiresAt: now.Add(time.Hour),
-	}
+	claims := newTestClaims(roomID, peerID, "")
 	startErr := errors.New("start failed")
 
 	admission := mocks.NewMockAdmission(ctrl)

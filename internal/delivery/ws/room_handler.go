@@ -6,6 +6,7 @@ import (
 
 	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
 	deliveryerrors "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/errors"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/ws"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
@@ -52,27 +53,26 @@ func (h *RoomsHandler) RegisterRoutes(app *fiber.App) {
 }
 
 func (h *RoomsHandler) handleConnect(c *websocket.Conn) {
+	connection, waiter := h.connectionFactory.CreateConnection(c)
+	defer func() { _ = connection.Close() }()
+
 	tokenQuery := c.Query("token")
 	if tokenQuery == "" {
+		deliveryerrors.SendJoinReject(connection, domain.ErrEmptyToken)
 		h.logger.Warn("websocket connect: missing token")
-		_ = c.Close()
 		return
 	}
 
 	token, err := base64.RawURLEncoding.DecodeString(tokenQuery)
 	if err != nil {
+		deliveryerrors.SendJoinReject(connection, domain.ErrInvalidToken)
 		h.logger.Warn("websocket connect: invalid token encoding")
-		_ = c.Close()
 		return
 	}
 	if h.transportCfg.MaxIncomingFrameBytes > 0 && len(token) > h.transportCfg.MaxIncomingFrameBytes {
 		h.logger.Warn("websocket connect: token too large", "bytes", len(token))
-		_ = c.Close()
 		return
 	}
-
-	connection, waiter := h.connectionFactory.CreateConnection(c)
-	defer func() { _ = connection.Close() }()
 
 	summary, peerID, err := h.joinRoomUseCase.JoinRoom(h.ctx, connection, token)
 	if err != nil {

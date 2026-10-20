@@ -2,7 +2,6 @@ package http_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -10,112 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
-	admissionadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/admission"
-	httpauthadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httpauth"
-	httplimitsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httplimits"
-	porthttplimits "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/httplimits"
-	identityadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/identity"
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/stdlib"
-	adapterrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
-	statepolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy/state"
-	adapterregistry "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/registry"
-	adapterreservation "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
-	deliveryhttp "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/http"
-	useroom "github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
-	"github.com/gofiber/fiber/v3"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/env"
 )
-
-type testEnv struct {
-	app *fiber.App
-}
-
-func newTestEnv(t *testing.T, httpAuth ...httpauthadapter.HTTPAuthConfig) *testEnv {
-	return newTestEnvWithLimits(t, httplimitsadapter.HTTPLimitsConfig{}, httpAuth...)
-}
-
-func mustHTTPLimits(t *testing.T, cfg httplimitsadapter.HTTPLimitsConfig) porthttplimits.Limits {
-	t.Helper()
-	limits, err := httplimitsadapter.New(cfg)
-	if err != nil {
-		t.Fatalf("httplimits.New: %v", err)
-	}
-	return limits
-}
-
-func newTestEnvWithLimits(t *testing.T, httpLimits httplimitsadapter.HTTPLimitsConfig, httpAuth ...httpauthadapter.HTTPAuthConfig) *testEnv {
-	t.Helper()
-
-	authCfg := httpauthadapter.HTTPAuthConfig{Disabled: true}
-	if len(httpAuth) > 0 {
-		authCfg = httpAuth[0]
-	}
-	limits := mustHTTPLimits(t, httpLimits)
-
-	logger := stdlib.New("http-test")
-	roomPolicyFactory := statepolicy.NewStateRoomPolicyFactory(logger)
-	roomFactory := adapterrealtime.NewRoomFactory(logger, roomPolicyFactory, 0)
-	registry := adapterregistry.NewRoomRegistry(context.Background(), roomFactory, logger)
-	reservation := adapterreservation.NewReservation(logger)
-	admission := admissionadapter.NewAdmission(admissionadapter.AdmissionConfig{
-		Secret: []byte("test-secret"),
-		TTL:    time.Hour,
-	})
-	allocator := identityadapter.NewCounter()
-
-	issueUC := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
-	createUC := useroom.NewCreateUseCase(registry, allocator, reservation, limits, issueUC, logger)
-	leaveUC := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
-	deleteUC := useroom.NewDeleteUseCase(registry, reservation, leaveUC, logger)
-	getListUC := useroom.NewGetListUseCase(registry, logger)
-
-	handler := deliveryhttp.NewRoomsHandler(createUC, issueUC, deleteUC, getListUC, logger)
-	app := fiber.New()
-	handler.RegisterRoutes(app, authCfg, limits)
-	return &testEnv{app: app}
-}
-
-func (e *testEnv) do(t *testing.T, method, target string, body any) (*http.Response, []byte) {
-	return e.doWithHeader(t, method, target, body, "", "")
-}
-
-func (e *testEnv) doAuthorized(t *testing.T, method, target string, body any, authorization string) (*http.Response, []byte) {
-	return e.doWithHeader(t, method, target, body, "Authorization", authorization)
-}
-
-func (e *testEnv) doWithHeader(t *testing.T, method, target string, body any, header, value string) (*http.Response, []byte) {
-	t.Helper()
-
-	var reader io.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			t.Fatalf("marshal body: %v", err)
-		}
-		reader = bytes.NewReader(b)
-	}
-
-	req := httptest.NewRequest(method, target, reader)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	if header != "" {
-		req.Header.Set(header, value)
-	}
-
-	resp, err := e.app.Test(req)
-	if err != nil {
-		t.Fatalf("%s %s: %v", method, target, err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("read body: %v", err)
-	}
-	return resp, respBody
-}
 
 func createRoomRequest(extra map[string]any) map[string]any {
 	req := map[string]any{
@@ -149,9 +45,9 @@ func parseCreateRoomResponse(t *testing.T, body []byte) createRoomResponse {
 func TestHTTP_CreateGetListDeleteRoom(t *testing.T) {
 	t.Parallel()
 
-	env := newTestEnv(t)
+	env := env.New(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
+	resp, body := env.Do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
 		"capacity": 2,
 	}))
 	if resp.StatusCode != http.StatusCreated {
@@ -166,7 +62,7 @@ func TestHTTP_CreateGetListDeleteRoom(t *testing.T) {
 		t.Fatalf("token = empty, want non-empty")
 	}
 
-	resp, body = env.do(t, http.MethodGet, "/rooms", nil)
+	resp, body = env.Do(t, http.MethodGet, "/rooms", nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("list status = %d, body = %s", resp.StatusCode, body)
 	}
@@ -183,12 +79,12 @@ func TestHTTP_CreateGetListDeleteRoom(t *testing.T) {
 		t.Fatalf("list = %+v, want one room id %d", list.Rooms, created.Room.ID)
 	}
 
-	resp, body = env.do(t, http.MethodDelete, "/rooms/"+formatID(created.Room.ID), nil)
+	resp, body = env.Do(t, http.MethodDelete, "/rooms/"+formatID(created.Room.ID), nil)
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete status = %d, body = %s", resp.StatusCode, body)
 	}
 
-	resp, body = env.do(t, http.MethodGet, "/rooms", nil)
+	resp, body = env.Do(t, http.MethodGet, "/rooms", nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("list after delete status = %d", resp.StatusCode)
 	}
@@ -203,9 +99,9 @@ func TestHTTP_CreateGetListDeleteRoom(t *testing.T) {
 func TestHTTP_CreateRoomWithAttributes(t *testing.T) {
 	t.Parallel()
 
-	env := newTestEnv(t)
+	env := env.New(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
+	resp, body := env.Do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
 		"capacity": 4,
 		"attributes": map[string]any{
 			"map":  "de_dust2",
@@ -227,7 +123,7 @@ func TestHTTP_CreateRoomWithAttributes(t *testing.T) {
 		t.Fatalf("token = empty, want non-empty")
 	}
 
-	resp, body = env.do(t, http.MethodGet, "/rooms", nil)
+	resp, body = env.Do(t, http.MethodGet, "/rooms", nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("list status = %d, body = %s", resp.StatusCode, body)
 	}
@@ -252,9 +148,9 @@ func TestHTTP_CreateRoomWithAttributes(t *testing.T) {
 func TestHTTP_CreateReturnsTicket(t *testing.T) {
 	t.Parallel()
 
-	env := newTestEnv(t)
+	env := env.New(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
+	resp, body := env.Do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
 		"capacity": 4,
 	}))
 	if resp.StatusCode != http.StatusCreated {
@@ -283,9 +179,9 @@ func TestHTTP_CreateReturnsTicket(t *testing.T) {
 func TestHTTP_IssueTicketForJoiner(t *testing.T) {
 	t.Parallel()
 
-	env := newTestEnv(t)
+	env := env.New(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
+	resp, body := env.Do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
 		"capacity":  4,
 		"nick_name": "host",
 	}))
@@ -295,7 +191,7 @@ func TestHTTP_IssueTicketForJoiner(t *testing.T) {
 	created := parseCreateRoomResponse(t, body)
 
 	const joinerNick = "joiner"
-	resp, body = env.do(t, http.MethodPost, "/rooms/"+formatID(created.Room.ID)+"/tickets", map[string]any{
+	resp, body = env.Do(t, http.MethodPost, "/rooms/"+formatID(created.Room.ID)+"/tickets", map[string]any{
 		"nick_name": joinerNick,
 	})
 	if resp.StatusCode != http.StatusCreated {
@@ -334,15 +230,15 @@ func TestHTTP_IssueTicketForJoiner(t *testing.T) {
 func TestHTTP_CreateAssignsDistinctRoomIDs(t *testing.T) {
 	t.Parallel()
 
-	env := newTestEnv(t)
+	env := env.New(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{"capacity": 1}))
+	resp, body := env.Do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{"capacity": 1}))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("first create status = %d, body = %s", resp.StatusCode, body)
 	}
 	first := parseCreateRoomResponse(t, body)
 
-	resp, body = env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{"capacity": 1, "nick_name": "host2"}))
+	resp, body = env.Do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{"capacity": 1, "nick_name": "host2"}))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("second create status = %d, body = %s", resp.StatusCode, body)
 	}
@@ -355,7 +251,7 @@ func TestHTTP_CreateAssignsDistinctRoomIDs(t *testing.T) {
 func TestHTTP_InvalidRoomIDPath(t *testing.T) {
 	t.Parallel()
 
-	env := newTestEnv(t)
+	env := env.New(t)
 
 	cases := []struct {
 		name string
@@ -369,7 +265,7 @@ func TestHTTP_InvalidRoomIDPath(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			resp, body := env.do(t, http.MethodPost, tc.path, map[string]any{})
+			resp, body := env.Do(t, http.MethodPost, tc.path, map[string]any{})
 			if resp.StatusCode != http.StatusBadRequest {
 				t.Fatalf("status = %d, want 400, body = %s", resp.StatusCode, body)
 			}
@@ -381,9 +277,9 @@ func TestHTTP_InvalidRoomIDPath(t *testing.T) {
 func TestHTTP_DeleteNotFound(t *testing.T) {
 	t.Parallel()
 
-	env := newTestEnv(t)
+	env := env.New(t)
 
-	resp, body := env.do(t, http.MethodDelete, "/rooms/404", nil)
+	resp, body := env.Do(t, http.MethodDelete, "/rooms/404", nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404, body = %s", resp.StatusCode, body)
 	}
@@ -393,15 +289,15 @@ func TestHTTP_DeleteNotFound(t *testing.T) {
 func TestHTTP_IssueTicketInvalidNickName(t *testing.T) {
 	t.Parallel()
 
-	env := newTestEnv(t)
+	env := env.New(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{"capacity": 2}))
+	resp, body := env.Do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{"capacity": 2}))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create status = %d, body = %s", resp.StatusCode, body)
 	}
 	created := parseCreateRoomResponse(t, body)
 
-	resp, body = env.do(t, http.MethodPost, "/rooms/"+formatID(created.Room.ID)+"/tickets", map[string]any{
+	resp, body = env.Do(t, http.MethodPost, "/rooms/"+formatID(created.Room.ID)+"/tickets", map[string]any{
 		"password": "secret",
 	})
 	if resp.StatusCode != http.StatusBadRequest {
@@ -413,9 +309,9 @@ func TestHTTP_IssueTicketInvalidNickName(t *testing.T) {
 func TestHTTP_IssueTicketRoomNotFound(t *testing.T) {
 	t.Parallel()
 
-	env := newTestEnv(t)
+	env := env.New(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms/99/tickets", map[string]any{"nick_name": "player"})
+	resp, body := env.Do(t, http.MethodPost, "/rooms/99/tickets", map[string]any{"nick_name": "player"})
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404, body = %s", resp.StatusCode, body)
 	}
@@ -425,9 +321,9 @@ func TestHTTP_IssueTicketRoomNotFound(t *testing.T) {
 func TestHTTP_CreateMissingNickName(t *testing.T) {
 	t.Parallel()
 
-	env := newTestEnv(t)
+	env := env.New(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", map[string]any{
+	resp, body := env.Do(t, http.MethodPost, "/rooms", map[string]any{
 		"capacity": 2,
 	})
 	if resp.StatusCode != http.StatusBadRequest {
@@ -439,9 +335,9 @@ func TestHTTP_CreateMissingNickName(t *testing.T) {
 func TestHTTP_CreateInvalidNickName(t *testing.T) {
 	t.Parallel()
 
-	env := newTestEnv(t)
+	env := env.New(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", map[string]any{
+	resp, body := env.Do(t, http.MethodPost, "/rooms", map[string]any{
 		"capacity":  2,
 		"nick_name": "",
 	})
@@ -454,11 +350,11 @@ func TestHTTP_CreateInvalidNickName(t *testing.T) {
 func TestHTTP_CreateInvalidBody(t *testing.T) {
 	t.Parallel()
 
-	env := newTestEnv(t)
+	env := env.New(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/rooms", bytes.NewReader([]byte("not-json")))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := env.app.Test(req)
+	resp, err := env.App.Test(req)
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
@@ -472,9 +368,9 @@ func TestHTTP_CreateInvalidBody(t *testing.T) {
 func TestHTTP_CreateInvalidCapacity(t *testing.T) {
 	t.Parallel()
 
-	env := newTestEnv(t)
+	env := env.New(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
+	resp, body := env.Do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
 		"capacity": 0,
 	}))
 	if resp.StatusCode != http.StatusBadRequest {
@@ -486,9 +382,9 @@ func TestHTTP_CreateInvalidCapacity(t *testing.T) {
 func TestHTTP_CreateCapacityExceedsMax(t *testing.T) {
 	t.Parallel()
 
-	env := newTestEnv(t)
+	env := env.New(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
+	resp, body := env.Do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
 		"capacity": 128,
 	}))
 	if resp.StatusCode != http.StatusBadRequest {
@@ -500,16 +396,16 @@ func TestHTTP_CreateCapacityExceedsMax(t *testing.T) {
 func TestHTTP_IssueTicketReservationFull(t *testing.T) {
 	t.Parallel()
 
-	env := newTestEnv(t)
+	env := env.New(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{"capacity": 1, "nick_name": "host"}))
+	resp, body := env.Do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{"capacity": 1, "nick_name": "host"}))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create status = %d, body = %s", resp.StatusCode, body)
 	}
 	created := parseCreateRoomResponse(t, body)
 	roomPath := "/rooms/" + formatID(created.Room.ID) + "/tickets"
 
-	resp, body = env.do(t, http.MethodPost, roomPath, map[string]any{"nick_name": "player2"})
+	resp, body = env.Do(t, http.MethodPost, roomPath, map[string]any{"nick_name": "player2"})
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("issue status = %d, want 409, body = %s", resp.StatusCode, body)
 	}
@@ -519,9 +415,9 @@ func TestHTTP_IssueTicketReservationFull(t *testing.T) {
 func TestHTTP_RoomPasswordOnCreateIssueDelete(t *testing.T) {
 	t.Parallel()
 
-	env := newTestEnv(t)
+	env := env.New(t)
 
-	resp, body := env.do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
+	resp, body := env.Do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
 		"capacity": 2,
 		"password": "room-pass",
 	}))
@@ -534,7 +430,7 @@ func TestHTTP_RoomPasswordOnCreateIssueDelete(t *testing.T) {
 		t.Fatalf("host token = empty, want non-empty")
 	}
 
-	resp, body = env.do(t, http.MethodPost, roomPath+"/tickets", map[string]any{
+	resp, body = env.Do(t, http.MethodPost, roomPath+"/tickets", map[string]any{
 		"nick_name": "player",
 		"password":  "wrong",
 	})
@@ -543,7 +439,7 @@ func TestHTTP_RoomPasswordOnCreateIssueDelete(t *testing.T) {
 	}
 	assertErrorCode(t, body, "invalid_credentials")
 
-	resp, body = env.do(t, http.MethodPost, roomPath+"/tickets", map[string]any{
+	resp, body = env.Do(t, http.MethodPost, roomPath+"/tickets", map[string]any{
 		"nick_name": "player",
 		"password":  "room-pass",
 	})
@@ -551,12 +447,12 @@ func TestHTTP_RoomPasswordOnCreateIssueDelete(t *testing.T) {
 		t.Fatalf("issue ok status = %d, body = %s", resp.StatusCode, body)
 	}
 
-	resp, body = env.do(t, http.MethodDelete, roomPath, map[string]any{"password": "wrong"})
+	resp, body = env.Do(t, http.MethodDelete, roomPath, map[string]any{"password": "wrong"})
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("delete wrong pass status = %d, body = %s", resp.StatusCode, body)
 	}
 
-	resp, body = env.do(t, http.MethodDelete, roomPath, map[string]any{"password": "room-pass"})
+	resp, body = env.Do(t, http.MethodDelete, roomPath, map[string]any{"password": "room-pass"})
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete ok status = %d, body = %s", resp.StatusCode, body)
 	}

@@ -17,7 +17,7 @@ Ticket по-прежнему в query (контракт клиента). Стр�
 
 Ошибка join: один кадр OpCode (`delivery/errors.SendJoinReject`) → close WS.
 
-Нет `token` в query — close **без** кадра (`0x40` не шлётся).
+Нет `token` в query — reject-кадр `OpEmptyToken` (`0x40`) → close; битый base64url — `OpInvalidToken` (`0x41`); token длиннее `MaxIncomingFrameBytes` — close **без** кадра (паритет с oversize-пакетом ENet).
 
 Idle peer'ы выводятся sweep'ом (`EvictIdlePeersUseCase`), когда соединение перестаёт подтверждать живость: входящие кадры и pong двигают `lastSeen`, `Send` — нет; мёртвый транспорт → `IsAlive() = false` → молчаливый `Close` через `LeaveRoom` (ADR 0001).
 

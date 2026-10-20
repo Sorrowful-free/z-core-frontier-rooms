@@ -4,6 +4,7 @@ go 1.25.1
 
 require (
 	github.com/codecat/go-enet v0.0.0-20250728072647-ae229138f138
+	github.com/fasthttp/websocket v1.5.12
 	github.com/gofiber/contrib/v3/websocket v1.1.5
 	github.com/gofiber/contrib/v3/zap v1.0.6
 	github.com/gofiber/fiber/v3 v3.2.0
@@ -15,7 +16,6 @@ tool go.uber.org/mock/mockgen
 
 require (
 	github.com/andybalholm/brotli v1.2.1 // indirect
-	github.com/fasthttp/websocket v1.5.12 // indirect
 	github.com/gofiber/schema v1.7.1 // indirect
 	github.com/gofiber/utils/v2 v2.0.5 // indirect
 	github.com/google/uuid v1.6.0 // indirect
