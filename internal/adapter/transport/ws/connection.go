@@ -8,6 +8,7 @@ import (
 
 	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
+	fwebsocket "github.com/fasthttp/websocket"
 	"github.com/gofiber/contrib/v3/websocket"
 )
 
@@ -17,7 +18,7 @@ const (
 )
 
 type WsConnection struct {
-	conn                  *websocket.Conn
+	conn                  *fwebsocket.Conn
 	closed                chan struct{}
 	closeOnce             sync.Once
 	pingMs                atomic.Int64
@@ -27,13 +28,14 @@ type WsConnection struct {
 }
 
 func NewWsConnection(conn *websocket.Conn, cfg adaptertransport.TransportConfig) *WsConnection {
+	inner := conn.Conn
 	maxBytes := cfg.MaxIncomingFrameBytes
 	if maxBytes > 0 {
-		conn.SetReadLimit(int64(maxBytes))
+		inner.SetReadLimit(int64(maxBytes))
 	}
 
 	c := &WsConnection{
-		conn:                  conn,
+		conn:                  inner,
 		closed:                make(chan struct{}),
 		maxIncomingFrameBytes: maxBytes,
 		idleTimeout:           cfg.PeerIdleTimeout,
@@ -41,7 +43,7 @@ func NewWsConnection(conn *websocket.Conn, cfg adaptertransport.TransportConfig)
 	c.pingMs.Store(-1)
 	c.lastSeen.Store(time.Now().UnixNano())
 
-	conn.SetPongHandler(func(message string) error {
+	inner.SetPongHandler(func(message string) error {
 		now := time.Now().UnixNano()
 		c.lastSeen.Store(now)
 		payload := []byte(message)
@@ -71,7 +73,7 @@ func (c *WsConnection) Close() error {
 
 func (c *WsConnection) Send(frame domain.Frame) error {
 	payload := append([]byte{byte(frame.OpCode)}, frame.Payload...)
-	return c.conn.WriteMessage(websocket.BinaryMessage, payload)
+	return c.conn.WriteMessage(fwebsocket.BinaryMessage, payload)
 }
 
 func (c *WsConnection) Receive() (domain.Frame, error) {
@@ -119,7 +121,7 @@ func (c *WsConnection) runPingLoop() {
 		case <-ticker.C:
 			payload := make([]byte, 8)
 			binary.BigEndian.PutUint64(payload, uint64(time.Now().UnixNano()))
-			if err := c.conn.WriteControl(websocket.PingMessage, payload, time.Now().Add(wsPingWriteWait)); err != nil {
+			if err := c.conn.WriteControl(fwebsocket.PingMessage, payload, time.Now().Add(wsPingWriteWait)); err != nil {
 				return
 			}
 		}
