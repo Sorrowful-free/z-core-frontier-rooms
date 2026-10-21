@@ -91,7 +91,7 @@ func (p *StateRoomPolicy) OnLeave(peer realtime.Peer) error {
 		peerID := peer.GetID()
 		peerState, ok := roomState.Peers[peerID]
 		if !ok {
-			return fmt.Errorf("peer not found: %d", peerID)
+			return fmt.Errorf("%w: %d", domain.ErrPeerNotFound, peerID)
 		}
 		delete(roomState.Peers, peerID)
 		delete(roomState.Inputs, peerID)

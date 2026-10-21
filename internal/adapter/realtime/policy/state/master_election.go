@@ -8,8 +8,6 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 )
 
-const pingUnknown = int64(-1)
-
 // electMasterPeerID выбирает нового master среди peers.
 // Среди peer с Ping() >= 0 — минимальный ping; при равенстве — минимальный PeerID.
 // Если ни у кого нет инициализированного ping (все -1) — минимальный PeerID.

@@ -51,32 +51,36 @@ func (p *StateRoomPolicy) masterPeerID() domain.PeerID {
 
 func (p *StateRoomPolicy) joinPeerAndSyncState(peer realtime.Peer) error {
 	peerID := peer.GetID()
-	oldRoomState := p.state.Clone()
+	newState := p.state.Clone()
+	newMaster := p.master
 
-	if _, ok := p.state.Peers[peerID]; !ok {
-		if len(p.state.Peers) == 0 {
-			p.master = peer
+	if _, ok := newState.Peers[peerID]; !ok {
+		if len(newState.Peers) == 0 {
+			newMaster = peer
 		}
-		p.state.Peers[peerID] = state.PeerState{
+		newState.Peers[peerID] = state.PeerState{
 			NickName: peer.GetNickName(),
-			IsMaster: len(p.state.Peers) == 0,
+			IsMaster: len(newState.Peers) == 0,
 			Ping:     peer.Ping(),
 		}
 	}
 
-	if err := p.sendFullStateToPeer(peerID, &p.state); err != nil {
+	if err := p.sendFullStateToPeer(peerID, newState); err != nil {
 		return fmt.Errorf("send full state to peer %d: %w", peerID, err)
 	}
 
-	roomPatch, err := oldRoomState.MakePatch(&p.state)
+	roomPatch, err := p.state.MakePatch(newState)
 	if err != nil {
-		return err
+		return fmt.Errorf("make patch on join: %w", err)
 	}
 	if roomPatch != nil {
 		if err := p.sendPatchStateExclude(peerID, roomPatch); err != nil {
 			return fmt.Errorf("send patch state on join: %w", err)
 		}
 	}
+
+	p.state = *newState
+	p.master = newMaster
 	p.commitPrevState()
 	return nil
 }

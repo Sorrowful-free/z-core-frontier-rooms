@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -46,10 +47,10 @@ func NewRoom(ctx context.Context, id domain.RoomID, policy policy.RoomPolicy, ca
 		capacity:   capacity,
 		attributes: domain.CloneRoomAttributes(attributes),
 		incoming:   make(chan events.RoomEvent, incomingQueue),
-		lifecycle: make(chan lifecycleRequest),
-		logger:    logger,
-		ctx:       ctx,
-		cancel:    cancel,
+		lifecycle:  make(chan lifecycleRequest),
+		logger:     logger,
+		ctx:        ctx,
+		cancel:     cancel,
 	}
 }
 
@@ -65,8 +66,8 @@ func (r *Room) GetCapacity() int8 {
 	if r.capacity > domain.MaxRoomCapacity {
 		return int8(domain.MaxRoomCapacity)
 	}
-	if r.capacity < -128 {
-		return -128
+	if r.capacity < math.MinInt8 {
+		return math.MinInt8
 	}
 	return int8(r.capacity)
 }
@@ -149,7 +150,7 @@ func (r *Room) Leave(peer realtime.Peer) error {
 	r.mutex.Lock()
 	if _, ok := r.peers[peerID]; !ok {
 		r.mutex.Unlock()
-		return fmt.Errorf("peer not found: %d", peerID)
+		return fmt.Errorf("%w: %d", domain.ErrPeerNotFound, peerID)
 	}
 	r.mutex.Unlock()
 
@@ -228,7 +229,7 @@ func (r *Room) GetPeer(peerID domain.PeerID) (realtime.Peer, error) {
 	defer r.mutex.RUnlock()
 	peer, ok := r.peers[peerID]
 	if !ok {
-		return nil, fmt.Errorf("peer not found: %d", peerID)
+		return nil, fmt.Errorf("%w: %d", domain.ErrPeerNotFound, peerID)
 	}
 	return peer, nil
 }
@@ -257,7 +258,7 @@ func (r *Room) snapshotPeersForSend(target, exclude domain.PeerID) ([]realtime.P
 	if target.IsValid() {
 		peer, ok := r.peers[target]
 		if !ok {
-			return nil, fmt.Errorf("peer not found: %d", target)
+			return nil, fmt.Errorf("%w: %d", domain.ErrPeerNotFound, target)
 		}
 		return []realtime.Peer{peer}, nil
 	}
