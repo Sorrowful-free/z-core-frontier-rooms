@@ -65,7 +65,7 @@ Reservation-ошибки на join мапятся в диапазон `0x70+` (�
 | OpCode | Hex | Причина |
 |--------|-----|---------|
 | `OpReservationNotFound` | `0x70` | `ErrReservationNotFound` |
-| `OpReservationFull` | `0x71` | `ErrReservationFull` |
+| `OpReservationFull` | `0x71` | `ErrReservationFull` / `ErrRoomFull` (переполнение `Room.Join`) |
 | `OpReservationSlotHeld` | `0x72` | `ErrTicketSlotHeld` / `ErrReservationAlreadyExists` |
 | `OpReservationNotReserved` | `0x73` | `ErrReservationNotReserved` |
 | `OpReservationExpired` | `0x74` | `ErrReservationExpired` |

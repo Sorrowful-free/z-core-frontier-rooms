@@ -2,6 +2,7 @@ package realtime_test
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -132,6 +133,27 @@ func TestRoom_Stop_ConcurrentLeave_NoPanic(t *testing.T) {
 	wg.Wait()
 
 	assertRoomStopped(t, room)
+}
+
+func TestRoom_Stop_LifecycleErrorWrapsContextCanceled(t *testing.T) {
+	t.Parallel()
+
+	room := startTestRoom(t, 64)
+
+	peer := &stubPeer{id: domain.PeerID(300)}
+	if err := room.Join(peer); err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+	if err := room.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	if err := room.Join(&stubPeer{id: domain.PeerID(301)}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Join after Stop err = %v, want errors.Is context.Canceled", err)
+	}
+	if err := room.Leave(peer); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Leave after Stop err = %v, want errors.Is context.Canceled", err)
+	}
 }
 
 func assertRoomStopped(t *testing.T, room *adapterrealtime.Room) {

@@ -35,13 +35,13 @@ func (r *Room) runLifecycle(req lifecycleRequest) {
 func (r *Room) dispatchLifecycle(req lifecycleRequest) error {
 	select {
 	case <-r.ctx.Done():
-		return fmt.Errorf("room stopped: %d", r.id)
+		return fmt.Errorf("room stopped: %d: %w", r.id, r.ctx.Err())
 	case r.lifecycle <- req:
 	}
 	select {
 	case err := <-req.done:
 		return err
 	case <-r.ctx.Done():
-		return fmt.Errorf("room stopped: %d", r.id)
+		return fmt.Errorf("room stopped: %d: %w", r.id, r.ctx.Err())
 	}
 }

@@ -21,6 +21,8 @@ func JoinRejectOpCode(err error) domain.OpCode {
 		return domain.OpExpiredToken
 	case stderrors.Is(err, domain.ErrRoomNotFound):
 		return domain.OpRoomNotFound
+	case stderrors.Is(err, domain.ErrRoomFull):
+		return domain.OpReservationFull
 	case stderrors.Is(err, domain.ErrJoinDenied):
 		return domain.OpJoinDenied
 	case stderrors.Is(err, domain.ErrReplaceFailed):

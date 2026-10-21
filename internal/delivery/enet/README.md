@@ -13,6 +13,7 @@ UDP host (отдельный порт от Fiber). Build tag `enet` + CGO.
 | Channel limit | `2` |
 | Первый пакет | сырой ticket (`admit`), max `TRANSPORT_MAX_INCOMING_FRAME_BYTES` |
 | После admit | channel `0`, `[OpCode u8][payload]`; server send reliable |
+| Inbound delivery | `PacketFlagReliable` → `DeliveryReliable`; без флага → `DeliveryUnreliable` (`flags_cgo.go`) |
 | Oversized packet/frame | disconnect (+ `LeaveRoom` если уже admitted) |
 | Ошибка admit | OpCode `0x40`–`0x7F` (1 байт) → disconnect |
 

@@ -21,6 +21,12 @@ func TestJoinRejectOpCode(t *testing.T) {
 		{"invalid token", domain.ErrInvalidToken, domain.OpInvalidToken},
 		{"expired token", domain.ErrExpiredToken, domain.OpExpiredToken},
 		{"room not found", domain.ErrRoomNotFound, domain.OpRoomNotFound},
+		{"room full", domain.ErrRoomFull, domain.OpReservationFull},
+		{
+			"room full wrapped in join denied",
+			fmt.Errorf("%w: %w", domain.ErrJoinDenied, domain.ErrRoomFull),
+			domain.OpReservationFull,
+		},
 		{"join denied", domain.ErrJoinDenied, domain.OpJoinDenied},
 		{"replace failed", domain.ErrReplaceFailed, domain.OpReplaceFailed},
 		{"peer not found", domain.ErrPeerNotFound, domain.OpPeerNotFound},

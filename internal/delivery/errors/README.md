@@ -18,7 +18,7 @@
 | `OpInternal` | `0x50` | default |
 | `OpPeerStartFailed` | `0x51` | `ErrPeerStartFailed` |
 
-`JoinRejectOpCode`, `SendJoinReject` — `join_reject.go`. Reservation-ошибки на join делегируются в `0x70+`.
+`JoinRejectOpCode`, `SendJoinReject` — `join_reject.go`. Reservation-ошибки на join делегируются в `0x70+`; `ErrRoomFull` (`Room.Join` переполнение) мапится в `OpReservationFull` (`0x71`), case выше `ErrJoinDenied` — `ErrRoomFull` может прийти обёрнутым в него (policy `OnJoin`), тогда ordering решает.
 
 ## In-room (`0x60–0x6F`)
 
@@ -40,16 +40,16 @@
 
 `ReservationRejectOpCode`, `SendReservationReject` — `reservation_reject.go`.
 
-| OpCode | Hex |
-|--------|-----|
-| `OpReservationNotFound` | `0x70` |
-| `OpReservationFull` | `0x71` |
-| `OpReservationSlotHeld` | `0x72` |
-| `OpReservationNotReserved` | `0x73` |
-| `OpReservationExpired` | `0x74` |
-| `OpReservationAlreadyAdmitted` | `0x75` |
-| `OpPeerAlreadyInRoom` | `0x76` |
-| `OpReservationInternal` | `0x7F` |
+| OpCode | Hex | Sentinel |
+|--------|-----|----------|
+| `OpReservationNotFound` | `0x70` | `ErrReservationNotFound` |
+| `OpReservationFull` | `0x71` | `ErrReservationFull` |
+| `OpReservationSlotHeld` | `0x72` | `ErrTicketSlotHeld` / `ErrReservationAlreadyExists` |
+| `OpReservationNotReserved` | `0x73` | `ErrReservationNotReserved` |
+| `OpReservationExpired` | `0x74` | `ErrReservationExpired` |
+| `OpReservationAlreadyAdmitted` | `0x75` | `ErrReservationAlreadyAdmitted` |
+| `OpPeerAlreadyInRoom` | `0x76` | `ErrPeerAlreadyInRoom` |
+| `OpReservationInternal` | `0x7F` | `ErrReservationInternal` |
 
 ## State traffic (`0x01–0x07`)
 

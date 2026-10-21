@@ -13,8 +13,6 @@ func frameFromPacket(packet libenet.Packet, maxIncomingFrameBytes int) (domain.F
 	if err != nil {
 		return domain.Frame{}, err
 	}
-	if packet.GetFlags() != 0 {
-		frame.Delivery = deliveryFromPacketFlags(packet.GetFlags())
-	}
+	frame.Delivery = deliveryFromPacketFlags(packet.GetFlags())
 	return frame, nil
 }

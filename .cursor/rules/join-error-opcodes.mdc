@@ -15,7 +15,7 @@ alwaysApply: false
 | `join_reject.go` | `0x40–0x5F` (+ reservation via join) | `JoinRejectOpCode`, `SendJoinReject` |
 | `reservation_reject.go` | `0x70–0x7F` | `ReservationRejectOpCode`, `SendReservationReject` |
 | `join_reject.go` (in-room) | `0x60–0x6F` | обёртка `InRoomErrorOpCode`, `SendInRoomError` |
-| `wire.go` | — | `IsJoinRejectOpCode`, `IsReservationRejectOpCode`, `IsInRoomErrorOpCode` |
+| `join_reject.go` / `reservation_reject.go` | — | `IsJoinRejectOpCode`, `IsInRoomErrorOpCode` / `IsReservationRejectOpCode` |
 
 Домен: `opcodes.go`, `join_errors.go`, `reservation_error.go`, `room_errors.go` (`InRoomErrorOpCode`).
 
@@ -23,6 +23,7 @@ alwaysApply: false
 
 - [x] `join_errors.go` + `opcodes.go`
 - [x] `join_reject.go` + `tests/delivery/errors/join_reject_test.go`
+- [x] `ErrRoomFull` → `OpReservationFull` (`0x71`); case выше `ErrJoinDenied` (может прийти обёрнутым в него из policy `OnJoin`)
 - [x] [internal/delivery/errors/README.md](../../internal/delivery/errors/README.md) (join + делегирование reservation)
 
 ## Чеклист reservation (`0x70–0x7F`)
