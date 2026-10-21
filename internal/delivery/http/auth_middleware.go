@@ -9,10 +9,10 @@ import (
 )
 
 const (
-	codeUnauthorized     = "unauthorized"
-	headerAuthorization  = "Authorization"
-	headerAPIKey         = "X-API-Key"
-	bearerPrefix         = "Bearer "
+	codeUnauthorized    = "unauthorized"
+	headerAuthorization = "Authorization"
+	headerAPIKey        = "X-API-Key"
+	bearerPrefix        = "Bearer "
 )
 
 // NewAPIKeyMiddleware защищает REST control plane статическим API key.

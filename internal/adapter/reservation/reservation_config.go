@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	DefaultOrphanAdmittedTTL    = 30 * time.Second
-	DefaultOrphanSweepInterval  = 10 * time.Second
+	DefaultOrphanAdmittedTTL   = 30 * time.Second
+	DefaultOrphanSweepInterval = 10 * time.Second
 )
 
 // ReservationConfig — фоновый orphan sweep admitted-слотов без peer в room.
