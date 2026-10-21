@@ -14,6 +14,7 @@ import (
 type EnetConnection struct {
 	peer      libenet.Peer
 	incoming  chan domain.Frame
+	closed    chan struct{}
 	closeOnce sync.Once
 	alive     atomic.Bool
 }
@@ -22,6 +23,7 @@ func NewEnetConnection(peer libenet.Peer, incoming chan domain.Frame) *EnetConne
 	c := &EnetConnection{
 		peer:     peer,
 		incoming: incoming,
+		closed:   make(chan struct{}),
 	}
 	c.alive.Store(true)
 	return c
@@ -33,11 +35,12 @@ func (c *EnetConnection) Send(frame domain.Frame) error {
 }
 
 func (c *EnetConnection) Receive() (domain.Frame, error) {
-	frame, ok := <-c.incoming
-	if !ok {
+	select {
+	case <-c.closed:
 		return domain.Frame{}, io.EOF
+	case frame := <-c.incoming:
+		return frame, nil
 	}
-	return frame, nil
 }
 
 func (c *EnetConnection) Ping() int64 {
@@ -50,9 +53,8 @@ func (c *EnetConnection) Ping() int64 {
 func (c *EnetConnection) Close() error {
 	c.closeOnce.Do(func() {
 		c.alive.Store(false)
-		if c.incoming != nil {
-			close(c.incoming)
-		}
+		// incoming не закрываем: peerSession.deliver шлёт из host-цикла вне нашего lifecycle → send-on-closed race (ADR 0003).
+		close(c.closed)
 		if c.peer != nil {
 			c.peer.DisconnectNow(0)
 		}

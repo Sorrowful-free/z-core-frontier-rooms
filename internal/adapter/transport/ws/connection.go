@@ -122,6 +122,8 @@ func (c *WsConnection) runPingLoop() {
 			payload := make([]byte, 8)
 			binary.BigEndian.PutUint64(payload, uint64(time.Now().UnixNano()))
 			if err := c.conn.WriteControl(fwebsocket.PingMessage, payload, time.Now().Add(wsPingWriteWait)); err != nil {
+				// conn не отвечает на запись — помечаем закрытым, иначе zombie остаётся IsAlive.
+				_ = c.Close()
 				return
 			}
 		}

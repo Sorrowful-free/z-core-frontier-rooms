@@ -13,11 +13,14 @@ alwaysApply: true
 
 - Следовать [Effective Go](https://go.dev/doc/effective_go), [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments) и официальным гайдам по модулям/пакетам.
 - Пакеты — по ответственности и фиче; публичный API — минимальный, остальное неэкспортируемо.
-- Ошибки: оборачивать контекстом (`fmt.Errorf("...: %w", err)`), не глотать; доменные ошибки — в `domain`, маппинг в HTTP — в `delivery/http`, join/admit на wire — в `delivery/errors` (см. [.cursor/rules/join-error-opcodes.mdc](join-error-opcodes.mdc)).
+- Ошибки: оборачивать контекстом (`fmt.Errorf("...: %w", err)`), не глотать; доменные ошибки — в `domain`, маппинг в HTTP — в `delivery/http`, join/admit на wire — в `delivery/errors` (см. [.cursor/rules/join-error-opcodes.mdc](join-error-opcodes.mdc)). Перед новым `fmt.Errorf("X not found")` — проверить, нет ли уже sentinel `ErrXxx` в `domain`.
 - `context.Context` — первым аргументом в I/O и долгих операциях; отмена и дедлайны — через `ctx`, не через глобалы.
 - Интерфейсы — на стороне потребителя (`port`), маленькие; не создавать «на будущее». Конфигурация — не в `port`; см. [.cursor/rules/config.mdc](config.mdc).
-- Именование: короткие имена в узкой области; без префиксов `I` у интерфейсов; `ErrXxx` для sentinel-ошибок.
-- Конкурентность: явная передача ownership; `sync`/`errgroup` по необходимости; без утечек горутин при shutdown.
+- Именование: короткие имена в узкой области; без префиксов `I` у интерфейсов; `ErrXxx` для sentinel-ошибок; идентификаторы — только ASCII.
+- Конкурентность: явная передача ownership; `sync`/`errgroup` по необходимости; без утечек горутин при shutdown. Каналы, в которые пишут продюсеры вне WaitGroup потребителя, **не закрываются** — consumer выходит по `ctx.Done`/done-каналу, иначе send-on-closed panic.
+- Graceful shutdown — обязателен для любого компонента с горутинами/ресурсами: `Stop`/`Shutdown` отменяет ctx → прекращает приём новой работы → `wg.Wait()` всех запущенных горутин → только потом возвращает/освобождает ресурсы. Не fire-and-forget: вызвавший `Stop` должен увидеть реальное завершение, а не только сигнал о нём.
+- Encapsulation / ownership объектов чужих библиотек: не удерживать ссылку на объект, чей lifetime принадлежит чужому скоупу (request-scoped обёртки, `sync.Pool`, handler-callback), за пределы этого скоупа. Для session-scoped работы брать внутренний объект или копию на входе (пример: `WsConnection` хранит `*fasthttp/websocket.Conn`, а не пулинговый contrib `*websocket.Conn`, который `releaseConn` ресетит после return handler'а).
+- Бинарный/буферный I/O: чтение ровно N байт — `io.ReadFull`; `buf.Read` может вернуть короче без ошибки → тихая коррупция.
 - Зависимости: только нужные; версии — через `go.mod` / `go get`, без копирования в `vendor/` без причины.
 - Линтеры и формат: `go fmt`, `go vet`; при наличии в репо — `staticcheck` / `golangci-lint`.
 
@@ -45,7 +48,7 @@ tests/
 
 - Пакет теста — **внешний**: `package room_test`, импорт `github.com/Sorrowful-free/z-core-frontier-rooms/...`.
 - Table-driven tests, `t.Parallel()` где безопасно; хелперы — `t.Helper()`.
-- Запуск: `go test ./tests/...` (из корня модуля).
+- Запуск: `go test ./tests/...` (из корня модуля). CI-эквивалент: `go test -race -shuffle=on -count=1 ./tests/...` — прогонять при подозрении на флаки/гонки и перед пушем. Логи упавшего CI: `gh run list` → `gh run view <id> --log-failed`.
 - Моки портов: **mockgen** (`go.uber.org/mock`), генерация в `tests/mocks/` — `go generate ./tests/mocks/...`; в тестах `gomock.Controller`, не дублировать ручные стабы интерфейсов из `port/`.
 - После завершения функционала — спросить: **«Нужно ли написать тесты для этого функционала?»** Не писать тесты молча.
 

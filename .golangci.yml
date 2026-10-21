@@ -1,0 +1,14 @@
+version: "2"
+
+linters:
+  enable:
+    - asciicheck
+    - usestdlibvars
+  exclusions:
+    presets:
+      - std-error-handling
+      - common-false-positives
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck

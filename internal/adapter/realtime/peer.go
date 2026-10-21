@@ -73,7 +73,7 @@ func (p *Peer) Stop() error {
 		p.cancel()
 		err = p.connection.Close()
 		p.wg.Wait()
-		close(p.outbound)
+		// outbound не закрываем: tryDeliver-продюсеры вне p.wg → send-on-closed race (ADR 0003).
 	})
 	return err
 }
@@ -109,10 +109,7 @@ func processOutgoingEvents(peer *Peer) {
 		select {
 		case <-peer.ctx.Done():
 			return
-		case peerEvent, ok := <-peer.outbound:
-			if !ok {
-				return
-			}
+		case peerEvent := <-peer.outbound:
 			if err := peer.connection.Send(peerEvent.Frame); err != nil {
 				peer.logger.Error("error sending frame", "error", err)
 			}
