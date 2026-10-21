@@ -20,7 +20,7 @@ func benchRpcState() *state.RpcState {
 }
 
 func BenchmarkRpcStateCodec_Encode(b *testing.B) {
-	c := &codec.RpcStateCodec{}
+	c := codec.NewRpcStateCodec()
 	rpc := benchRpcState()
 
 	var sink []byte
@@ -36,7 +36,7 @@ func BenchmarkRpcStateCodec_Encode(b *testing.B) {
 }
 
 func BenchmarkRpcStateCodec_Decode(b *testing.B) {
-	c := &codec.RpcStateCodec{}
+	c := codec.NewRpcStateCodec()
 	rpc := benchRpcState()
 	data, err := c.Encode(rpc)
 	if err != nil {

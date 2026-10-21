@@ -39,16 +39,12 @@ func (c *EntitiesStateCodec) Encode(entities state.EntitiesState) ([]byte, error
 
 func (c *EntitiesStateCodec) Decode(data []byte) (state.EntitiesState, error) {
 	buf := bytes.NewBuffer(data)
-	return readMapState(buf, func(buf *bytes.Buffer) (state.EntityID, error) {
-		return readEntityID(buf)
-	}, func(buf *bytes.Buffer) (*state.EntityState, error) {
-		return readEntityState(buf)
-	}, EntitiesStateMaxEntities)
+	return readMapState(buf, readEntityID, readEntityState, EntitiesStateMaxEntities)
 }
 
 func (c *EntitiesStateCodec) EncodePatch(entitiesPatch *state.EntitiesStatePatch) ([]byte, error) {
 	buf := bytes.NewBuffer(make([]byte, 0, 1024))
-	if err := writeMapPatсhState(buf, *entitiesPatch, func(k state.EntityID, buf *bytes.Buffer) error {
+	if err := writeMapPatchState(buf, *entitiesPatch, func(k state.EntityID, buf *bytes.Buffer) error {
 		return writeEntityID(buf, k)
 	}, func(v *state.EntityState, buf *bytes.Buffer) error {
 		return writeEntityState(buf, v)
@@ -62,13 +58,7 @@ func (c *EntitiesStateCodec) EncodePatch(entitiesPatch *state.EntitiesStatePatch
 
 func (c *EntitiesStateCodec) DecodePatch(data []byte) (*state.EntitiesStatePatch, error) {
 	buf := bytes.NewBuffer(data)
-	return readMapPatchState(buf, func(buf *bytes.Buffer) (state.EntityID, error) {
-		return readEntityID(buf)
-	}, func(buf *bytes.Buffer) (*state.EntityState, error) {
-		return readEntityState(buf)
-	}, func(buf *bytes.Buffer) (*state.EntityStatePatch, error) {
-		return readEntityStatePatch(buf)
-	}, EntitiesStateMaxEntities)
+	return readMapPatchState(buf, readEntityID, readEntityState, readEntityStatePatch, EntitiesStateMaxEntities)
 }
 
 func writeEntityID(buf *bytes.Buffer, id state.EntityID) error {
@@ -106,11 +96,7 @@ func readEntityState(buf *bytes.Buffer) (*state.EntityState, error) {
 	if err != nil {
 		return nil, err
 	}
-	components, err := readMapState(buf, func(buf *bytes.Buffer) (state.ComponentID, error) {
-		return readComponentID(buf)
-	}, func(buf *bytes.Buffer) (*state.ComponentState, error) {
-		return readComponentState(buf)
-	}, EntityStateMaxComponents)
+	components, err := readMapState(buf, readComponentID, readComponentState, EntityStateMaxComponents)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +130,7 @@ func writeEntityStatePatch(buf *bytes.Buffer, patch *state.EntityStatePatch) err
 	}
 
 	if flags&EntityStateFlagsComponents == EntityStateFlagsComponents {
-		if err := writeMapPatсhState(buf, patch.Components, func(k state.ComponentID, buf *bytes.Buffer) error {
+		if err := writeMapPatchState(buf, patch.Components, func(k state.ComponentID, buf *bytes.Buffer) error {
 			return writeComponentID(buf, k)
 		}, func(c *state.ComponentState, buf *bytes.Buffer) error {
 			return writeComponentState(buf, c)
@@ -185,13 +171,7 @@ func readEntityStatePatch(buf *bytes.Buffer) (*state.EntityStatePatch, error) {
 	components := state.MapStatePatch[state.ComponentID, state.ComponentState, state.ComponentStatePatch]{}
 
 	if flags&EntityStateFlagsComponents == EntityStateFlagsComponents {
-		c, err := readMapPatchState(buf, func(buf *bytes.Buffer) (state.ComponentID, error) {
-			return readComponentID(buf)
-		}, func(buf *bytes.Buffer) (*state.ComponentState, error) {
-			return readComponentState(buf)
-		}, func(buf *bytes.Buffer) (*state.ComponentStatePatch, error) {
-			return readComponentStatePatch(buf)
-		}, EntityStateMaxComponents)
+		c, err := readMapPatchState(buf, readComponentID, readComponentState, readComponentStatePatch, EntityStateMaxComponents)
 		if err != nil {
 			return nil, err
 		}

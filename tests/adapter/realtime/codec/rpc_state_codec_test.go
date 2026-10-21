@@ -11,7 +11,7 @@ import (
 func TestRpcStateCodec_roundTrip_withPeerID(t *testing.T) {
 	t.Parallel()
 
-	c := &codec.RpcStateCodec{}
+	c := codec.NewRpcStateCodec()
 	rpc := &state.RpcState{
 		ID:     state.RpcID(3),
 		Target: state.RpcTargetPeer,
@@ -41,7 +41,7 @@ func TestRpcStateCodec_roundTrip_withPeerID(t *testing.T) {
 func TestRpcStateCodec_roundTrip_peerIDZero(t *testing.T) {
 	t.Parallel()
 
-	c := &codec.RpcStateCodec{}
+	c := codec.NewRpcStateCodec()
 	rpc := &state.RpcState{
 		ID:     state.RpcID(1),
 		Target: state.RpcTargetMaster,

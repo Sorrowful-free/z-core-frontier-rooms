@@ -32,19 +32,7 @@ func writeComponentState(buf *bytes.Buffer, component *state.ComponentState) err
 }
 
 func readComponentState(buf *bytes.Buffer) (*state.ComponentState, error) {
-	values, err := readMapState(buf, func(buf *bytes.Buffer) (state.ValueId, error) {
-		var id state.ValueId
-		if err := binary.Read(buf, binary.BigEndian, &id); err != nil {
-			return 0, err
-		}
-		return id, nil
-	}, func(buf *bytes.Buffer) (*state.ValueState, error) {
-		value, err := readValueState(buf)
-		if err != nil {
-			return nil, err
-		}
-		return value, nil
-	}, ComponentStateMaxValues)
+	values, err := readMapState(buf, readValueID, readValueState, ComponentStateMaxValues)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +40,7 @@ func readComponentState(buf *bytes.Buffer) (*state.ComponentState, error) {
 }
 
 func writeComponentStatePatch(buf *bytes.Buffer, patch *state.ComponentStatePatch) error {
-	return writeMapPatсhState(buf, patch.Values, func(k state.ValueId, buf *bytes.Buffer) error {
+	return writeMapPatchState(buf, patch.Values, func(k state.ValueId, buf *bytes.Buffer) error {
 		return binary.Write(buf, binary.BigEndian, k)
 	}, func(v *state.ValueState, buf *bytes.Buffer) error {
 		return writeValueState(buf, v)
@@ -63,25 +51,7 @@ func writeComponentStatePatch(buf *bytes.Buffer, patch *state.ComponentStatePatc
 
 func readComponentStatePatch(buf *bytes.Buffer) (*state.ComponentStatePatch, error) {
 
-	values, err := readMapPatchState(buf, func(buf *bytes.Buffer) (state.ValueId, error) {
-		var id state.ValueId
-		if err := binary.Read(buf, binary.BigEndian, &id); err != nil {
-			return 0, err
-		}
-		return id, nil
-	}, func(buf *bytes.Buffer) (*state.ValueState, error) {
-		value, err := readValueState(buf)
-		if err != nil {
-			return nil, err
-		}
-		return value, nil
-	}, func(buf *bytes.Buffer) (*state.ValueState, error) {
-		value, err := readValueState(buf)
-		if err != nil {
-			return nil, err
-		}
-		return value, nil
-	}, ComponentStateMaxValues)
+	values, err := readMapPatchState(buf, readValueID, readValueState, readValueState, ComponentStateMaxValues)
 	if err != nil {
 		return nil, err
 	}

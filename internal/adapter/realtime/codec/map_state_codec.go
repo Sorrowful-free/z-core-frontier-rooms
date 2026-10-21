@@ -55,7 +55,7 @@ func readMapState[K comparable, V any](buf *bytes.Buffer, readKey func(*bytes.Bu
 	return mapState, nil
 }
 
-func writeMapPatсhState[K comparable, S any, P any](buf *bytes.Buffer, m state.MapStatePatch[K, S, P], writeKey func(K, *bytes.Buffer) error, writeValue func(*S, *bytes.Buffer) error, writePatch func(*P, *bytes.Buffer) error, maxCount uint16) error {
+func writeMapPatchState[K comparable, S any, P any](buf *bytes.Buffer, m state.MapStatePatch[K, S, P], writeKey func(K, *bytes.Buffer) error, writeValue func(*S, *bytes.Buffer) error, writePatch func(*P, *bytes.Buffer) error, maxCount uint16) error {
 	addedLen := len(m.Added)
 	updatedLen := len(m.Updated)
 	removedLen := len(m.Removed)

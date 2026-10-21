@@ -30,10 +30,10 @@ func newBenchHarness(b *testing.B, roomID domain.RoomID, capacity int) *benchHar
 	logger := stdlib.New("state-policy-bench")
 	policy := statepolicy.NewStateRoomPolicy(
 		logger,
-		codec.NewRoomStateCodec(&logger),
+		codec.NewRoomStateCodec(),
 		codec.NewEntitiesStateCodec(),
 		codec.NewInputStateCodec(),
-		&codec.RpcStateCodec{},
+		codec.NewRpcStateCodec(),
 		time.Hour,
 		time.Hour,
 	)
@@ -46,7 +46,7 @@ func newBenchHarness(b *testing.B, roomID domain.RoomID, capacity int) *benchHar
 	return &benchHarness{
 		room:          room,
 		policy:        policy,
-		roomCodec:     codec.NewRoomStateCodec(&logger),
+		roomCodec:     codec.NewRoomStateCodec(),
 		entitiesCodec: codec.NewEntitiesStateCodec(),
 		inputCodec:    codec.NewInputStateCodec(),
 	}

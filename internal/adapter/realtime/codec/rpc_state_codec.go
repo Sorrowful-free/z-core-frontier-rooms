@@ -14,6 +14,10 @@ const (
 type RpcStateCodec struct {
 }
 
+func NewRpcStateCodec() *RpcStateCodec {
+	return &RpcStateCodec{}
+}
+
 func writeRpcID(buf *bytes.Buffer, id state.RpcID) error {
 	return binary.Write(buf, binary.BigEndian, id)
 }
@@ -69,11 +73,7 @@ func (c *RpcStateCodec) Decode(data []byte) (*state.RpcState, error) {
 	if err != nil {
 		return nil, err
 	}
-	values, err := readMapState(buf, func(buf *bytes.Buffer) (state.ValueId, error) {
-		return readValueID(buf)
-	}, func(buf *bytes.Buffer) (*state.ValueState, error) {
-		return readValueState(buf)
-	}, RpcStateMaxValues)
+	values, err := readMapState(buf, readValueID, readValueState, RpcStateMaxValues)
 	if err != nil {
 		return nil, err
 	}

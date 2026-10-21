@@ -118,6 +118,22 @@ func TestRoomStateCodec_patch_capacityOnly(t *testing.T) {
 	}
 }
 
+func TestRoomStateCodec_decodePatch_truncatedPassword(t *testing.T) {
+	t.Parallel()
+
+	c := newRoomCodec()
+	pw := "abc"
+	patch := &state.RoomStatePatch{Password: &pw}
+	data, err := c.EncodePatch(patch)
+	if err != nil {
+		t.Fatalf("EncodePatch: %v", err)
+	}
+	// длина строки = 3, а байт осталось два: раньше buf.Read тихо возвращал короче
+	if _, err := c.DecodePatch(data[:len(data)-1]); err == nil {
+		t.Fatal("expected error on truncated string payload")
+	}
+}
+
 func TestRoomStateCodec_patch_addPeer(t *testing.T) {
 	t.Parallel()
 

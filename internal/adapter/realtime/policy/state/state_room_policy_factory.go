@@ -19,10 +19,10 @@ func NewStateRoomPolicyFactory(logger logging.Logger) *StateRoomPolicyFactory {
 func (f *StateRoomPolicyFactory) CreateRoomPolicy() policy.RoomPolicy {
 	return NewStateRoomPolicy(
 		f.logger,
-		codec.NewRoomStateCodec(&f.logger),
+		codec.NewRoomStateCodec(),
 		codec.NewEntitiesStateCodec(),
 		codec.NewInputStateCodec(),
-		&codec.RpcStateCodec{},
+		codec.NewRpcStateCodec(),
 		DefaultFullStateInterval,
 		DefaultPatchStateInterval,
 	)

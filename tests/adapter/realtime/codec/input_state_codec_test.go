@@ -71,3 +71,20 @@ func TestInputStateCodec_decode_truncated(t *testing.T) {
 		t.Fatal("expected error on truncated payload")
 	}
 }
+
+func TestInputStateCodec_decode_truncatedValueBytes(t *testing.T) {
+	t.Parallel()
+
+	c := codec.NewInputStateCodec()
+	in := &state.InputState{Values: state.NewMapState[state.ValueId, state.ValueState]()}
+	in.Values[state.ValueId(1)] = state.ValueState([]byte{0xAA, 0xBB})
+
+	data, err := c.Encode(in)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	// длина value = 2, а байт остался один: раньше buf.Read тихо возвращал короче
+	if _, err := c.Decode(data[:len(data)-1]); err == nil {
+		t.Fatal("expected error on truncated value bytes")
+	}
+}

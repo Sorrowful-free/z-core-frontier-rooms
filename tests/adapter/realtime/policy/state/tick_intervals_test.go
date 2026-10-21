@@ -15,10 +15,10 @@ func TestNewStateRoomPolicy_ZeroIntervalsUseDefaults(t *testing.T) {
 	logger := stdlib.New("tick-intervals")
 	policy := statepolicy.NewStateRoomPolicy(
 		logger,
-		codec.NewRoomStateCodec(&logger),
+		codec.NewRoomStateCodec(),
 		codec.NewEntitiesStateCodec(),
 		codec.NewInputStateCodec(),
-		&codec.RpcStateCodec{},
+		codec.NewRpcStateCodec(),
 		0,
 		0,
 	)
@@ -43,10 +43,10 @@ func TestNewStateRoomPolicy_CustomIntervalsPreserved(t *testing.T) {
 
 	policy := statepolicy.NewStateRoomPolicy(
 		logger,
-		codec.NewRoomStateCodec(&logger),
+		codec.NewRoomStateCodec(),
 		codec.NewEntitiesStateCodec(),
 		codec.NewInputStateCodec(),
-		&codec.RpcStateCodec{},
+		codec.NewRpcStateCodec(),
 		full,
 		patch,
 	)

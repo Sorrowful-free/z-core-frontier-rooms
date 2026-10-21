@@ -526,10 +526,10 @@ func newHarness(t *testing.T, roomID domain.RoomID, capacity int) *harness {
 	logger := stdlib.New("state-policy-test")
 	policy := statepolicy.NewStateRoomPolicy(
 		logger,
-		codec.NewRoomStateCodec(&logger),
+		codec.NewRoomStateCodec(),
 		codec.NewEntitiesStateCodec(),
 		codec.NewInputStateCodec(),
-		&codec.RpcStateCodec{},
+		codec.NewRpcStateCodec(),
 		time.Hour,
 		time.Hour,
 	)
@@ -542,7 +542,7 @@ func newHarness(t *testing.T, roomID domain.RoomID, capacity int) *harness {
 	return &harness{
 		room:          room,
 		policy:        policy,
-		roomCodec:     codec.NewRoomStateCodec(&logger),
+		roomCodec:     codec.NewRoomStateCodec(),
 		entitiesCodec: codec.NewEntitiesStateCodec(),
 		inputCodec:    codec.NewInputStateCodec(),
 	}
@@ -622,7 +622,7 @@ func opcodes(peerEvents []events.PeerEvent) []domain.OpCode {
 
 func mustEncodeRPC(t *testing.T, target state.RpcTarget, peerID domain.PeerID) []byte {
 	t.Helper()
-	c := &codec.RpcStateCodec{}
+	c := codec.NewRpcStateCodec()
 	payload, err := c.Encode(&state.RpcState{
 		ID:     state.RpcID(1),
 		Target: target,

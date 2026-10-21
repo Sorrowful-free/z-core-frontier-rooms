@@ -4,14 +4,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"math"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
 )
-
-func writeValueID(buf *bytes.Buffer, id state.ValueId) error {
-	return binary.Write(buf, binary.BigEndian, id)
-}
 
 func readValueID(buf *bytes.Buffer) (state.ValueId, error) {
 	var id state.ValueId
@@ -40,11 +37,8 @@ func readValueState(buf *bytes.Buffer) (*state.ValueState, error) {
 	if err := binary.Read(buf, binary.BigEndian, &valueLen); err != nil {
 		return nil, err
 	}
-	if valueLen > math.MaxUint8 {
-		return nil, fmt.Errorf("value length too large: %d", valueLen)
-	}
 	value := make([]byte, valueLen)
-	if _, err := buf.Read(value); err != nil {
+	if _, err := io.ReadFull(buf, value); err != nil {
 		return nil, err
 	}
 	valueState := state.ValueState(value)

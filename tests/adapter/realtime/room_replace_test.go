@@ -24,10 +24,10 @@ func TestReplace_SendsFullStateToNewPeerNotOld(t *testing.T) {
 	logger := stdlib.New("replace-test")
 	policy := statepolicy.NewStateRoomPolicy(
 		logger,
-		codec.NewRoomStateCodec(&logger),
+		codec.NewRoomStateCodec(),
 		codec.NewEntitiesStateCodec(),
 		codec.NewInputStateCodec(),
-		&codec.RpcStateCodec{},
+		codec.NewRpcStateCodec(),
 		time.Hour,
 		time.Hour,
 	)
@@ -101,10 +101,10 @@ func TestReplace_SecondPeerRoom_NewGetsFullState(t *testing.T) {
 	logger := stdlib.New("replace-test")
 	policy := statepolicy.NewStateRoomPolicy(
 		logger,
-		codec.NewRoomStateCodec(&logger),
+		codec.NewRoomStateCodec(),
 		codec.NewEntitiesStateCodec(),
 		codec.NewInputStateCodec(),
-		&codec.RpcStateCodec{},
+		codec.NewRpcStateCodec(),
 		time.Hour,
 		time.Hour,
 	)

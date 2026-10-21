@@ -3,6 +3,7 @@ package codec
 import (
 	"bytes"
 	"fmt"
+	"io"
 )
 
 func writeString(buf *bytes.Buffer, s string) error {
@@ -21,7 +22,7 @@ func readString(buf *bytes.Buffer) (string, error) {
 		return "", err
 	}
 	data := make([]byte, strlen)
-	if _, err := buf.Read(data); err != nil {
+	if _, err := io.ReadFull(buf, data); err != nil {
 		return "", err
 	}
 	return string(data), nil

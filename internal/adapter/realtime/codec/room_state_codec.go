@@ -6,13 +6,13 @@ import (
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 )
 
 const (
-	RoomStateMaxPeers    = 255
-	RoomStateMaxInputs   = RoomStateMaxPeers
-	RoomStateMaxEntities = 65535
+	RoomStateMaxPeers  = 255
+	RoomStateMaxInputs = RoomStateMaxPeers
+	// Entities кодируются одним u16-счётчиком — лимит общий с EntitiesStateMaxEntities.
+	RoomStateMaxEntities = EntitiesStateMaxEntities
 )
 
 const (
@@ -24,11 +24,10 @@ const (
 )
 
 type RoomStateCodec struct {
-	logger *logging.Logger
 }
 
-func NewRoomStateCodec(logger *logging.Logger) *RoomStateCodec {
-	return &RoomStateCodec{logger: logger}
+func NewRoomStateCodec() *RoomStateCodec {
+	return &RoomStateCodec{}
 }
 
 func writeRoomID(buf *bytes.Buffer, id domain.RoomID) error {
@@ -93,27 +92,15 @@ func (c *RoomStateCodec) Decode(data []byte) (*state.RoomState, error) {
 	if err != nil {
 		return nil, err
 	}
-	peers, err := readMapState(buf, func(buf *bytes.Buffer) (domain.PeerID, error) {
-		return readPeerID(buf)
-	}, func(buf *bytes.Buffer) (*state.PeerState, error) {
-		return readPeerState(buf)
-	}, RoomStateMaxPeers)
+	peers, err := readMapState(buf, readPeerID, readPeerState, RoomStateMaxPeers)
 	if err != nil {
 		return nil, err
 	}
-	inputs, err := readMapState(buf, func(buf *bytes.Buffer) (domain.PeerID, error) {
-		return readPeerID(buf)
-	}, func(buf *bytes.Buffer) (*state.InputState, error) {
-		return readInputState(buf)
-	}, RoomStateMaxInputs)
+	inputs, err := readMapState(buf, readPeerID, readInputState, RoomStateMaxInputs)
 	if err != nil {
 		return nil, err
 	}
-	entities, err := readMapState(buf, func(buf *bytes.Buffer) (state.EntityID, error) {
-		return readEntityID(buf)
-	}, func(buf *bytes.Buffer) (*state.EntityState, error) {
-		return readEntityState(buf)
-	}, RoomStateMaxEntities)
+	entities, err := readMapState(buf, readEntityID, readEntityState, RoomStateMaxEntities)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +139,7 @@ func (c *RoomStateCodec) EncodePatch(patch *state.RoomStatePatch) ([]byte, error
 		}
 	}
 	if flags&RoomStateFlagsPeers == RoomStateFlagsPeers {
-		if err := writeMapPatсhState(buf, patch.Peers, func(k domain.PeerID, buf *bytes.Buffer) error {
+		if err := writeMapPatchState(buf, patch.Peers, func(k domain.PeerID, buf *bytes.Buffer) error {
 			return writePeerID(buf, k)
 		}, func(s *state.PeerState, buf *bytes.Buffer) error {
 			return writePeerState(buf, s)
@@ -163,7 +150,7 @@ func (c *RoomStateCodec) EncodePatch(patch *state.RoomStatePatch) ([]byte, error
 		}
 	}
 	if flags&RoomStateFlagsInputs == RoomStateFlagsInputs {
-		if err := writeMapPatсhState(buf, patch.Inputs, func(k domain.PeerID, buf *bytes.Buffer) error {
+		if err := writeMapPatchState(buf, patch.Inputs, func(k domain.PeerID, buf *bytes.Buffer) error {
 			return writePeerID(buf, k)
 		}, func(s *state.InputState, buf *bytes.Buffer) error {
 			return writeInputState(buf, s)
@@ -174,7 +161,7 @@ func (c *RoomStateCodec) EncodePatch(patch *state.RoomStatePatch) ([]byte, error
 		}
 	}
 	if flags&RoomStateFlagsEntities == RoomStateFlagsEntities {
-		if err := writeMapPatсhState(buf, patch.Entities, func(k state.EntityID, buf *bytes.Buffer) error {
+		if err := writeMapPatchState(buf, patch.Entities, func(k state.EntityID, buf *bytes.Buffer) error {
 			return writeEntityID(buf, k)
 		}, func(s *state.EntityState, buf *bytes.Buffer) error {
 			return writeEntityState(buf, s)
@@ -212,13 +199,7 @@ func (c *RoomStateCodec) DecodePatch(data []byte) (*state.RoomStatePatch, error)
 	}
 	peers := state.MapStatePatch[domain.PeerID, state.PeerState, state.PeerStatePatch]{}
 	if flags&RoomStateFlagsPeers == RoomStateFlagsPeers {
-		p, err := readMapPatchState(buf, func(buf *bytes.Buffer) (domain.PeerID, error) {
-			return readPeerID(buf)
-		}, func(buf *bytes.Buffer) (*state.PeerState, error) {
-			return readPeerState(buf)
-		}, func(buf *bytes.Buffer) (*state.PeerStatePatch, error) {
-			return readPeerStatePatch(buf)
-		}, RoomStateMaxPeers)
+		p, err := readMapPatchState(buf, readPeerID, readPeerState, readPeerStatePatch, RoomStateMaxPeers)
 		if err != nil {
 			return nil, err
 		}
@@ -226,13 +207,7 @@ func (c *RoomStateCodec) DecodePatch(data []byte) (*state.RoomStatePatch, error)
 	}
 	inputs := state.MapStatePatch[domain.PeerID, state.InputState, state.InputStatePatch]{}
 	if flags&RoomStateFlagsInputs == RoomStateFlagsInputs {
-		i, err := readMapPatchState(buf, func(buf *bytes.Buffer) (domain.PeerID, error) {
-			return readPeerID(buf)
-		}, func(buf *bytes.Buffer) (*state.InputState, error) {
-			return readInputState(buf)
-		}, func(buf *bytes.Buffer) (*state.InputStatePatch, error) {
-			return readInputStatePatch(buf)
-		}, RoomStateMaxInputs)
+		i, err := readMapPatchState(buf, readPeerID, readInputState, readInputStatePatch, RoomStateMaxInputs)
 		if err != nil {
 			return nil, err
 		}
@@ -240,13 +215,7 @@ func (c *RoomStateCodec) DecodePatch(data []byte) (*state.RoomStatePatch, error)
 	}
 	entities := state.MapStatePatch[state.EntityID, state.EntityState, state.EntityStatePatch]{}
 	if flags&RoomStateFlagsEntities == RoomStateFlagsEntities {
-		e, err := readMapPatchState(buf, func(buf *bytes.Buffer) (state.EntityID, error) {
-			return readEntityID(buf)
-		}, func(buf *bytes.Buffer) (*state.EntityState, error) {
-			return readEntityState(buf)
-		}, func(buf *bytes.Buffer) (*state.EntityStatePatch, error) {
-			return readEntityStatePatch(buf)
-		}, RoomStateMaxEntities)
+		e, err := readMapPatchState(buf, readEntityID, readEntityState, readEntityStatePatch, RoomStateMaxEntities)
 		if err != nil {
 			return nil, err
 		}

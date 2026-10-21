@@ -22,10 +22,10 @@ func TestDeliver_UnknownOpcode_NotifiesSender(t *testing.T) {
 	logger := stdlib.New("test")
 	policy := statepolicy.NewStateRoomPolicy(
 		logger,
-		codec.NewRoomStateCodec(&logger),
+		codec.NewRoomStateCodec(),
 		codec.NewEntitiesStateCodec(),
 		codec.NewInputStateCodec(),
-		&codec.RpcStateCodec{},
+		codec.NewRpcStateCodec(),
 		time.Hour,
 		time.Hour,
 	)
