@@ -8,25 +8,25 @@ import (
 )
 
 const (
-	codeInvalidRequest          = "invalid_request"
-	codeInvalidRoomID           = "invalid_room_id"
-	codeInvalidPeerID           = "invalid_peer_id"
-	codeInvalidCapacity         = "invalid_capacity"
-	codeInvalidNickName         = "invalid_nick_name"
-	codeRoomNotFound            = "room_not_found"
-	codeRoomAlreadyExists       = "room_already_exists"
-	codeReservationNotFound     = "reservation_not_found"
-	codeReservationAlreadyExists = "reservation_already_exists"
-	codeReservationFull         = "reservation_full"
-	codeTicketSlotHeld          = "ticket_slot_held"
-	codePeerAlreadyInRoom       = "peer_already_in_room"
-	codeReservationNotReserved  = "reservation_not_reserved"
-	codeReservationExpired      = "reservation_expired"
+	codeInvalidRequest             = "invalid_request"
+	codeInvalidRoomID              = "invalid_room_id"
+	codeInvalidPeerID              = "invalid_peer_id"
+	codeInvalidCapacity            = "invalid_capacity"
+	codeInvalidNickName            = "invalid_nick_name"
+	codeRoomNotFound               = "room_not_found"
+	codeRoomAlreadyExists          = "room_already_exists"
+	codeReservationNotFound        = "reservation_not_found"
+	codeReservationAlreadyExists   = "reservation_already_exists"
+	codeReservationFull            = "reservation_full"
+	codeTicketSlotHeld             = "ticket_slot_held"
+	codePeerAlreadyInRoom          = "peer_already_in_room"
+	codeReservationNotReserved     = "reservation_not_reserved"
+	codeReservationExpired         = "reservation_expired"
 	codeReservationAlreadyAdmitted = "reservation_already_admitted"
-	codeInvalidCredentials      = "invalid_credentials"
-	codeRateLimited             = "rate_limited"
-	codeRoomsLimitReached       = "rooms_limit_reached"
-	codeInternal                = "internal_error"
+	codeInvalidCredentials         = "invalid_credentials"
+	codeRateLimited                = "rate_limited"
+	codeRoomsLimitReached          = "rooms_limit_reached"
+	codeInternal                   = "internal_error"
 )
 
 func writeAPIError(c fiber.Ctx, status int, code, message string) error {
@@ -37,10 +37,6 @@ func writeAPIError(c fiber.Ctx, status int, code, message string) error {
 }
 
 func writeBindError(c fiber.Ctx, err error) error {
-	return writeAPIError(c, fiber.StatusBadRequest, codeInvalidRequest, err.Error())
-}
-
-func writeParseError(c fiber.Ctx, err error) error {
 	return writeAPIError(c, fiber.StatusBadRequest, codeInvalidRequest, err.Error())
 }
 

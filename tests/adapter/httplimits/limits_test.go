@@ -49,8 +49,11 @@ func TestLimits_HTTPRateLimit(t *testing.T) {
 	})
 
 	const ip = "203.0.113.1"
-	if !limits.AllowHTTPCreate(ip) || !limits.AllowHTTPCreate(ip) {
-		t.Fatal("first two create requests should pass")
+	if !limits.AllowHTTPCreate(ip) {
+		t.Fatal("first create request should pass")
+	}
+	if !limits.AllowHTTPCreate(ip) {
+		t.Fatal("second create request should pass")
 	}
 	if limits.AllowHTTPCreate(ip) {
 		t.Fatal("third create request should be denied")

@@ -77,7 +77,7 @@ func MakeMapStatePatch[K comparable, S any, P any](oldMapState MapState[K, S], n
 			}
 		}
 	}
-	for k, _ := range oldMapState {
+	for k := range oldMapState {
 		if _, ok := newMapState[k]; !ok {
 			patchState.Removed = append(patchState.Removed, k)
 			hasChanges = true
