@@ -17,6 +17,9 @@ const (
 	DefaultPeerIdleTimeout = 30 * time.Second
 	// DefaultPeerIdleSweepInterval — период фонового sweep idle peer'ов.
 	DefaultPeerIdleSweepInterval = 10 * time.Second
+
+	// DefaultWSWriteDeadline — дедлайн записи WS-кадра (Send).
+	DefaultWSWriteDeadline = 10 * time.Second
 )
 
 // TransportConfig — лимиты data plane (WS + ENet).
@@ -33,6 +36,8 @@ type TransportConfig struct {
 	PeerIdleTimeout time.Duration
 	// PeerIdleSweepInterval — период фонового sweep idle peer'ов; <= 0 — не запускать.
 	PeerIdleSweepInterval time.Duration
+	// WSWriteDeadline — дедлайн записи WS-кадра (SetWriteDeadline перед WriteMessage); 0 — без дедлайна.
+	WSWriteDeadline time.Duration
 }
 
 // Validate проверяет допустимость значений.
@@ -54,6 +59,9 @@ func (c TransportConfig) Validate() error {
 	}
 	if c.PeerIdleSweepInterval < 0 {
 		return fmt.Errorf("transport config: peer idle sweep interval must be >= 0")
+	}
+	if c.WSWriteDeadline < 0 {
+		return fmt.Errorf("transport config: ws write deadline must be >= 0")
 	}
 	return nil
 }

@@ -123,8 +123,11 @@ func (p *StateRoomPolicy) onClientRpc(roomEvent events.RoomEvent) error {
 			// переизбрание по живому state, затем одна повторная проверка.
 			if err := p.electAndAssignMaster(&p.state); err == nil {
 				masterID = p.masterPeerID()
+				if masterID.IsValid() {
+					p.masterAssigned(masterID)
+				}
 			} else {
-				p.logger.Error("lazy elect master failed", "error", err)
+				p.logMasterless(err)
 			}
 		}
 		if !masterID.IsValid() {

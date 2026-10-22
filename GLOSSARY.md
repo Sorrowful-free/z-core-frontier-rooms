@@ -27,3 +27,11 @@ _Avoid_: stale slot, dangling slot, orphan reservation
 **Ghost input**:
 Входной кадр (input/RPC/state) от peer'а, которого уже нет в комнате (zombie или удалённый без вычистки из state). Policy отклоняет такие кадры проверкой членства (`ErrPeerNotFound`), иначе state получал бы записи от несуществующего peer'а.
 _Avoid_: phantom input, stale input
+
+**Masterless episode** (эпизод без мастера):
+Период, когда в комнате есть живые peers, но `p.master == nil` — обычно после упавшего election. Переизбрание идёт на patch-тиках и лениво при RPC→master; `Error` об эпизоде логируется один раз (не на каждый тик), `Info` — при восстановлении.
+_Avoid_: election gap, missing master
+
+**Master election semantics**:
+Правила выбора master в `StateRoomPolicy`: stale-кандидаты (`ErrPeerNotFound` от `GetPeer` — peer в state, но не в room) пропускаются, выборы идут среди живых; все stale → пустые выборы (`PeerIDInvalid`, не ошибка); прочие ошибки `GetPeer` фейлят выборы; `IsMaster`-флаги пишутся в state только после успешной проверки избранного peer (validate-first) — state не рекламирует master, которого нет у policy.
+_Avoid_: quorum, leader election

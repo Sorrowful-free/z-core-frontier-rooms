@@ -43,6 +43,7 @@ const (
 	envTransportEnetIncomingQueue     = "TRANSPORT_ENET_INCOMING_QUEUE"
 	envTransportPeerIdleTimeout       = "TRANSPORT_PEER_IDLE_TIMEOUT"
 	envTransportPeerIdleSweepInterval = "TRANSPORT_PEER_IDLE_SWEEP_INTERVAL"
+	envTransportWSWriteDeadline       = "TRANSPORT_WS_WRITE_DEADLINE"
 
 	envEnetListenPort   = "ENET_LISTEN_PORT"
 	envEnetPeerLimit    = "ENET_PEER_LIMIT"
@@ -207,6 +208,10 @@ func loadTransportFromEnv() (adaptertransport.TransportConfig, error) {
 	if err != nil {
 		return adaptertransport.TransportConfig{}, err
 	}
+	wsWriteDeadline, err := durationFromEnv(envTransportWSWriteDeadline, adaptertransport.DefaultWSWriteDeadline)
+	if err != nil {
+		return adaptertransport.TransportConfig{}, err
+	}
 
 	cfg := adaptertransport.TransportConfig{
 		MaxIncomingFrameBytes: maxBytes,
@@ -215,6 +220,7 @@ func loadTransportFromEnv() (adaptertransport.TransportConfig, error) {
 		EnetIncomingQueueSize: enetQueue,
 		PeerIdleTimeout:       peerIdleTimeout,
 		PeerIdleSweepInterval: idleSweepInterval,
+		WSWriteDeadline:       wsWriteDeadline,
 	}
 	if err := cfg.Validate(); err != nil {
 		return adaptertransport.TransportConfig{}, err

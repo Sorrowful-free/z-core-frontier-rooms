@@ -49,9 +49,10 @@ func sendErrorFrame(conn transport.Connection, op domain.OpCode) {
 	})
 }
 
-// IsJoinRejectOpCode reports whether op belongs to the join/admit reject range (0x40–0x5F).
+// IsJoinRejectOpCode reports whether op belongs to the join/admit reject ranges
+// (0x40–0x5F join band, 0x70–0x7F reservation band — both close the connection).
 func IsJoinRejectOpCode(op domain.OpCode) bool {
-	return op >= 0x40 && op <= 0x5F
+	return (op >= 0x40 && op <= 0x5F) || IsReservationRejectOpCode(op)
 }
 
 // IsInRoomErrorOpCode reports whether op belongs to the in-room error range (0x60–0x6F).

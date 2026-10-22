@@ -167,6 +167,9 @@ func TestLoadFromEnv_SuccessDefaults(t *testing.T) {
 	if cfg.Transport.EnetIncomingQueueSize != adaptertransport.DefaultEnetIncomingQueueSize {
 		t.Fatalf("enet incoming queue = %d", cfg.Transport.EnetIncomingQueueSize)
 	}
+	if cfg.Transport.WSWriteDeadline != adaptertransport.DefaultWSWriteDeadline {
+		t.Fatalf("ws write deadline = %v", cfg.Transport.WSWriteDeadline)
+	}
 	if cfg.Logging.Mode != zaplogadapter.LogModeProd {
 		t.Fatalf("log mode = %q, want prod", cfg.Logging.Mode)
 	}
@@ -292,6 +295,25 @@ func TestLoadFromEnv_TransportIdleNegative(t *testing.T) {
 	_, err := appconfig.LoadFromEnv()
 	if err == nil {
 		t.Fatal("expected error for negative TRANSPORT_PEER_IDLE_TIMEOUT")
+	}
+}
+
+func TestLoadFromEnv_TransportWSWriteDeadline(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	t.Setenv("TRANSPORT_WS_WRITE_DEADLINE", "2500ms")
+
+	cfg, err := appconfig.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv: %v", err)
+	}
+	if cfg.Transport.WSWriteDeadline != 2500*time.Millisecond {
+		t.Fatalf("ws write deadline = %v, want 2500ms", cfg.Transport.WSWriteDeadline)
+	}
+
+	t.Setenv("TRANSPORT_WS_WRITE_DEADLINE", "not-a-duration")
+	if _, err := appconfig.LoadFromEnv(); err == nil {
+		t.Fatal("expected error for invalid TRANSPORT_WS_WRITE_DEADLINE")
 	}
 }
 

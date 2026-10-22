@@ -25,6 +25,7 @@ type WsConnection struct {
 	lastSeen              atomic.Int64
 	maxIncomingFrameBytes int
 	idleTimeout           time.Duration
+	writeDeadline         time.Duration
 }
 
 func NewWsConnection(conn *websocket.Conn, cfg adaptertransport.TransportConfig) *WsConnection {
@@ -39,6 +40,7 @@ func NewWsConnection(conn *websocket.Conn, cfg adaptertransport.TransportConfig)
 		closed:                make(chan struct{}),
 		maxIncomingFrameBytes: maxBytes,
 		idleTimeout:           cfg.PeerIdleTimeout,
+		writeDeadline:         cfg.WSWriteDeadline,
 	}
 	c.pingMs.Store(-1)
 	c.lastSeen.Store(time.Now().UnixNano())
@@ -73,6 +75,14 @@ func (c *WsConnection) Close() error {
 
 func (c *WsConnection) Send(frame domain.Frame) error {
 	payload := append([]byte{byte(frame.OpCode)}, frame.Payload...)
+	if c.writeDeadline > 0 {
+		// Зависший write не должен блокировать peer.outbound навсегда.
+		// NB: ping-loop WriteControl может перезаписать deadline на более
+		// короткий — приемлемо: преждевременный timeout = logged drop.
+		if err := c.conn.SetWriteDeadline(time.Now().Add(c.writeDeadline)); err != nil {
+			return err
+		}
+	}
 	return c.conn.WriteMessage(fwebsocket.BinaryMessage, payload)
 }
 

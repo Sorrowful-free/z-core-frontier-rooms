@@ -17,6 +17,7 @@ func TestTransportConfig_Validate(t *testing.T) {
 		EnetIncomingQueueSize: adaptertransport.DefaultEnetIncomingQueueSize,
 		PeerIdleTimeout:       adaptertransport.DefaultPeerIdleTimeout,
 		PeerIdleSweepInterval: adaptertransport.DefaultPeerIdleSweepInterval,
+		WSWriteDeadline:       adaptertransport.DefaultWSWriteDeadline,
 	}
 	if err := valid.Validate(); err != nil {
 		t.Fatalf("valid config: %v", err)
@@ -36,6 +37,7 @@ func TestTransportConfig_Validate(t *testing.T) {
 		{"enet queue", func(c *adaptertransport.TransportConfig) { c.EnetIncomingQueueSize = -1 }},
 		{"idle timeout", func(c *adaptertransport.TransportConfig) { c.PeerIdleTimeout = -time.Second }},
 		{"sweep interval", func(c *adaptertransport.TransportConfig) { c.PeerIdleSweepInterval = -time.Second }},
+		{"ws write deadline", func(c *adaptertransport.TransportConfig) { c.WSWriteDeadline = -time.Second }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

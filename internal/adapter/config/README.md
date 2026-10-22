@@ -80,12 +80,15 @@
 
 | Переменная | Обязательна | Default | Описание |
 |------------|-------------|---------|----------|
-| `TRANSPORT_MAX_INCOMING_FRAME_BYTES` | нет | `262144` (256 KiB) | Макс. входящий кадр WS/ENet и ENet admit-пакет; `0` — без лимита |
+| `TRANSPORT_MAX_INCOMING_FRAME_BYTES` | нет | `262144` (256 KiB) | Макс. входящий кадр WS/ENet и ENet admit-пакет; `0` — **без лимита** (см. ниже) |
 | `TRANSPORT_ROOM_INCOMING_QUEUE` | нет | `128` | Буфер `room.incoming`; `0` — unbuffered; полный → drop |
 | `TRANSPORT_PEER_OUTBOUND_QUEUE` | нет | `128` | Буфер `peer.outbound`; `0` — unbuffered; полный → drop |
 | `TRANSPORT_ENET_INCOMING_QUEUE` | нет | `256` | Буфер ENet session; полный → drop кадра |
 | `TRANSPORT_PEER_IDLE_TIMEOUT` | нет | `30s` | Окно живости `IsAlive` (WS lastSeen); `0` — отключить idle eviction (отрицательные — ошибка Validate) |
 | `TRANSPORT_PEER_IDLE_SWEEP_INTERVAL` | нет | `10s` | Период фонового sweep idle peer'ов; `0` — отключить (отрицательные — ошибка Validate) |
+| `TRANSPORT_WS_WRITE_DEADLINE` | нет | `10s` | Дедлайн записи WS-кадра (`SetWriteDeadline` перед `WriteMessage`); `0` — без дедлайна (отрицательные — ошибка Validate) |
+
+`TRANSPORT_MAX_INCOMING_FRAME_BYTES=0` / `MaxIncomingFrameBytes=0` — **unlimited входящий кадр**: ни `SetReadLimit` (WS), ни проверка размера пакета (ENet) не применяются. Опасно (один клиент может сожрать память гигантским кадром) — только как явный opt-in, не для prod-дефолта.
 
 Валидация — `transport.TransportConfig.Validate()`.
 

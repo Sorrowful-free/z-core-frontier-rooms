@@ -25,6 +25,7 @@ Runtime комнаты: `Room`, `Peer`, фабрики.
 | Успех | `nil` | — |
 | Очередь полна | `domain.ErrQueueFull` | логировать; **не** рвать соединение (`processIncomingEvents` продолжает чтение) |
 | Остановлен | ошибка `room stopped` / `peer stopped` | фатально для peer loop (кроме уже остановленного) |
+| Прочая ошибка | иная ошибка `Deliver` | `processIncomingEvents` логирует, закрывает `connection` и выходит — ускоренный cleanup полумёртвого peer'а |
 
 `Room.Send`: `ErrQueueFull` у отдельного peer — `Warn` и broadcast продолжается остальным (full-state/patch не падают целиком из-за одного переполненного outbound). Любая другая ошибка `Deliver` (в т.ч. `peer stopped`) **обрывает рассылку** и возвращается вызывающему — до части peers кадр может не дойти.
 

@@ -14,6 +14,9 @@
 | `EnetIncomingQueueSize` | 256 | `TRANSPORT_ENET_INCOMING_QUEUE` (полный → **drop**, host loop не блокируется) |
 | `PeerIdleTimeout` | 30s | `TRANSPORT_PEER_IDLE_TIMEOUT` (`0` — механизм отключён; отрицательные — ошибка Validate) |
 | `PeerIdleSweepInterval` | 10s | `TRANSPORT_PEER_IDLE_SWEEP_INTERVAL` (`0` — sweep не стартует; отрицательные — ошибка Validate) |
+| `WSWriteDeadline` | 10s | `TRANSPORT_WS_WRITE_DEADLINE` (`0` — без дедлайна; отрицательные — ошибка Validate) |
+
+`MaxIncomingFrameBytes=0` — **без лимита** входящего кадра (опасно, явный opt-in; см. `adapter/config/README.md`).
 
 **Переполнение:** `room.incoming`, `peer.outbound` и ENet session — **drop** кадра + warn (room loop / host loop / peer read не блокируются).
 

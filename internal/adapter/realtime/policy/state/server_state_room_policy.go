@@ -64,8 +64,10 @@ func (p *StateRoomPolicy) refreshPeerPings() error {
 	if masterPruned || (p.master == nil && len(p.state.Peers) > 0) {
 		if err := p.electAndAssignMaster(&p.state); err != nil {
 			// master не должен висеть на удалённом peer — сбрасываем.
-			p.logger.Error("elect master failed", "error", err)
 			p.master = nil
+			p.logMasterless(err)
+		} else if p.master != nil {
+			p.masterAssigned(p.master.GetID())
 		}
 	}
 	return nil
@@ -110,6 +112,9 @@ func (p *StateRoomPolicy) joinPeerAndSyncState(peer realtime.Peer) error {
 
 	p.state = *newState
 	p.master = newMaster
+	if newMaster != nil {
+		p.masterAssigned(newMaster.GetID())
+	}
 	p.commitPrevState()
 	return nil
 }
@@ -226,5 +231,10 @@ func (p *StateRoomPolicy) prepareAndSendRoomStatePatch(applyChanges func(roomSta
 	p.state = *newRoomState
 	p.commitPrevState()
 	committed = true
+	if p.master != nil {
+		// Post-commit: assignMaster внутри applyChanges мог перебрать master —
+		// masterless-эпизод закрываем только после успешной рассылки патча.
+		p.masterAssigned(p.master.GetID())
+	}
 	return nil
 }

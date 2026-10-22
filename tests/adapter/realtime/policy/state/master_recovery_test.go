@@ -19,6 +19,30 @@ import (
 
 var errElectionFailed = errors.New("election failed")
 
+// memberGetPeerFails — сценарий падений GetPeer(member): решает по номеру
+// вызова (1-based), падать ли этому вызову. Порядок вызовов на member внутри
+// одного patch-тика: scan в refreshPeerPings (1), election (2), assign (3);
+// дальше — recovery-тики / lazy re-elect по RPC.
+type memberGetPeerFails func(call int) bool
+
+// failGetPeerOnCalls — падать на перечисленных вызовах GetPeer(member).
+func failGetPeerOnCalls(calls ...int) memberGetPeerFails {
+	bad := make(map[int]struct{}, len(calls))
+	for _, c := range calls {
+		bad[c] = struct{}{}
+	}
+	return func(call int) bool {
+		_, fail := bad[call]
+		return fail
+	}
+}
+
+// failGetPeerAfter — первые okCalls вызовов проходят, все последующие падают
+// (latch: election не восстанавливается никогда).
+func failGetPeerAfter(okCalls int) memberGetPeerFails {
+	return func(call int) bool { return call > okCalls }
+}
+
 // nilMasterRoom — политика + mock room в состоянии «post-failed-election»:
 // в state остаётся живой member, но p.master == nil (election на прошлом
 // тике упал). sent — все PeerEvent, прошедшие через room.Send.
@@ -30,11 +54,8 @@ type nilMasterFixture struct {
 
 // setupNilMasterRoom вгоняет политику в nil-master состояние: master(1)
 // становится stale (ушёл из room, остался в state), а election на member(2)
-// внутри refreshPeerPings падает.
-// failMemberGetPeer(call) решает по номеру вызова GetPeer(member), падать ли
-// ему: порядок вызовов на member — scan тика (1), election (2), дальше —
-// recovery/RPC-пути.
-func setupNilMasterRoom(t *testing.T, failMemberGetPeer func(call int) bool) *nilMasterFixture {
+// внутри refreshPeerPings падает по сценарию failMember.
+func setupNilMasterRoom(t *testing.T, failMember memberGetPeerFails) *nilMasterFixture {
 	t.Helper()
 
 	ctrl := gomock.NewController(t)
@@ -77,7 +98,7 @@ func setupNilMasterRoom(t *testing.T, failMemberGetPeer func(call int) bool) *ni
 	memberCalls := 0
 	room.EXPECT().GetPeer(member.id).DoAndReturn(func(domain.PeerID) (portrealtime.Peer, error) {
 		memberCalls++
-		if failMemberGetPeer(memberCalls) {
+		if failMember(memberCalls) {
 			return nil, errElectionFailed
 		}
 		return member, nil
@@ -97,8 +118,8 @@ func setupNilMasterRoom(t *testing.T, failMemberGetPeer func(call int) bool) *ni
 func TestOnTickPatchState_NilMasterRoom_ReelectsOnNextTick(t *testing.T) {
 	t.Parallel()
 
-	// Election на первом тике падает, дальше member снова доступен.
-	nm := setupNilMasterRoom(t, func(call int) bool { return call == 2 })
+	// Election на первом тике падает (вызов 2 — elect после scan), дальше member снова доступен.
+	nm := setupNilMasterRoom(t, failGetPeerOnCalls(2))
 
 	if err := nm.policy.OnTickPatchState(); err != nil {
 		t.Fatalf("OnTickPatchState recovery: %v", err)
@@ -123,7 +144,7 @@ func TestOnTickPatchState_NilMasterRoom_ReelectsOnNextTick(t *testing.T) {
 func TestOnMessage_RpcTargetMaster_NilMaster_LazyReelectsAndDelivers(t *testing.T) {
 	t.Parallel()
 
-	nm := setupNilMasterRoom(t, func(call int) bool { return call == 2 })
+	nm := setupNilMasterRoom(t, failGetPeerOnCalls(2))
 	*nm.sent = nil
 
 	payload := mustEncodeRPC(t, state.RpcTargetMaster, domain.PeerIDInvalid)
@@ -145,7 +166,7 @@ func TestOnMessage_RpcTargetMaster_NilMaster_LazyReelectsAndDelivers(t *testing.
 func TestOnMessage_RpcTargetMaster_NilMasterElectionFails_ReturnsErrNoMaster(t *testing.T) {
 	t.Parallel()
 
-	nm := setupNilMasterRoom(t, func(call int) bool { return call >= 2 })
+	nm := setupNilMasterRoom(t, failGetPeerAfter(1))
 
 	payload := mustEncodeRPC(t, state.RpcTargetMaster, domain.PeerIDInvalid)
 	err := nm.policy.OnMessage(events.RoomEvent{
@@ -176,5 +197,110 @@ func TestOnMessage_RpcTargetMaster_EmptyRoom_ReturnsErrNoMaster(t *testing.T) {
 	}
 	if op := domain.InRoomErrorOpCode(err); op != domain.OpInRoomNoMaster {
 		t.Fatalf("InRoomErrorOpCode = %#x, want %#x", op, domain.OpInRoomNoMaster)
+	}
+}
+
+// Election skip-stale: кандидат, которого уже нет в room (GetPeer →
+// ErrPeerNotFound), пропускается — выборы идут среди живых, а не падают.
+func TestOnLeave_ElectionSkipsStaleCandidate_ElectsLivePeer(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, domain.RoomID(92), 4)
+	master := newCapturePeer(1, "master")
+	stale := newFlakyCapturePeer(2, "stale")
+	survivor := newCapturePeer(3, "survivor")
+	mustJoin(t, h.room, master, survivor)
+	if err := h.room.Join(stale); err != nil {
+		t.Fatalf("Join stale: %v", err)
+	}
+
+	// stale уходит из room с упавшим broadcast — запись остаётся в state.Peers.
+	stale.setErr(errDeliverFailed)
+	if err := h.room.Leave(stale); err == nil {
+		t.Fatal("Leave stale: want error from failed broadcast")
+	}
+	stale.setErr(nil)
+	survivor.clear()
+
+	// Master уходит: election видит кандидатов {2 (stale в state), 3 (живой)} —
+	// stale пропускается, master достаётся survivor.
+	if err := h.room.Leave(master); err != nil {
+		t.Fatalf("Leave master: %v (stale candidate must be skipped, not fail election)", err)
+	}
+
+	assertPeerIsMasterInPatch(t, h, survivor, domain.PeerID(3))
+}
+
+// Все кандидаты election — stale: пустые выборы — не ошибка, master
+// сбрасывается, никакому peer IsMaster-флаг не выставляется.
+func TestOnLeave_ElectionAllStale_ResetsMasterWithoutFlags(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, domain.RoomID(93), 4)
+	master := newCapturePeer(1, "master")
+	stale := newFlakyCapturePeer(2, "stale")
+	mustJoin(t, h.room, master)
+	if err := h.room.Join(stale); err != nil {
+		t.Fatalf("Join stale: %v", err)
+	}
+
+	stale.setErr(errDeliverFailed)
+	if err := h.room.Leave(stale); err == nil {
+		t.Fatal("Leave stale: want error from failed broadcast")
+	}
+	stale.setErr(nil)
+
+	// Единственный оставшийся кандидат stale → пустые выборы (не ошибка).
+	if err := h.room.Leave(master); err != nil {
+		t.Fatalf("Leave master: %v (all-stale election must be empty, not error)", err)
+	}
+
+	// Joiner видит state без рекламируемого master: stale-запись не может
+	// держать IsMaster.
+	joiner := newCapturePeer(3, "joiner")
+	if err := h.room.Join(joiner); err != nil {
+		t.Fatalf("Join joiner: %v", err)
+	}
+	got := decodeOnlyFullState(t, h, joiner)
+	for id, ps := range got.Peers {
+		if ps.IsMaster {
+			t.Fatalf("peer %d IsMaster=true after empty election, want no advertised master", id)
+		}
+	}
+
+	// Masterless-эпизод не липкий: следующий тик вычищает stale и избирает joiner.
+	joiner.clear()
+	if err := h.policy.OnTickPatchState(); err != nil {
+		t.Fatalf("OnTickPatchState: %v", err)
+	}
+	assertPeerIsMasterInPatch(t, h, joiner, domain.PeerID(3))
+}
+
+// assignMaster validate-first: GetPeer избранного падает уже после победы в
+// election — IsMaster-флаги в state.Peers при этом не выставляются
+// (state не рекламирует master, которого нет у policy).
+func TestOnTickPatchState_AssignMasterFails_NoIsMasterFlagDivergence(t *testing.T) {
+	t.Parallel()
+
+	// Setup-тик: scan(1) и elect(2) проходят, assign(3) падает → p.master=nil,
+	// но member не должен получить IsMaster=true в state.
+	nm := setupNilMasterRoom(t, failGetPeerOnCalls(3))
+
+	if err := nm.policy.OnTickFullState(); err != nil {
+		t.Fatalf("OnTickFullState: %v", err)
+	}
+	fulls := filterOpcode(*nm.sent, state.OpCodeFullState)
+	if len(fulls) == 0 {
+		t.Fatal("want broadcast full state")
+	}
+	got, err := codec.NewRoomStateCodec().Decode(fulls[len(fulls)-1].Frame.Payload)
+	if err != nil {
+		t.Fatalf("Decode full state: %v", err)
+	}
+	if len(got.Peers) != 1 {
+		t.Fatalf("state peers = %#v, want only member %d", got.Peers, nm.member.id)
+	}
+	if got.Peers[nm.member.id].IsMaster {
+		t.Fatal("member IsMaster=true while policy master is nil — flag divergence")
 	}
 }

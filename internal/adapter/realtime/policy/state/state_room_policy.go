@@ -23,6 +23,10 @@ const (
 type StateRoomPolicy struct {
 	room   realtime.Room
 	master realtime.Peer
+	// masterlessLogged — дедуп логов masterless-эпизода: Error логируется
+	// один раз на эпизод (а не на каждый падающий re-elect тик), Info — при
+	// восстановлении master.
+	masterlessLogged bool
 
 	prevState state.RoomState
 	state     state.RoomState

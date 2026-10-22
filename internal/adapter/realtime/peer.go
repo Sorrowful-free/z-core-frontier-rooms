@@ -98,6 +98,8 @@ func processIncomingEvents(peer *Peer) {
 				continue
 			}
 			peer.logger.Error("error delivering room event", "error", err)
+			// Фатальная ошибка доставки — ускоряем cleanup соединения.
+			_ = peer.connection.Close()
 			return
 		}
 	}

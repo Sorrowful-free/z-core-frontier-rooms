@@ -10,17 +10,32 @@ import (
 func TestIsJoinRejectOpCode(t *testing.T) {
 	t.Parallel()
 
-	if !deliveryerrors.IsJoinRejectOpCode(domain.OpInvalidToken) {
-		t.Fatal("0x41 must be join reject")
+	// Reject-диапазоны: 0x40–0x5F (join) и 0x70–0x7F (reservation) —
+	// оба закрывают соединение. Границы + named OpCode для читаемости.
+	cases := []struct {
+		name string
+		op   domain.OpCode
+		want bool
+	}{
+		{"below join band", domain.OpCode(0x3F), false},
+		{"join band min", domain.OpCode(0x40), true},
+		{"join band max", domain.OpCode(0x5F), true},
+		{"in-room band", domain.OpCode(0x60), false},
+		{"in-room band max", domain.OpCode(0x6F), false},
+		{"reservation band min", domain.OpCode(0x70), true},
+		{"reservation band max", domain.OpCode(0x7F), true},
+		{"above reservation band", domain.OpCode(0x80), false},
+		{"OpInvalidToken", domain.OpInvalidToken, true},
+		{"OpInternal", domain.OpInternal, true},
+		{"OpInRoomInternal", domain.OpInRoomInternal, false},
+		{"OpReservationExpired", domain.OpReservationExpired, true},
 	}
-	if !deliveryerrors.IsJoinRejectOpCode(domain.OpInternal) {
-		t.Fatal("0x50 must be join-phase (internal band)")
-	}
-	if deliveryerrors.IsJoinRejectOpCode(domain.OpInRoomInternal) {
-		t.Fatal("0x60 is in-room, not join reject")
-	}
-	if deliveryerrors.IsJoinRejectOpCode(domain.OpReservationExpired) {
-		t.Fatal("0x74 is reservation reject, not join band 0x40–0x5F")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := deliveryerrors.IsJoinRejectOpCode(tc.op); got != tc.want {
+				t.Fatalf("IsJoinRejectOpCode(%#x) = %v, want %v", tc.op, got, tc.want)
+			}
+		})
 	}
 }
 

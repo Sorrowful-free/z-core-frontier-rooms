@@ -95,6 +95,7 @@ func New(t *testing.T, opts ...Option) *Env {
 			PeerOutboundQueueSize: adaptertransport.DefaultPeerOutboundQueueSize,
 			EnetIncomingQueueSize: adaptertransport.DefaultEnetIncomingQueueSize,
 			MaxIncomingFrameBytes: adaptertransport.DefaultMaxIncomingFrameBytes,
+			WSWriteDeadline:       adaptertransport.DefaultWSWriteDeadline,
 		},
 	}
 	for _, opt := range opts {
