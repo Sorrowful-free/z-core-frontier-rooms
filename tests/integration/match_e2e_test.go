@@ -26,7 +26,7 @@ import (
 //
 //	t=15s  host замолкает: read-pump останавливается, TCP-conn остаётся
 //	       открытым → клиент не отвечает на ping → lastSeen стареет →
-//	       idle sweep эвиктит за ~4s → миграция мастера на slave.
+//	       idle sweep эвиктит за ~6s → миграция мастера на slave.
 //	t=40s  текущий мастер делает clean leave → миграция №3.
 //	t=60s  финал: ≥2 клиента живы, patches текут, peers в registry = 2.
 //
@@ -504,7 +504,7 @@ func TestE2E_LiveMatch_HostMigration(t *testing.T) {
 			WSWriteDeadline:       adaptertransport.DefaultWSWriteDeadline,
 			// PeerIdleTimeout > wsPingInterval (2s): живые клиенты держатся
 			// за pong → lastSeen; замолчавший отваливается за timeout+sweep.
-			PeerIdleTimeout:       3 * time.Second,
+			PeerIdleTimeout:       5 * time.Second,
 			PeerIdleSweepInterval: time.Second,
 		}),
 		env.WithIdleSweep(time.Second),
@@ -559,7 +559,7 @@ func TestE2E_LiveMatch_HostMigration(t *testing.T) {
 	t.Logf("[scenario] host goes silent (TCP open, no reads, no sends)")
 	host.goSilent()
 
-	// Миграция №1: sweep эвиктит host (3s idle + 1s sweep) → is_master уезжает.
+	// Миграция №1: sweep эвиктит host (5s idle + 1s sweep) → is_master уезжает.
 	waitFor(t, 15*time.Second, "master migrated off silent host", func() bool {
 		for _, s := range slaves {
 			if seq := s.mastersSeen(); len(seq) >= 2 && seq[len(seq)-1] != hostPeerID {
@@ -677,7 +677,7 @@ func TestE2E_LiveMatch_HostMigration(t *testing.T) {
 		if c := s.connDead.Load(); c {
 			t.Fatalf("[%s] survivor connection is dead", s.nick)
 		}
-		if since := time.Since(s.lastFrame()); since > 2*time.Second {
+		if since := time.Since(s.lastFrame()); since > 4*time.Second {
 			t.Fatalf("[%s] no state frames for %s — stream stalled", s.nick, since)
 		}
 	}

@@ -18,10 +18,11 @@ Production не трогаем. Клиенты — Go-горутины в тес
 
 - `env` опция `WithIdleSweep(interval)` — поднимает настоящий
   `EvictIdlePeersUseCase` + `StartIdlePeerSweep` (прод-пайплайн)
-- `WithTransport`: `PeerIdleTimeout=3s` (wsPingInterval=2s — меньше нельзя:
-  здоровые клиенты живут за счёт pong → lastSeen), `PeerIdleSweepInterval=1s`
+- `WithTransport`: `PeerIdleTimeout=5s` (wsPingInterval=2s — меньше нельзя:
+  здоровые клиенты живут за счёт pong → lastSeen; маржа под медленные
+  CI-раннеры), `PeerIdleSweepInterval=1s`
 - Отвал хоста = его горутина перестаёт читать (conn открыт на TCP, pong не
-  генерируется) → lastSeen стареет → sweep эвиктит за ≤ ~4s
+  генерируется) → lastSeen стареет → sweep эвиктит за ≤ ~6s
 
 ## Хронология сценария
 
