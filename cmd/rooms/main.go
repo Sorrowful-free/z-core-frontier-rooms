@@ -27,6 +27,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
 	fibzap "github.com/gofiber/contrib/v3/zap"
 	"github.com/gofiber/fiber/v3"
+	fibrecover "github.com/gofiber/fiber/v3/middleware/recover"
 	"go.uber.org/zap"
 )
 
@@ -54,6 +55,7 @@ func run() error {
 	defer appCancel()
 
 	fiberApp := fiber.New()
+	fiberApp.Use(fibrecover.New())
 	fiberApp.Use(fibzap.New(fibzap.Config{
 		Logger: z,
 		// path без query — ticket в GET /ws?token=... не попадает в access-лог
@@ -91,11 +93,12 @@ func run() error {
 		cfg.Reservation.OrphanAdmittedTTL,
 		zaplog.NewFrom(z, "orphan admitted sweep"),
 	)
-	room.StartOrphanAdmittedSweep(appCtx, sweepOrphanAdmittedUseCase, cfg.Reservation.OrphanSweepInterval, zaplog.NewFrom(z, "orphan admitted sweep"))
+	orphanSweep := room.StartOrphanAdmittedSweep(appCtx, sweepOrphanAdmittedUseCase, cfg.Reservation.OrphanSweepInterval, zaplog.NewFrom(z, "orphan admitted sweep"))
 
+	var idleSweep *room.SweepHandle
 	if cfg.Transport.PeerIdleTimeout > 0 {
 		evictIdlePeersUseCase := room.NewEvictIdlePeersUseCase(roomRegistry, leaveRoomUseCase, zaplog.NewFrom(z, "idle peer sweep"))
-		room.StartIdlePeerSweep(appCtx, evictIdlePeersUseCase, cfg.Transport.PeerIdleSweepInterval, zaplog.NewFrom(z, "idle peer sweep"))
+		idleSweep = room.StartIdlePeerSweep(appCtx, evictIdlePeersUseCase, cfg.Transport.PeerIdleSweepInterval, zaplog.NewFrom(z, "idle peer sweep"))
 	}
 
 	if cfg.HTTPAuth.Disabled {
@@ -129,14 +132,19 @@ func run() error {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
+	var listenResult error
+	listenDone := false
 	select {
 	case sig := <-sigCh:
 		z.Info("shutdown signal received", zap.String("signal", sig.String()))
 	case err := <-listenErr:
+		listenDone = true
+		listenResult = err
 		if err != nil && !errors.Is(err, fiber.ErrServiceUnavailable) {
-			return err
+			z.Error("fiber listen failed", zap.Error(err))
 		}
 	}
+	signal.Stop(sigCh)
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
@@ -163,9 +171,16 @@ func run() error {
 		z.Error("shutdown cleanup", zap.Error(shutdownErr))
 	}
 	appCancel()
+	orphanSweep.Stop()
+	idleSweep.Stop()
 
-	if err := <-listenErr; err != nil && !errors.Is(err, fiber.ErrServiceUnavailable) {
-		return err
+	// Однократное чтение listenErr: если select выше уже забрал результат,
+	// повторный receive заблокировался бы навсегда.
+	if !listenDone {
+		listenResult = <-listenErr
+	}
+	if listenResult != nil && !errors.Is(listenResult, fiber.ErrServiceUnavailable) {
+		return errors.Join(listenResult, shutdownErr)
 	}
 
 	z.Info("shutdown complete")

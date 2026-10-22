@@ -5,20 +5,29 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-func newCreateRateLimitMiddleware(limits porthttplimits.Limits) fiber.Handler {
+// newRateLimitMiddleware — общий конструктор per-IP rate limit middleware;
+// check — один из limits.AllowHTTP* методов.
+func newRateLimitMiddleware(check func(clientIP string) bool) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		if !limits.AllowHTTPCreate(c.IP()) {
+		if !check(c.IP()) {
 			return writeAPIError(c, fiber.StatusTooManyRequests, codeRateLimited, "rate limit exceeded")
 		}
 		return c.Next()
 	}
 }
 
+func newCreateRateLimitMiddleware(limits porthttplimits.Limits) fiber.Handler {
+	return newRateLimitMiddleware(limits.AllowHTTPCreate)
+}
+
 func newIssueRateLimitMiddleware(limits porthttplimits.Limits) fiber.Handler {
-	return func(c fiber.Ctx) error {
-		if !limits.AllowHTTPIssueTicket(c.IP()) {
-			return writeAPIError(c, fiber.StatusTooManyRequests, codeRateLimited, "rate limit exceeded")
-		}
-		return c.Next()
-	}
+	return newRateLimitMiddleware(limits.AllowHTTPIssueTicket)
+}
+
+func newDeleteRateLimitMiddleware(limits porthttplimits.Limits) fiber.Handler {
+	return newRateLimitMiddleware(limits.AllowHTTPDelete)
+}
+
+func newListRateLimitMiddleware(limits porthttplimits.Limits) fiber.Handler {
+	return newRateLimitMiddleware(limits.AllowHTTPList)
 }

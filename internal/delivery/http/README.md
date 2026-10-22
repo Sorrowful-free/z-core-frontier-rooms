@@ -21,7 +21,7 @@ REST control plane (Fiber v3), адрес — env `HTTP_ADDR` (default `:3000`).
 
 | Механизм | Где | Ответ |
 |----------|-----|-------|
-| Rate limit create/issue | middleware per IP | `429` / `rate_limited` |
+| Rate limit create/issue/delete/list | middleware per IP | `429` / `rate_limited` |
 | Max rooms на инстанс | `Create` use case | `503` / `rooms_limit_reached` |
 
 Env — [adapter/httplimits/README.md](../../adapter/httplimits/README.md).

@@ -72,6 +72,8 @@ func statusAndCodeFromError(err error) (int, string) {
 		return fiber.StatusUnauthorized, codeInvalidCredentials
 	case errors.Is(err, domain.ErrInvalidNickName):
 		return fiber.StatusBadRequest, codeInvalidNickName
+	case errors.Is(err, domain.ErrInvalidRoomCapacity):
+		return fiber.StatusBadRequest, codeInvalidCapacity
 	case errors.Is(err, domain.ErrRoomsLimitReached):
 		return fiber.StatusServiceUnavailable, codeRoomsLimitReached
 	default:

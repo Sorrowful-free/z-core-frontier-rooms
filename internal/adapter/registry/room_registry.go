@@ -58,6 +58,13 @@ func (r *RoomRegistry) CreateRoom(ctx context.Context, id domain.RoomID, capacit
 	}
 
 	r.mutex.Lock()
+	if _, ok := r.rooms[id]; ok {
+		r.mutex.Unlock()
+		if err := room.Stop(); err != nil {
+			r.logger.Error("error stopping racing room", "error", err, "id", id)
+		}
+		return nil, fmt.Errorf("%w: %d", domain.ErrRoomAlreadyExists, id)
+	}
 	r.rooms[id] = room
 	r.mutex.Unlock()
 
@@ -86,17 +93,18 @@ func (r *RoomRegistry) DeleteRoom(ctx context.Context, id domain.RoomID) error {
 	}
 
 	r.mutex.Lock()
-	defer r.mutex.Unlock()
 	room, ok := r.rooms[id]
 	if !ok {
+		r.mutex.Unlock()
 		return fmt.Errorf("%w: %d", domain.ErrRoomNotFound, id)
 	}
+	delete(r.rooms, id)
+	r.mutex.Unlock()
+
 	if err := room.Stop(); err != nil {
-		r.logger.Error("error stopping room", "error", err)
-		return err
+		r.logger.Error("error stopping room", "error", err, "id", id)
 	}
 	r.logger.Info("room deleted", "id", id)
-	delete(r.rooms, id)
 	return nil
 }
 

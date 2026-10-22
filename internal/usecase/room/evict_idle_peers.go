@@ -62,35 +62,12 @@ func (uc *EvictIdlePeersUseCase) RunOnce(ctx context.Context) (int, error) {
 	return evicted, nil
 }
 
-// StartIdlePeerSweep запускает фоновый sweep; interval <= 0 — no-op.
+// StartIdlePeerSweep запускает фоновый sweep; interval <= 0 — no-op (nil handle).
 func StartIdlePeerSweep(
 	ctx context.Context,
 	uc *EvictIdlePeersUseCase,
 	interval time.Duration,
 	logger logging.Logger,
-) {
-	if interval <= 0 {
-		return
-	}
-
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				evicted, err := uc.RunOnce(ctx)
-				if err != nil && ctx.Err() == nil {
-					logger.Error("idle peer sweep failed", "error", err)
-					continue
-				}
-				if evicted > 0 {
-					logger.Info("idle peer sweep complete", "evicted", evicted)
-				}
-			}
-		}
-	}()
+) *SweepHandle {
+	return startSweep(ctx, interval, logger, "idle peer sweep", "evicted", uc.RunOnce)
 }

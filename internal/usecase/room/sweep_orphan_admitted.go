@@ -46,10 +46,14 @@ func (uc *SweepOrphanAdmittedUseCase) RunOnce(ctx context.Context) (int, error) 
 	revoked := 0
 
 	for _, room := range rooms {
+		if err := ctx.Err(); err != nil {
+			return revoked, err
+		}
 		roomID := room.GetID()
 		slots, err := uc.reservation.ListAdmittedPeers(ctx, roomID)
 		if err != nil {
-			return revoked, err
+			uc.logger.Error("list admitted peers failed", "error", err, "roomID", roomID)
+			continue
 		}
 
 		for _, slot := range slots {
@@ -62,7 +66,8 @@ func (uc *SweepOrphanAdmittedUseCase) RunOnce(ctx context.Context) (int, error) 
 
 			uc.logger.Warn("sweep orphan admitted slot", "roomID", roomID, "peerID", slot.PeerID)
 			if err := uc.reservation.Revoke(ctx, roomID, slot.PeerID); err != nil {
-				return revoked, err
+				uc.logger.Error("revoke orphan admitted slot failed", "error", err, "roomID", roomID, "peerID", slot.PeerID)
+				continue
 			}
 			revoked++
 		}
@@ -71,35 +76,12 @@ func (uc *SweepOrphanAdmittedUseCase) RunOnce(ctx context.Context) (int, error) 
 	return revoked, nil
 }
 
-// StartOrphanAdmittedSweep запускает фоновый sweep; interval <= 0 — no-op.
+// StartOrphanAdmittedSweep запускает фоновый sweep; interval <= 0 — no-op (nil handle).
 func StartOrphanAdmittedSweep(
 	ctx context.Context,
 	uc *SweepOrphanAdmittedUseCase,
 	interval time.Duration,
 	logger logging.Logger,
-) {
-	if interval <= 0 {
-		return
-	}
-
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				revoked, err := uc.RunOnce(ctx)
-				if err != nil && ctx.Err() == nil {
-					logger.Error("orphan admitted sweep failed", "error", err)
-					continue
-				}
-				if revoked > 0 {
-					logger.Info("orphan admitted sweep complete", "revoked", revoked)
-				}
-			}
-		}
-	}()
+) *SweepHandle {
+	return startSweep(ctx, interval, logger, "orphan admitted sweep", "revoked", uc.RunOnce)
 }

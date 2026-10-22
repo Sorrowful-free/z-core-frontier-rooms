@@ -117,6 +117,6 @@ func (h *RoomsHandler) RegisterRoutes(app *fiber.App, httpAuth httpauthadapter.H
 	protected := app.Group("", NewAPIKeyMiddleware(httpAuth))
 	protected.Post("/rooms", newCreateRateLimitMiddleware(limits), h.CreateRoom)
 	protected.Post("/rooms/:id/tickets", newIssueRateLimitMiddleware(limits), h.IssueTicket)
-	protected.Delete("/rooms/:id", h.DeleteRoom)
-	protected.Get("/rooms", h.GetListRooms)
+	protected.Delete("/rooms/:id", newDeleteRateLimitMiddleware(limits), h.DeleteRoom)
+	protected.Get("/rooms", newListRateLimitMiddleware(limits), h.GetListRooms)
 }
