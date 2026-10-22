@@ -83,3 +83,40 @@ jobs:
         env:
           CGO_ENABLED: "1"
         run: go test -race -count=1 -tags enet ./tests/delivery/enet/...
+
+  fuzz:
+    name: Fuzz (codec)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Restore fuzz corpus cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/go-build/fuzz
+          key: fuzz-corpus-${{ runner.os }}
+          restore-keys: |
+            fuzz-corpus-${{ runner.os }}-
+
+      - name: Fuzz codec decoders (30s each)
+        run: |
+          failed=0
+          for target in FuzzRoomStateDecode FuzzRoomStateDecodePatch FuzzEntitiesStateDecode FuzzEntitiesStateDecodePatch FuzzInputStateDecode FuzzInputStateDecodePatch FuzzRpcStateDecode; do
+            go test -run='^$' -fuzz="^${target}$" -fuzztime=30s ./tests/adapter/realtime/codec/ || failed=1
+          done
+          exit "$failed"
+
+      - name: Upload crash reproducers
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashers
+          path: tests/adapter/realtime/codec/testdata/fuzz/**
+          if-no-files-found: ignore

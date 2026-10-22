@@ -59,10 +59,12 @@ func (p *StateRoomPolicy) refreshPeerPings() error {
 			masterPruned = true
 		}
 	}
-	if masterPruned {
+	// Переизбираем master, если он вычищен вместе со stale-записями или его нет
+	// вовсе (прошлая попытка election упала) — пока в комнате есть живые peers.
+	if masterPruned || (p.master == nil && len(p.state.Peers) > 0) {
 		if err := p.electAndAssignMaster(&p.state); err != nil {
 			// master не должен висеть на удалённом peer — сбрасываем.
-			p.logger.Error("elect master after pruning stale peers failed", "error", err)
+			p.logger.Error("elect master failed", "error", err)
 			p.master = nil
 		}
 	}

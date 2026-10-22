@@ -46,6 +46,7 @@ Payload: [wire-state-codec.md](../wire-state-codec.md).
 
 - **Первый** peer в комнате становится master.
 - **Failover:** среди peer с `ping >= 0` — минимальный ping; при равенстве — минимальный `peer_id`. Если ping ни у кого не известен (`-1`) — минимальный `peer_id`.
+- Перевыбор происходит не только при уходе master: если прошлая попытка election упала, сервер переизбирает master на следующем patch-тике или лениво при входящем `0x07` RPC с `target=master` — `is_master` может поменяться в любом patch.
 - В peer state на wire: поле `is_master` (bool).
 - Только master может слать `0x03` / `0x04`. Иначе сервер шлёт in-room `0x61` `OpInRoomNotMaster` отправителю.
 

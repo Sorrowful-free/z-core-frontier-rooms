@@ -119,6 +119,15 @@ func (p *StateRoomPolicy) onClientRpc(roomEvent events.RoomEvent) error {
 		peerEvent.PeerID = rpc.PeerID
 	case state.RpcTargetMaster:
 		if !masterID.IsValid() {
+			// master мог остаться nil после упавшего election — ленивое
+			// переизбрание по живому state, затем одна повторная проверка.
+			if err := p.electAndAssignMaster(&p.state); err == nil {
+				masterID = p.masterPeerID()
+			} else {
+				p.logger.Error("lazy elect master failed", "error", err)
+			}
+		}
+		if !masterID.IsValid() {
 			return domain.ErrNoMaster
 		}
 		peerEvent.PeerID = masterID

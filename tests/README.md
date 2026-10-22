@@ -131,6 +131,20 @@ benchstat bench.txt
 | bench-13 | `tests/adapter/realtime/room_join_bench_test.go` | `BenchmarkRoom_Join` |
 | bench-14 | `tests/adapter/reservation/reservation_bench_test.go` | `BenchmarkReservation_Reserve`, `IssueJoinPath`, `Reserve_ParallelSpread`, `Reserve_ParallelSameRoom` |
 
+## Фаззинг
+
+`tests/adapter/realtime/codec/fuzz_test.go` — фаззинг всех decoder'ов wire codec. Инварианты: decode не паникует, повторный decode тех же байт детерминирован, `Encode` на декодированном значении не падает (byte-exact roundtrip не проверяется — поля переменной длины).
+
+`-fuzz` матчит ровно один `Fuzz*` target за прогон:
+
+```bash
+go test -fuzz=FuzzRoomStateDecode -fuzztime=30s ./tests/adapter/realtime/codec/
+```
+
+Цели: `FuzzRoomStateDecode`, `FuzzRoomStateDecodePatch`, `FuzzEntitiesStateDecode`, `FuzzEntitiesStateDecodePatch`, `FuzzInputStateDecode`, `FuzzInputStateDecodePatch`, `FuzzRpcStateDecode`.
+
+В CI — job `fuzz` в `.github/workflows/test.yml` (30s на цель); крашеры сохраняются артефактом из `tests/adapter/realtime/codec/testdata/fuzz/`.
+
 ## Покрытие по пакетам
 
 | Пакет | Сценарии |
@@ -141,10 +155,10 @@ benchstat bench.txt
 | `tests/adapter/httplimits` | `HTTPLimitsConfig.Validate`, `Limits` rate + max rooms |
 | `tests/adapter/admission` | `AdmissionConfig.Validate`; round-trip ticket + NickName, invalid nick, invalid/expired token, invalid credentials |
 | `tests/adapter/realtime` | `OnJoin` → `room.Send` без deadlock; откат map при `ErrJoinDenied`; Replace rollback policy; `PeerFactory` nick; concurrent `Deliver`/`Join`/`Leave` + `Stop` без паники; `Deliver` → `ErrQueueFull` / stopped; `Send` с `ExcludePeerID` не доставляет отправителю; `Peer.Stop` разблокирует `Receive` через `Close` |
-| `tests/adapter/realtime/policy/state` | join/full/patch/master; `NewStateRoomPolicy` zero intervals → defaults; `PatchEntities` add/update/reject non-master |
+| `tests/adapter/realtime/policy/state` | join/full/patch/master; `NewStateRoomPolicy` zero intervals → defaults; `PatchEntities` add/update/reject non-master; malformed payload → `ErrInRoomInvalidPayload` + wire mapping (все 5 in-room opcodes + вложенный patch-input); send-failure проброс из `OnJoin`/tick/broadcast (`flakyPeer`); nil-master recovery (tick-перевыбор + ленивый на RPC→master) |
 | `tests/domain` | `ValidateNickName` |
 | `tests/domain/state` | atomic `ApplyPatch` rollback на entity/component |
-| `tests/adapter/realtime/codec` | Round-trip `InputStateCodec`, `RpcStateCodec`, `RoomStateCodec` (full + patch) |
+| `tests/adapter/realtime/codec` | Round-trip `InputStateCodec`, `RpcStateCodec`, `RoomStateCodec` (full + patch); fuzz всех Decode/DecodePatch |
 | `tests/adapter/registry` | `GetRoom` → `ErrRoomNotFound`; `Shutdown`; `DeleteRoom` при concurrent `Deliver` без паники; `CreateRoom` ×2 с одним id — один победитель, проигравшая комната остановлена; `GetList` не блокируется медленным `Stop` |
 | `tests/adapter/reservation` | Reserve → Admit → Revoke; expiry sweep; идемпотентный `Revoke`; `State` (none / reserved / admitted); concurrent ops по разным комнатам |
 | `tests/adapter/identity` | первый ID = 1; независимые room/peer; ctx cancel; wrap `MaxUint32` → 1; уникальность под конкуренцией |
