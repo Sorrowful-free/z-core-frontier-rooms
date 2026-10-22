@@ -40,4 +40,12 @@ func (l *limits) AllowHTTPIssueTicket(clientIP string) bool {
 	return l.rate.allow("issue:"+clientIP, l.cfg.IssueTicketsPerMinute, rateLimitWindow)
 }
 
+func (l *limits) AllowHTTPDelete(clientIP string) bool {
+	return l.rate.allow("delete:"+clientIP, l.cfg.DeleteRoomsPerMinute, rateLimitWindow)
+}
+
+func (l *limits) AllowHTTPList(clientIP string) bool {
+	return l.rate.allow("list:"+clientIP, l.cfg.ListRoomsPerMinute, rateLimitWindow)
+}
+
 var _ porthttplimits.Limits = (*limits)(nil)
