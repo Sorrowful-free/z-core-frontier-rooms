@@ -26,18 +26,15 @@ const (
 )
 
 // Admission — минимальная реализация port/admission: HMAC-SHA256 ticket с TTL.
-// password пустой — проверка пароля при Issue отключена.
 type Admission struct {
-	secret   []byte
-	ttl      time.Duration
-	password string
+	secret []byte
+	ttl    time.Duration
 }
 
 func NewAdmission(cfg AdmissionConfig) *Admission {
 	return &Admission{
-		secret:   append([]byte(nil), cfg.Secret...),
-		ttl:      cfg.TTL,
-		password: cfg.Password,
+		secret: append([]byte(nil), cfg.Secret...),
+		ttl:    cfg.TTL,
 	}
 }
 
@@ -45,7 +42,7 @@ func (a *Admission) TTL() time.Duration {
 	return a.ttl
 }
 
-func (a *Admission) Issue(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, nickName string, password string) ([]byte, error) {
+func (a *Admission) Issue(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, nickName string) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -54,9 +51,6 @@ func (a *Admission) Issue(ctx context.Context, roomID domain.RoomID, peerID doma
 	}
 	if !roomID.IsValid() || !peerID.IsValid() {
 		return nil, fmt.Errorf("admission: %w", ErrInvalidCredentials)
-	}
-	if a.password != "" && password != a.password {
-		return nil, ErrInvalidCredentials
 	}
 	now := time.Now()
 	return a.sign(roomID, peerID, now, now.Add(a.ttl), nickName), nil

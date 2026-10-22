@@ -20,9 +20,8 @@ const (
 	envLogMode  = "LOG_MODE"
 	envHTTPAddr = "HTTP_ADDR"
 
-	envAdmissionSecret   = "ADMISSION_SECRET"
-	envAdmissionTTL      = "ADMISSION_TTL"
-	envAdmissionPassword = "ADMISSION_PASSWORD"
+	envAdmissionSecret = "ADMISSION_SECRET"
+	envAdmissionTTL    = "ADMISSION_TTL"
 
 	envHTTPAPIKey       = "HTTP_API_KEY"
 	envHTTPAuthDisabled = "HTTP_AUTH_DISABLED"
@@ -30,6 +29,8 @@ const (
 	envMaxRooms             = "MAX_ROOMS"
 	envHTTPCreateRatePerMin = "HTTP_CREATE_RATE_PER_MIN"
 	envHTTPIssueRatePerMin  = "HTTP_ISSUE_RATE_PER_MIN"
+	envHTTPDeleteRatePerMin = "HTTP_DELETE_RATE_PER_MIN"
+	envHTTPListRatePerMin   = "HTTP_LIST_RATE_PER_MIN"
 
 	envReservationOrphanAdmittedTTL   = "RESERVATION_ORPHAN_ADMITTED_TTL"
 	envReservationOrphanSweepInterval = "RESERVATION_ORPHAN_SWEEP_INTERVAL"
@@ -114,9 +115,8 @@ func loadAdmissionFromEnv() (admissionadapter.AdmissionConfig, error) {
 	}
 
 	cfg := admissionadapter.AdmissionConfig{
-		Secret:   []byte(os.Getenv(envAdmissionSecret)),
-		TTL:      ttl,
-		Password: os.Getenv(envAdmissionPassword),
+		Secret: []byte(os.Getenv(envAdmissionSecret)),
+		TTL:    ttl,
 	}
 	if err := cfg.Validate(); err != nil {
 		return admissionadapter.AdmissionConfig{}, err
@@ -148,11 +148,21 @@ func loadHTTPLimitsFromEnv() (httplimitsadapter.HTTPLimitsConfig, error) {
 	if err != nil {
 		return httplimitsadapter.HTTPLimitsConfig{}, err
 	}
+	deleteRate, err := intFromEnv(envHTTPDeleteRatePerMin, httplimitsadapter.DefaultDeleteRoomsPerMinute)
+	if err != nil {
+		return httplimitsadapter.HTTPLimitsConfig{}, err
+	}
+	listRate, err := intFromEnv(envHTTPListRatePerMin, httplimitsadapter.DefaultListRoomsPerMinute)
+	if err != nil {
+		return httplimitsadapter.HTTPLimitsConfig{}, err
+	}
 
 	cfg := httplimitsadapter.HTTPLimitsConfig{
 		MaxRooms:              maxRooms,
 		CreateRoomsPerMinute:  createRate,
 		IssueTicketsPerMinute: issueRate,
+		DeleteRoomsPerMinute:  deleteRate,
+		ListRoomsPerMinute:    listRate,
 	}
 	if err := cfg.Validate(); err != nil {
 		return httplimitsadapter.HTTPLimitsConfig{}, err

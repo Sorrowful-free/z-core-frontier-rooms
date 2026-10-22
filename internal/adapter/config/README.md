@@ -25,7 +25,6 @@
 |------------|-------------|---------|----------|
 | `ADMISSION_SECRET` | да | — | HMAC-секрет ticket, ≥ 32 байт; `dev-secret-change-me` запрещён |
 | `ADMISSION_TTL` | нет | `1h` | TTL ticket (`time.ParseDuration`) |
-| `ADMISSION_PASSWORD` | нет | `""` | Глобальный пароль Issue; `""` — отключён |
 
 Валидация полей admission — `admission.AdmissionConfig.Validate()`.
 
@@ -47,6 +46,8 @@
 | `MAX_ROOMS` | нет | `500` | Макс. комнат в процессе; `0` — без лимита |
 | `HTTP_CREATE_RATE_PER_MIN` | нет | `30` | `POST /rooms` на IP в минуту; `0` — без лимита |
 | `HTTP_ISSUE_RATE_PER_MIN` | нет | `60` | `POST /rooms/:id/tickets` на IP в минуту; `0` — без лимита |
+| `HTTP_DELETE_RATE_PER_MIN` | нет | `30` | `DELETE /rooms/:id` на IP в минуту; `0` — без лимита |
+| `HTTP_LIST_RATE_PER_MIN` | нет | `60` | `GET /rooms` на IP в минуту; `0` — без лимита |
 
 Валидация — `httplimits.HTTPLimitsConfig.Validate()`.
 
@@ -71,8 +72,8 @@
 | `TRANSPORT_ROOM_INCOMING_QUEUE` | нет | `128` | Буфер `room.incoming`; `0` — unbuffered; полный → drop |
 | `TRANSPORT_PEER_OUTBOUND_QUEUE` | нет | `128` | Буфер `peer.outbound`; `0` — unbuffered; полный → drop |
 | `TRANSPORT_ENET_INCOMING_QUEUE` | нет | `256` | Буфер ENet session; полный → drop кадра |
-| `TRANSPORT_PEER_IDLE_TIMEOUT` | нет | `30s` | Окно живости `IsAlive` (WS lastSeen); `<= 0` — отключить idle eviction |
-| `TRANSPORT_PEER_IDLE_SWEEP_INTERVAL` | нет | `10s` | Период фонового sweep idle peer'ов; `<= 0` — отключить |
+| `TRANSPORT_PEER_IDLE_TIMEOUT` | нет | `30s` | Окно живости `IsAlive` (WS lastSeen); `0` — отключить idle eviction (отрицательные — ошибка Validate) |
+| `TRANSPORT_PEER_IDLE_SWEEP_INTERVAL` | нет | `10s` | Период фонового sweep idle peer'ов; `0` — отключить (отрицательные — ошибка Validate) |
 
 Валидация — `transport.TransportConfig.Validate()`.
 

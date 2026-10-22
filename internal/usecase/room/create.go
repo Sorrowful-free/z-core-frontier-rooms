@@ -3,6 +3,8 @@ package room
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/httplimits"
@@ -23,6 +25,9 @@ type CreateUseCase struct {
 	limits       httplimits.Limits
 	ticketIssuer ticketIssuer
 	logging      logging.Logger
+	// createMu сериализует проверку лимита и регистрацию комнаты —
+	// иначе два конкурентных Create видят один и тот же len(rooms) (TOCTOU).
+	createMu sync.Mutex
 }
 
 func NewCreateUseCase(
@@ -53,6 +58,12 @@ func (uc *CreateUseCase) Create(
 	if err := ctx.Err(); err != nil {
 		return IssueTicketResult{}, err
 	}
+	if capacity < 1 || capacity > domain.MaxRoomCapacity {
+		return IssueTicketResult{}, fmt.Errorf("%w: %d (max %d)", domain.ErrInvalidRoomCapacity, capacity, domain.MaxRoomCapacity)
+	}
+
+	uc.createMu.Lock()
+	defer uc.createMu.Unlock()
 
 	rooms, err := uc.roomRegistry.GetList(ctx)
 	if err != nil {

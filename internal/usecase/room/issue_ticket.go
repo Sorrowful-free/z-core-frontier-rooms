@@ -18,7 +18,7 @@ import (
 // Политика IssueTicket (A — строгая):
 //   - нет peer в room и нет слота в reservation → Reserve + Issue;
 //   - peer в room → ErrPeerAlreadyInRoom (Join/Replace, не новый ticket);
-//   - слот reserved или admitted → ErrTicketSlotHeld;
+//   - слот reserved с тем же nickName или слот уже занят → ErrTicketSlotHeld;
 //   - orphan admitted (слот есть, peer не в room) → Revoke + один повтор Reserve;
 //   - capacity в reservation → ErrReservationFull;
 //   - комната не в registry → ErrRoomNotFound;
@@ -77,12 +77,12 @@ func (uc *IssueTicketUseCase) IssueTicket(ctx context.Context, roomID domain.Roo
 	}
 
 	expiresAt := time.Now().Add(uc.admission.TTL())
-	if err := uc.reserveForIssue(ctx, room, roomID, peerID, expiresAt); err != nil {
+	if err := uc.reserveForIssue(ctx, room, roomID, peerID, nickName, expiresAt); err != nil {
 		uc.logger.Error("issue ticket: reserve failed", "error", err, "roomID", roomID, "peerID", peerID)
 		return IssueTicketResult{}, err
 	}
 
-	token, err := uc.admission.Issue(ctx, roomID, peerID, nickName, password)
+	token, err := uc.admission.Issue(ctx, roomID, peerID, nickName)
 	if err != nil {
 		uc.logger.Error("issue ticket: issue failed", "error", err, "roomID", roomID, "peerID", peerID)
 		return IssueTicketResult{}, uc.revokeIssueReservation(ctx, roomID, peerID, err)
@@ -100,9 +100,10 @@ func (uc *IssueTicketUseCase) reserveForIssue(
 	room realtime.Room,
 	roomID domain.RoomID,
 	peerID domain.PeerID,
+	nickName string,
 	expiresAt time.Time,
 ) error {
-	err := uc.reservation.Reserve(ctx, roomID, peerID, expiresAt)
+	err := uc.reservation.Reserve(ctx, roomID, peerID, nickName, expiresAt)
 	if err == nil {
 		return nil
 	}
@@ -125,7 +126,7 @@ func (uc *IssueTicketUseCase) reserveForIssue(
 		return errors.Join(mapped, revokeErr)
 	}
 
-	if err := uc.reservation.Reserve(ctx, roomID, peerID, expiresAt); err != nil {
+	if err := uc.reservation.Reserve(ctx, roomID, peerID, nickName, expiresAt); err != nil {
 		return mapIssueReserveError(err)
 	}
 	return nil

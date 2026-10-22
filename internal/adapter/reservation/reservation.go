@@ -2,6 +2,8 @@ package reservation
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"fmt"
 	"sync"
 	"time"
@@ -19,16 +21,18 @@ const (
 
 type peerSlot struct {
 	peerID     domain.PeerID
+	nickName   string
 	state      reservationState
 	expiresAt  time.Time
 	admittedAt time.Time
 }
 
 type reservationRoom struct {
-	mu       sync.Mutex
-	capacity int
-	password string
-	peers    map[domain.PeerID]peerSlot
+	mu           sync.Mutex
+	capacity     int
+	passwordHash []byte
+	unregistered bool
+	peers        map[domain.PeerID]peerSlot
 }
 
 type Reservation struct {
@@ -58,6 +62,15 @@ func (r *Reservation) RegisterRoom(ctx context.Context, roomID domain.RoomID, ca
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if capacity < 1 || capacity > domain.MaxRoomCapacity {
+		return reservationErrRoom(domain.ErrInvalidRoomCapacity, roomID)
+	}
+
+	var passwordHash []byte
+	if password != "" {
+		sum := sha256.Sum256([]byte(password))
+		passwordHash = sum[:]
+	}
 
 	r.roomsMu.Lock()
 	defer r.roomsMu.Unlock()
@@ -67,9 +80,9 @@ func (r *Reservation) RegisterRoom(ctx context.Context, roomID domain.RoomID, ca
 	}
 
 	r.rooms[roomID] = &reservationRoom{
-		capacity: capacity,
-		password: password,
-		peers:    make(map[domain.PeerID]peerSlot),
+		capacity:     capacity,
+		passwordHash: passwordHash,
+		peers:        make(map[domain.PeerID]peerSlot),
 	}
 	return nil
 }
@@ -87,10 +100,14 @@ func (r *Reservation) VerifyRoomPassword(ctx context.Context, roomID domain.Room
 	room.mu.Lock()
 	defer room.mu.Unlock()
 
-	if room.password == "" {
+	if err := room.checkLive(roomID); err != nil {
+		return err
+	}
+	if len(room.passwordHash) == 0 {
 		return nil
 	}
-	if room.password != password {
+	sum := sha256.Sum256([]byte(password))
+	if subtle.ConstantTimeCompare(room.passwordHash, sum[:]) != 1 {
 		return reservationErrRoom(domain.ErrInvalidCredentials, roomID)
 	}
 	return nil
@@ -102,17 +119,25 @@ func (r *Reservation) UnregisterRoom(ctx context.Context, roomID domain.RoomID) 
 	}
 
 	r.roomsMu.Lock()
-	defer r.roomsMu.Unlock()
+	room, ok := r.rooms[roomID]
+	if ok {
+		delete(r.rooms, roomID)
+	}
+	r.roomsMu.Unlock()
 
-	if _, ok := r.rooms[roomID]; !ok {
+	if !ok {
 		return reservationErrRoom(domain.ErrReservationNotFound, roomID)
 	}
 
-	delete(r.rooms, roomID)
+	// Tombstone: конкурентные операции, захватившие room до delete,
+	// увидят unregistered под room.mu и откажутся писать в мёртвую map.
+	room.mu.Lock()
+	room.unregistered = true
+	room.mu.Unlock()
 	return nil
 }
 
-func (r *Reservation) Reserve(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, expiresAt time.Time) error {
+func (r *Reservation) Reserve(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, nickName string, expiresAt time.Time) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -125,6 +150,10 @@ func (r *Reservation) Reserve(ctx context.Context, roomID domain.RoomID, peerID 
 	room.mu.Lock()
 	defer room.mu.Unlock()
 
+	if err := room.checkLive(roomID); err != nil {
+		return err
+	}
+
 	room.sweepExpiredLocked()
 
 	if len(room.peers) >= room.capacity {
@@ -135,8 +164,15 @@ func (r *Reservation) Reserve(ctx context.Context, roomID domain.RoomID, peerID 
 		return reservationErrPeer(domain.ErrReservationAlreadyExists, roomID, peerID)
 	}
 
+	for _, slot := range room.peers {
+		if slot.state == reservationStateReserved && slot.nickName == nickName {
+			return reservationErrPeer(domain.ErrTicketSlotHeld, roomID, peerID)
+		}
+	}
+
 	room.peers[peerID] = peerSlot{
 		peerID:    peerID,
+		nickName:  nickName,
 		state:     reservationStateReserved,
 		expiresAt: expiresAt,
 	}
@@ -156,13 +192,17 @@ func (r *Reservation) Admit(ctx context.Context, roomID domain.RoomID, peerID do
 	room.mu.Lock()
 	defer room.mu.Unlock()
 
+	if err := room.checkLive(roomID); err != nil {
+		return err
+	}
+
 	peer, ok := room.peers[peerID]
 	if !ok {
 		return reservationErrPeer(domain.ErrReservationNotReserved, roomID, peerID)
 	}
 
 	if peer.state == reservationStateAdmitted {
-		return nil
+		return reservationErrPeer(domain.ErrReservationAlreadyAdmitted, roomID, peerID)
 	}
 
 	if peer.state != reservationStateReserved {
@@ -176,6 +216,7 @@ func (r *Reservation) Admit(ctx context.Context, roomID domain.RoomID, peerID do
 
 	room.peers[peerID] = peerSlot{
 		peerID:     peerID,
+		nickName:   peer.nickName,
 		state:      reservationStateAdmitted,
 		admittedAt: time.Now(),
 	}
@@ -194,6 +235,10 @@ func (r *Reservation) State(ctx context.Context, roomID domain.RoomID, peerID do
 
 	room.mu.Lock()
 	defer room.mu.Unlock()
+
+	if err := room.checkLive(roomID); err != nil {
+		return domain.ReservationSlotNone, err
+	}
 
 	peer, ok := room.peers[peerID]
 	if !ok {
@@ -223,6 +268,10 @@ func (r *Reservation) ListAdmittedPeers(ctx context.Context, roomID domain.RoomI
 	room.mu.Lock()
 	defer room.mu.Unlock()
 
+	if err := room.checkLive(roomID); err != nil {
+		return nil, err
+	}
+
 	slots := make([]domain.AdmittedSlot, 0, len(room.peers))
 	for peerID, peer := range room.peers {
 		if peer.state != reservationStateAdmitted {
@@ -249,11 +298,24 @@ func (r *Reservation) Revoke(ctx context.Context, roomID domain.RoomID, peerID d
 	room.mu.Lock()
 	defer room.mu.Unlock()
 
+	if err := room.checkLive(roomID); err != nil {
+		return err
+	}
+
 	if _, ok := room.peers[peerID]; !ok {
 		return nil
 	}
 
 	delete(room.peers, peerID)
+	return nil
+}
+
+// checkLive отклоняет операции над tombstone-комнатой (после UnregisterRoom).
+// Вызывать под room.mu.
+func (room *reservationRoom) checkLive(roomID domain.RoomID) error {
+	if room.unregistered {
+		return reservationErrRoom(domain.ErrReservationNotFound, roomID)
+	}
 	return nil
 }
 

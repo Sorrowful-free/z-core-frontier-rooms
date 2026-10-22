@@ -12,7 +12,7 @@ type Reservation interface {
 	UnregisterRoom(ctx context.Context, roomID domain.RoomID) error
 	VerifyRoomPassword(ctx context.Context, roomID domain.RoomID, password string) error
 
-	Reserve(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, expiresAt time.Time) error
+	Reserve(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, nickName string, expiresAt time.Time) error
 	Admit(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) error
 	Revoke(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) error
 

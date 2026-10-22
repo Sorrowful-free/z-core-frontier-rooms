@@ -17,11 +17,10 @@ func DefaultAdmissionTTL() time.Duration {
 	return defaultAdmissionTTL
 }
 
-// AdmissionConfig — параметры конструирования Admission (секрет, TTL, опциональный глобальный пароль Issue).
+// AdmissionConfig — параметры конструирования Admission (секрет, TTL).
 type AdmissionConfig struct {
-	Secret   []byte
-	TTL      time.Duration
-	Password string
+	Secret []byte
+	TTL    time.Duration
 }
 
 // Validate проверяет конфигурацию перед использованием в NewAdmission.

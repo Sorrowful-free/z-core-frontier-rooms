@@ -25,9 +25,12 @@ In-memory слоты комнаты. Порт: `port/reservation`.
 
 `none` → `reserved` (TTL из admission) → `admitted` (до Leave / orphan cleanup).
 
+- `Reserve(ctx, roomID, peerID, nickName, expiresAt)`: один outstanding `reserved`-слот на nick в комнате — повторный Reserve с тем же nick, пока слот не `admitted`/не удалён, → `ErrTicketSlotHeld`.
+- `Admit` одноразовый: повторный `Admit` на `admitted`-слоте → `ErrReservationAlreadyAdmitted`.
 - `Revoke` без peer в map → `nil` (идемпотентно).
 - Просроченные `reserved` — lazy sweep при `Reserve`.
 - `admitted` хранит `admittedAt`; orphan (нет peer в room) — фоновый sweep (`SweepOrphanAdmittedUseCase`) после `OrphanAdmittedTTL`.
+- Пароль комнаты хранится как SHA-256 (`passwordHash`), сверка — `subtle.ConstantTimeCompare`; plaintext не хранится. `RegisterRoom` валидирует capacity в `[1, domain.MaxRoomCapacity]`.
 - Env: `RESERVATION_ORPHAN_ADMITTED_TTL` (default `30s`), `RESERVATION_ORPHAN_SWEEP_INTERVAL` (default `10s`; `0` — отключить).
 
 Бенчмарки (per-room vs legacy global mutex): `tests/adapter/reservation/reservation_bench_test.go`, см. [tests/README.md](../../../tests/README.md).
