@@ -5,7 +5,7 @@ cmd/rooms                 — composition root
 
 delivery/                 — HTTP, WS, ENet, wire OpCode mappers
 usecase/room/             — сценарии комнаты
-port/                     — интерфейсы (admission, registry, reservation, realtime, transport)
+port/                     — интерфейсы (admission, httplimits, identity, logging, realtime, registry, reservation, transport)
 adapter/                  — реализации port
 domain/                   — типы, события, sentinel-ошибки (без I/O)
 ```

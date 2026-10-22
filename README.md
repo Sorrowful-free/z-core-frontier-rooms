@@ -71,4 +71,4 @@ CGO_ENABLED=1 go test -tags enet ./tests/delivery/enet/...
 ## TODO
 
 - Health-check
-- WS e2e: issue → join
+

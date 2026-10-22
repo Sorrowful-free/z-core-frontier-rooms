@@ -26,7 +26,7 @@ nick        UTF-8 bytes (1…64)
 hmac        32 bytes SHA-256 HMAC
 ```
 
-Размер: `67 + len(nick)` … `130` байт.
+Размер: `66 + len(nick)` … `130` байт.
 
 | Транспорт | Как передать ticket |
 |-----------|---------------------|
@@ -47,7 +47,7 @@ hmac        32 bytes SHA-256 HMAC
 
 | OpCode | Назначение |
 |--------|------------|
-| `0x01`–`0x07` | State / input / RPC — [wire-state-codec.md](../wire-state-codec.md), [state-sync.md](state-sync.md) |
+| `0x01`–`0x07` | State / input / RPC — [wire-state-codec.md](../wire-state-codec.md), [state-sync.md](state-sync.md). **Breaking (P6d):** `password` удалён из state payload |
 | `0x40`–`0x5F` | Join reject — [errors.md](errors.md) |
 | `0x60`–`0x6F` | In-room error (соединение живо) |
 | `0x70`–`0x7F` | Reservation reject (при join) |

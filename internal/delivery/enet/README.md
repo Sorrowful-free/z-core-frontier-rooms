@@ -15,7 +15,7 @@ UDP host (отдельный порт от Fiber). Build tag `enet` + CGO.
 | После admit | channel `0`, `[OpCode u8][payload]`; server send reliable |
 | Inbound delivery | `PacketFlagReliable` → `DeliveryReliable`; без флага → `DeliveryUnreliable` (`flags_cgo.go`) |
 | Oversized packet/frame | disconnect (+ `LeaveRoom` если уже admitted) |
-| Ошибка admit | OpCode `0x40`–`0x7F` (1 байт) → disconnect |
+| Ошибка admit | OpCode `0x40`–`0x5F` и `0x70`–`0x7F` (1 байт) → disconnect |
 
 Без `enet`/cgo: `Listen()` — warn, host не поднимается.
 

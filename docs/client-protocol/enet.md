@@ -74,7 +74,7 @@ nick        UTF-8 (1…64 bytes)
 hmac        32 bytes
 ```
 
-Размер: `67 + len(nick)` … `130` байт. Подробнее: [internal/adapter/admission/README.md](../../internal/adapter/admission/README.md).
+Размер: `66 + len(nick)` … `130` байт. Подробнее: [internal/adapter/admission/README.md](../../internal/adapter/admission/README.md).
 
 ### Отличие от WebSocket
 
@@ -116,6 +116,8 @@ hmac        32 bytes
 Лимит длины пакета = `MaxIncomingFrameBytes` (OpCode + payload). Превышение → **disconnect** без wire-ошибки.
 
 Ошибки: [errors.md](errors.md). Payload layout: [wire-state-codec.md](../wire-state-codec.md).
+
+**Breaking change (P6d):** `password` удалён из state payload; сервер отвергает кадры с trailing bytes после payload.
 
 ---
 

@@ -16,6 +16,8 @@ Authoritative room state на сервере (`StateRoomPolicy`). Клиент *
 
 Payload: [wire-state-codec.md](../wire-state-codec.md).
 
+**Breaking change (P6d, D2):** `password` удалён из Room full / Room patch; флаги patch сдвинуты (`peers = 2`, `inputs = 4`, `entities = 8`). Payload с лишними trailing bytes — ошибка на сервере.
+
 ## Server → client
 
 ### On join

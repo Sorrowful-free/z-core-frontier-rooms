@@ -93,6 +93,8 @@ X-API-Key: <HTTP_API_KEY>
 }
 ```
 
+**Ошибки:** `429` `rate_limited`.
+
 ---
 
 ### `DELETE /rooms/:id` — удалить комнату
@@ -105,7 +107,7 @@ X-API-Key: <HTTP_API_KEY>
 
 **Успех:** `204` без body.
 
-**Ошибки:** `404` `room_not_found`, `401` `invalid_credentials`.
+**Ошибки:** `400` `invalid_room_id` (невалидный `:id`), `404` `room_not_found`, `401` `invalid_credentials`, `429` `rate_limited`.
 
 ---
 
@@ -154,13 +156,14 @@ X-API-Key: <HTTP_API_KEY>
 | HTTP | `code` | Когда |
 |------|--------|-------|
 | `400` | `invalid_nick_name` | Пустой nick, control chars, > 64 байт UTF-8 |
-| `400` | `invalid_request` | Невалидный JSON / room id |
+| `400` | `invalid_request` | Невалидный JSON body |
+| `400` | `invalid_room_id` | Невалидный `:id` в path |
 | `401` | `invalid_credentials` | Неверный пароль комнаты |
 | `404` | `room_not_found` | Нет комнаты |
 | `409` | `ticket_slot_held` | Слот reserved другим peer (TTL не истёк) |
 | `409` | `peer_already_in_room` | Peer с этим nick уже в комнате (политика A) |
 | `409` | `reservation_full` | Нет свободных слотов |
-| `429` | `rate_limited` | Лимит issue/create с IP |
+| `429` | `rate_limited` | Лимит REST endpoint'ов с IP |
 
 ## Правила `nick_name`
 
