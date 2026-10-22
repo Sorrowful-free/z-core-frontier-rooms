@@ -68,7 +68,14 @@ func (c *InputStateCodec) Encode(input *state.InputState) ([]byte, error) {
 
 func (c *InputStateCodec) Decode(data []byte) (*state.InputState, error) {
 	buf := bytes.NewBuffer(data)
-	return readInputState(buf)
+	input, err := readInputState(buf)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkNoTrailingBytes(buf); err != nil {
+		return nil, err
+	}
+	return input, nil
 }
 
 func (c *InputStateCodec) EncodePatch(patch *state.InputStatePatch) ([]byte, error) {
@@ -81,5 +88,12 @@ func (c *InputStateCodec) EncodePatch(patch *state.InputStatePatch) ([]byte, err
 
 func (c *InputStateCodec) DecodePatch(data []byte) (*state.InputStatePatch, error) {
 	buf := bytes.NewBuffer(data)
-	return readInputStatePatch(buf)
+	patch, err := readInputStatePatch(buf)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkNoTrailingBytes(buf); err != nil {
+		return nil, err
+	}
+	return patch, nil
 }

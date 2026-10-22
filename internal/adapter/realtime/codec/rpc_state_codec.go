@@ -82,5 +82,8 @@ func (c *RpcStateCodec) Decode(data []byte) (*state.RpcState, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := checkNoTrailingBytes(buf); err != nil {
+		return nil, err
+	}
 	return &state.RpcState{ID: id, Target: target, Values: values, PeerID: peerID}, nil
 }

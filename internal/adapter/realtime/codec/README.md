@@ -7,4 +7,7 @@
 
 Реализации: `room_state_codec.go`, `peer_state_codec.go`, `entity_codec.go`, `input_state_codec.go`, `rpc_state_codec.go`, …
 
+- `RoomState`/`RoomStatePatch` **не** несут `password` (D2) — пароль комнаты живёт в `reservation`, на wire не сериализуется.
+- Все `Decode*` отвергают payload с trailing bytes (`checkNoTrailingBytes` в `codec_util.go`).
+
 При изменении layout — обновить **и** codec, **и** `docs/wire-state-codec.md`.

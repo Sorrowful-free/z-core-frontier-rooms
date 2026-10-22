@@ -39,7 +39,14 @@ func (c *EntitiesStateCodec) Encode(entities state.EntitiesState) ([]byte, error
 
 func (c *EntitiesStateCodec) Decode(data []byte) (state.EntitiesState, error) {
 	buf := bytes.NewBuffer(data)
-	return readMapState(buf, readEntityID, readEntityState, EntitiesStateMaxEntities)
+	entities, err := readMapState(buf, readEntityID, readEntityState, EntitiesStateMaxEntities)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkNoTrailingBytes(buf); err != nil {
+		return nil, err
+	}
+	return entities, nil
 }
 
 func (c *EntitiesStateCodec) EncodePatch(entitiesPatch *state.EntitiesStatePatch) ([]byte, error) {
@@ -58,7 +65,14 @@ func (c *EntitiesStateCodec) EncodePatch(entitiesPatch *state.EntitiesStatePatch
 
 func (c *EntitiesStateCodec) DecodePatch(data []byte) (*state.EntitiesStatePatch, error) {
 	buf := bytes.NewBuffer(data)
-	return readMapPatchState(buf, readEntityID, readEntityState, readEntityStatePatch, EntitiesStateMaxEntities)
+	patch, err := readMapPatchState(buf, readEntityID, readEntityState, readEntityStatePatch, EntitiesStateMaxEntities)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkNoTrailingBytes(buf); err != nil {
+		return nil, err
+	}
+	return patch, nil
 }
 
 func writeEntityID(buf *bytes.Buffer, id state.EntityID) error {

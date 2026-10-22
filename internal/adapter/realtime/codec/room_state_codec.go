@@ -17,7 +17,6 @@ const (
 
 const (
 	RoomStateFlagsCapacity = 1 << iota
-	RoomStateFlagsPassword
 	RoomStateFlagsPeers
 	RoomStateFlagsInputs
 	RoomStateFlagsEntities
@@ -49,9 +48,6 @@ func (c *RoomStateCodec) Encode(room *state.RoomState) ([]byte, error) {
 		return nil, err
 	}
 	if err := binary.Write(buf, binary.BigEndian, room.Capacity); err != nil {
-		return nil, err
-	}
-	if err := writeString(buf, room.Password); err != nil {
 		return nil, err
 	}
 	if err := writeMapState(buf, room.Peers, func(k domain.PeerID, buf *bytes.Buffer) error {
@@ -88,10 +84,6 @@ func (c *RoomStateCodec) Decode(data []byte) (*state.RoomState, error) {
 	if err = binary.Read(buf, binary.BigEndian, &capacity); err != nil {
 		return nil, err
 	}
-	password, err := readString(buf)
-	if err != nil {
-		return nil, err
-	}
 	peers, err := readMapState(buf, readPeerID, readPeerState, RoomStateMaxPeers)
 	if err != nil {
 		return nil, err
@@ -104,7 +96,10 @@ func (c *RoomStateCodec) Decode(data []byte) (*state.RoomState, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &state.RoomState{ID: id, Capacity: capacity, Password: password, Peers: peers, Inputs: inputs, Entities: entities}, nil
+	if err := checkNoTrailingBytes(buf); err != nil {
+		return nil, err
+	}
+	return &state.RoomState{ID: id, Capacity: capacity, Peers: peers, Inputs: inputs, Entities: entities}, nil
 }
 
 func (c *RoomStateCodec) EncodePatch(patch *state.RoomStatePatch) ([]byte, error) {
@@ -112,9 +107,6 @@ func (c *RoomStateCodec) EncodePatch(patch *state.RoomStatePatch) ([]byte, error
 	flags := byte(0)
 	if patch.Capacity != nil {
 		flags |= RoomStateFlagsCapacity
-	}
-	if patch.Password != nil {
-		flags |= RoomStateFlagsPassword
 	}
 	if len(patch.Peers.Added) > 0 || len(patch.Peers.Updated) > 0 || len(patch.Peers.Removed) > 0 {
 		flags |= RoomStateFlagsPeers
@@ -130,11 +122,6 @@ func (c *RoomStateCodec) EncodePatch(patch *state.RoomStatePatch) ([]byte, error
 	}
 	if patch.Capacity != nil {
 		if err := binary.Write(buf, binary.BigEndian, *patch.Capacity); err != nil {
-			return nil, err
-		}
-	}
-	if patch.Password != nil {
-		if err := writeString(buf, *patch.Password); err != nil {
 			return nil, err
 		}
 	}
@@ -189,14 +176,6 @@ func (c *RoomStateCodec) DecodePatch(data []byte) (*state.RoomStatePatch, error)
 		}
 		capacity = &c
 	}
-	var password *string
-	if flags&RoomStateFlagsPassword == RoomStateFlagsPassword {
-		p, err := readString(buf)
-		if err != nil {
-			return nil, err
-		}
-		password = &p
-	}
 	peers := state.MapStatePatch[domain.PeerID, state.PeerState, state.PeerStatePatch]{}
 	if flags&RoomStateFlagsPeers == RoomStateFlagsPeers {
 		p, err := readMapPatchState(buf, readPeerID, readPeerState, readPeerStatePatch, RoomStateMaxPeers)
@@ -221,5 +200,8 @@ func (c *RoomStateCodec) DecodePatch(data []byte) (*state.RoomStatePatch, error)
 		}
 		entities = *e
 	}
-	return &state.RoomStatePatch{Capacity: capacity, Password: password, Peers: peers, Inputs: inputs, Entities: entities}, nil
+	if err := checkNoTrailingBytes(buf); err != nil {
+		return nil, err
+	}
+	return &state.RoomStatePatch{Capacity: capacity, Peers: peers, Inputs: inputs, Entities: entities}, nil
 }

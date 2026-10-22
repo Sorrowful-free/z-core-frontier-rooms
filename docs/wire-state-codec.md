@@ -14,8 +14,9 @@ OpCode ошибок: [internal/delivery/errors/README.md](../internal/delivery/e
 | Map (full) | `count u16` + `count` × (`key` + `value`) |
 | Map (patch) | `added_count u16` + entries + `updated_count u16` + entries + `removed_count u16` + keys |
 | Value payload | `len u8` + `len` raw bytes (opaque, без Go `binary` slice encoding) |
-| String | `len u8` + UTF-8 bytes (`password`, `nick`) |
+| String | `len u8` + UTF-8 bytes (`nick`) |
 | Пустой / отсутствует ID | `PeerID(0)`, `RoomID(0)` и т.д. — невалидны; на wire `peer_id u32 = 0` = «нет целевого peer» (RPC) |
+| Trailing bytes | Decode отвергает payload, если после разобранного значения остались байты (`buf.Len() > 0` → ошибка) |
 | Лимиты | См. константы в codec; при превышении encode/decode возвращает ошибку |
 
 **ID в map:** ключ map — единственный instance id на wire. В теле value **не** дублируется `PeerID` / `EntityID` (u16) / `ComponentID` / `ValueId` (кроме ключа map). Поле `entity_type_id u8` в entity payload — тип сущности, не instance id.
@@ -126,7 +127,6 @@ Max values: **32** (`RpcStateMaxValues`).
 ```text
 room_id   u32
 capacity  i8
-password  string
 peers     map PeerID → peer payload
 inputs    map PeerID → input payload
 entities  map EntityID → entity payload
@@ -134,20 +134,25 @@ entities  map EntityID → entity payload
 
 Лимиты: peers/inputs **255**, entities **65535**.
 
+**Breaking change (P6d, D2):** поле `password` удалено из wire — пароль комнаты остаётся серверным секретом в `reservation` и никогда не сериализуется в state. Старый layout (`password string` после `capacity`) несовместим: нужен синхронный апдейт клиента.
+
 ## Room patch (`OpCodePatchState` = `0x02`)
 
 ```text
 flags u8
-  bit0 (1)   — capacity i8
-  bit1 (2)   — password string
-  bit2 (4)   — peers map patch
-  bit3 (8)   — inputs map patch
-  bit4 (16)  — entities map patch
+  bit0 (1)  — capacity i8
+  bit1 (2)  — peers map patch
+  bit2 (4)  — inputs map patch
+  bit3 (8)  — entities map patch
 
 [optional sections in bit order]
 ```
 
 Секция пишется/читается **только если** соответствующий bit в `flags`.
+
+Флаги: `RoomStateFlagsCapacity = 1`, `RoomStateFlagsPeers = 2`, `RoomStateFlagsInputs = 4`, `RoomStateFlagsEntities = 8`.
+
+**Breaking change (P6d, D2):** бывший `RoomStateFlagsPassword = 2` удалён, все флаги выше сдвинуты на бит (было `peers = 4`, `inputs = 8`, `entities = 16`). Payload со старым `0x02` разбирается как peers map patch и завершится ошибкой (см. тест `decodePatch_legacyPasswordFlag`).
 
 ## Entities standalone (`OpCodeFullEntities` = `0x03` / `OpCodePatchEntities` = `0x04`)
 
