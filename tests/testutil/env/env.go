@@ -54,9 +54,10 @@ type Env struct {
 }
 
 type options struct {
-	httpAuth   httpauthadapter.HTTPAuthConfig
-	httpLimits httplimitsadapter.HTTPLimitsConfig
-	transport  adaptertransport.TransportConfig
+	httpAuth          httpauthadapter.HTTPAuthConfig
+	httpLimits        httplimitsadapter.HTTPLimitsConfig
+	transport         adaptertransport.TransportConfig
+	idleSweepInterval time.Duration
 }
 
 // Option переопределяет дефолтный конфиг env (auth Disabled, limits zero, transport zero).
@@ -80,6 +81,16 @@ func WithHTTPLimits(cfg httplimitsadapter.HTTPLimitsConfig) Option {
 func WithTransport(cfg adaptertransport.TransportConfig) Option {
 	return func(o *options) {
 		o.transport = cfg
+	}
+}
+
+// WithIdleSweep поднимает продовый idle-eviction пайплайн
+// (EvictIdlePeersUseCase + StartIdlePeerSweep, см. cmd/rooms/main.go) с заданным
+// интервалом sweep'а. Без опции sweep не запускается. Работает только вместе с
+// transport.PeerIdleTimeout > 0 — иначе IsAlive всегда true и эвиктить нечего.
+func WithIdleSweep(interval time.Duration) Option {
+	return func(o *options) {
+		o.idleSweepInterval = interval
 	}
 }
 
@@ -128,6 +139,12 @@ func New(t *testing.T, opts ...Option) *Env {
 	getListUC := useroom.NewGetListUseCase(registry, logger)
 	joinUC := useroom.NewJoinRoomUseCase(admission, peerFactory, registry, reservation, logger)
 
+	var idleSweep *useroom.SweepHandle
+	if cfg.idleSweepInterval > 0 {
+		evictIdleUC := useroom.NewEvictIdlePeersUseCase(registry, leaveUC, logger)
+		idleSweep = useroom.StartIdlePeerSweep(context.Background(), evictIdleUC, cfg.idleSweepInterval, logger)
+	}
+
 	app := fiber.New()
 	deliveryhttp.NewRoomsHandler(createUC, issueUC, deleteUC, getListUC, logger).
 		RegisterRoutes(app, cfg.httpAuth, limits)
@@ -143,6 +160,9 @@ func New(t *testing.T, opts ...Option) *Env {
 	}
 
 	t.Cleanup(func() {
+		// Sweep стопаем первым: RunOnce ходит в registry/leave-поток и не должен
+		// гоняться за shutdown'ом. Handle nil-safe (interval <= 0 → nil).
+		idleSweep.Stop()
 		e.closeWSListener()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

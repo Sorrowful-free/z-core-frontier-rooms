@@ -25,7 +25,9 @@ tests/
                           (defaults обязаны зеркалить prod transport config: zero-значения маскируют ошибки доставки — см. кейс ErrQueueFull)
   delivery/http/        — REST JSON (app.Test поверх testutil/env)
   delivery/ws/          — WS join lifecycle (реальный listener + fasthttp/websocket)
-  integration/          — сквозные сценарии: room lifecycle create→issue→2×WS join→disconnect→leave
+  integration/          — сквозные сценарии: room lifecycle create→issue→2×WS join→disconnect→leave;
+                          e2e live match (~60s, -short skip): 4 WS-клиента, host dropout → idle evict →
+                          2 миграции master, entities/input на wire
 ```
 
 Пакеты — **внешние** (`package *_test`), импорт модуля `github.com/Sorrowful-free/z-core-frontier-rooms/...`.
@@ -168,7 +170,7 @@ go test -fuzz=FuzzRoomStateDecode -fuzztime=30s ./tests/adapter/realtime/codec/
 | `tests/delivery/ws` | невалидный token → `OpInvalidToken` frame + close; missing token → `OpEmptyToken`; malformed base64 → `OpInvalidToken`; issue ticket → join → peer в `Registry` → disconnect → leave |
 | `tests/adapter/transport/enet` | `EnetConfig.Validate` (defaults + граничные значения) |
 | `tests/delivery/enet` | stub-Listen чистый выход (без тега); e2e под `-tags enet` + cgo: bind-failure → `Err`, `Stop` ждёт loop, admit-timeout disconnect, join-reject доезжает (`DisconnectLater`) |
-| `tests/integration` | room lifecycle: create (host) → issue (joiner) → оба join по WS → 2 peers → joiner disconnect → 1 peer (host) |
+| `tests/integration` | room lifecycle: create (host) → issue (joiner) → оба join по WS → 2 peers → joiner disconnect → 1 peer (host); e2e live match: 4 клиента ~60s, silent host → idle evict → master→slave, clean leave master-2 → master-3, slaves видят entities от 2+ мастеров и input друг друга |
 
 После изменения `internal/port/*` интерфейсов:
 
@@ -177,6 +179,16 @@ go generate ./tests/mocks/...
 ```
 
 См. [tests/mocks/README.md](mocks/README.md).
+
+## E2E live match
+
+`tests/integration/match_e2e_test.go` (`TestE2E_LiveMatch_HostMigration`, план `docs/plans/P11-e2e-match.md`) — ~60s реального времени, пропускается под `-short`. Запуск:
+
+```bash
+go test -v -race -run TestE2E_LiveMatch -count=1 -timeout 120s ./tests/integration/
+```
+
+Каждый из 4 WS-клиентов (`host`, `s1`..`s3`) — goroutine'ы read-pump + send-loop; логи `t.Logf` с префиксом ника образуют единую хронологическую ленту при `-v` и при падении: `joined as peer N`, `master is now ...`, `became/lost master`, `first entity snapshot from owner ...`, `observed input of ...`, `my input observed`, `in-room error frame`, `disconnected`. Маркеры сценария — `[scenario] ...` (host goes silent, master leaves, шаги `waitFor` — ok).
 
 ## Следующий приоритет
 
