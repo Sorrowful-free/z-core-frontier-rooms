@@ -113,7 +113,12 @@ func processOutgoingEvents(peer *Peer) {
 			return
 		case peerEvent := <-peer.outbound:
 			if err := peer.connection.Send(peerEvent.Frame); err != nil {
-				peer.logger.Error("error sending frame", "error", err)
+				// Ошибка записи — соединение мертво (закрыт извне, сетевой
+				// сбой): продолжать бессмысленно — закрываем и выходим,
+				// иначе Error логируется на каждый кадр очереди.
+				peer.logger.Error("error sending frame, closing connection", "error", err)
+				_ = peer.connection.Close()
+				return
 			}
 		}
 	}

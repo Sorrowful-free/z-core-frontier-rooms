@@ -3,6 +3,8 @@ package integration_test
 import (
 	"encoding/binary"
 	"fmt"
+	"hash/fnv"
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -34,7 +36,7 @@ import (
 // entity Owner, Inputs), а не по внутренностям сервера.
 
 const (
-	clientSendInterval = 100 * time.Millisecond
+	clientSendInterval = 50 * time.Millisecond
 
 	inputValueProbe = state.ValueId(1)
 	posComponentID  = state.ComponentID(1)
@@ -55,6 +57,7 @@ type wsClient struct {
 	roomCodec     *codec.RoomStateCodec
 	entitiesCodec *codec.EntitiesStateCodec
 	inputCodec    *codec.InputStateCodec
+	rnd           *rand.Rand // случайный input-пейлоад, seed по нику — воспроизводимо
 
 	peerID    atomic.Uint32
 	isMaster  atomic.Bool
@@ -82,10 +85,13 @@ type wsClient struct {
 func newWSClient(t *testing.T, e *env.Env, nick, token string) *wsClient {
 	t.Helper()
 
+	seed := fnv.New64a()
+	_, _ = seed.Write([]byte(nick))
 	c := &wsClient{
 		t:             t,
 		nick:          nick,
 		roomCodec:     codec.NewRoomStateCodec(),
+		rnd:           rand.New(rand.NewPCG(seed.Sum64(), 0x9e3779b97f4a7c15)),
 		entitiesCodec: codec.NewEntitiesStateCodec(),
 		inputCodec:    codec.NewInputStateCodec(),
 		quit:          make(chan struct{}),
@@ -333,12 +339,13 @@ func (c *wsClient) sendLoop() {
 	}
 }
 
-// sendInput — PatchInput (0x06) со значением "nick:tick" в inputValueProbe.
+// sendInput — PatchInput (0x06) со случайным значением "nick:<rand>" в
+// inputValueProbe (20 Гц — state реально меняется каждый патч).
 // Patch строится MakePatch от прошлого состояния → первый кадр выходит как
 // Added, дальше Updated — серверный apply требует ровно это различие.
 func (c *wsClient) sendInput(tick uint64, prev *state.InputState) {
 	next := state.InputState{Values: state.MapState[state.ValueId, state.ValueState]{
-		inputValueProbe: state.ValueState(fmt.Sprintf("%s:%d", c.nick, tick)),
+		inputValueProbe: state.ValueState(fmt.Sprintf("%s:%x:%d", c.nick, c.rnd.Uint64(), tick)),
 	}}
 	patch, err := prev.MakePatch(&next)
 	*prev = next
