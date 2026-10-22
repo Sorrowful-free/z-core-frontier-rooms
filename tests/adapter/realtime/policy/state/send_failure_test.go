@@ -15,6 +15,7 @@ func TestOnJoin_FailedFullStateDeliver_PropagatesError(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(80), 4)
+	shadow := mustJoinShadow(t, h)
 	flaky := newFlakyPeer(1, "flaky")
 	flaky.setErr(errDeliverFailed)
 
@@ -22,6 +23,15 @@ func TestOnJoin_FailedFullStateDeliver_PropagatesError(t *testing.T) {
 	if !errors.Is(err, errDeliverFailed) {
 		t.Fatalf("Join err = %v, want errDeliverFailed", err)
 	}
+	assertWeakInvariants(t, shadow.view)
+
+	member := newCapturePeer(2, "member")
+	if err := h.room.Join(member); err != nil {
+		t.Fatalf("Join member: %v", err)
+	}
+	settleTick(t, h, shadow.view)
+	resyncShadow(t, h)
+	assertStrongInvariants(t, shadow.view, h.room)
 }
 
 // Отказ peer.Deliver при broadcast full state пробрасывается из OnTickFullState.
@@ -37,12 +47,19 @@ func TestOnTickFullState_PeerDeliverFails_PropagatesError(t *testing.T) {
 	if err := h.room.Join(other); err != nil {
 		t.Fatalf("Join other: %v", err)
 	}
+	shadow := mustJoinShadow(t, h)
 	flaky.setErr(errDeliverFailed)
 
 	err := h.policy.OnTickFullState()
 	if !errors.Is(err, errDeliverFailed) {
 		t.Fatalf("OnTickFullState err = %v, want errDeliverFailed", err)
 	}
+	assertWeakInvariants(t, shadow.view)
+
+	flaky.setErr(nil)
+	settleTick(t, h, shadow.view)
+	resyncShadow(t, h)
+	assertStrongInvariants(t, shadow.view, h.room)
 }
 
 // Отказ peer.Deliver при broadcast patch после вычистки stale master
@@ -59,17 +76,25 @@ func TestOnTickPatchState_PrunePatchDeliverFails_PropagatesError(t *testing.T) {
 	if err := h.room.Join(member); err != nil {
 		t.Fatalf("Join member: %v", err)
 	}
+	shadow := mustJoinShadow(t, h)
 
 	member.setErr(errDeliverFailed)
 	if err := h.room.Leave(master); err == nil {
 		t.Fatal("Leave master: want error from failed leave patch broadcast")
 	}
-	// state: {1: master (stale), 2}; room: {2}.
+	// state: {1: master (stale), 2, 900}; room: {2, 900}.
+	assertWeakInvariants(t, shadow.view)
 
 	err := h.policy.OnTickPatchState()
 	if !errors.Is(err, errDeliverFailed) {
 		t.Fatalf("OnTickPatchState err = %v, want errDeliverFailed", err)
 	}
+	assertWeakInvariants(t, shadow.view)
+
+	member.setErr(nil)
+	settleTick(t, h, shadow.view)
+	resyncShadow(t, h)
+	assertStrongInvariants(t, shadow.view, h.room)
 }
 
 // Отказ broadcast patch в publishRoomStateChange (master full-entities)
@@ -86,6 +111,7 @@ func TestOnMessage_FullEntities_BroadcastDeliverFails_PropagatesError(t *testing
 	if err := h.room.Join(member); err != nil {
 		t.Fatalf("Join member: %v", err)
 	}
+	shadow := mustJoinShadow(t, h)
 
 	member.setErr(errDeliverFailed)
 
@@ -106,4 +132,10 @@ func TestOnMessage_FullEntities_BroadcastDeliverFails_PropagatesError(t *testing
 	if !errors.Is(err, errDeliverFailed) {
 		t.Fatalf("OnMessage err = %v, want errDeliverFailed", err)
 	}
+	assertWeakInvariants(t, shadow.view)
+
+	member.setErr(nil)
+	settleTick(t, h, shadow.view)
+	resyncShadow(t, h)
+	assertStrongInvariants(t, shadow.view, h.room)
 }

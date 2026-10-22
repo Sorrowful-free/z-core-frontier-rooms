@@ -17,15 +17,21 @@ func TestOnLeave_MasterFailover_PicksLowestInitializedPing(t *testing.T) {
 	mid := newCapturePeerWithPing(2, "mid", 50)
 	best := newCapturePeerWithPing(3, "best", 20)
 	mustJoin(t, h.room, master, mid, best)
+	shadow := mustJoinShadow(t, h)
 	mid.clear()
 	best.clear()
 
 	if err := h.room.Leave(master); err != nil {
 		t.Fatalf("Leave master: %v", err)
 	}
+	assertWeakInvariants(t, shadow.view)
 
 	assertPeerIsMasterInPatch(t, h, mid, domain.PeerID(3))
 	assertPeerIsMasterInPatch(t, h, best, domain.PeerID(3))
+
+	settleTick(t, h, shadow.view)
+	resyncShadow(t, h)
+	assertStrongInvariants(t, shadow.view, h.room)
 }
 
 func TestOnLeave_MasterFailover_EqualPingPicksMinPeerID(t *testing.T) {
@@ -36,15 +42,21 @@ func TestOnLeave_MasterFailover_EqualPingPicksMinPeerID(t *testing.T) {
 	peerA := newCapturePeerWithPing(4, "a", 30)
 	peerB := newCapturePeerWithPing(2, "b", 30)
 	mustJoin(t, h.room, master, peerA, peerB)
+	shadow := mustJoinShadow(t, h)
 	peerA.clear()
 	peerB.clear()
 
 	if err := h.room.Leave(master); err != nil {
 		t.Fatalf("Leave master: %v", err)
 	}
+	assertWeakInvariants(t, shadow.view)
 
 	assertPeerIsMasterInPatch(t, h, peerA, domain.PeerID(2))
 	assertPeerIsMasterInPatch(t, h, peerB, domain.PeerID(2))
+
+	settleTick(t, h, shadow.view)
+	resyncShadow(t, h)
+	assertStrongInvariants(t, shadow.view, h.room)
 }
 
 func TestOnLeave_MasterFailover_AllPingsUnknown_FallsBackToMinPeerID(t *testing.T) {
@@ -55,15 +67,21 @@ func TestOnLeave_MasterFailover_AllPingsUnknown_FallsBackToMinPeerID(t *testing.
 	peerHigh := newCapturePeerWithPing(5, "high", pingUnknown)
 	peerLow := newCapturePeerWithPing(2, "low", pingUnknown)
 	mustJoin(t, h.room, master, peerHigh, peerLow)
+	shadow := mustJoinShadow(t, h)
 	peerHigh.clear()
 	peerLow.clear()
 
 	if err := h.room.Leave(master); err != nil {
 		t.Fatalf("Leave master: %v", err)
 	}
+	assertWeakInvariants(t, shadow.view)
 
 	assertPeerIsMasterInPatch(t, h, peerHigh, domain.PeerID(2))
 	assertPeerIsMasterInPatch(t, h, peerLow, domain.PeerID(2))
+
+	settleTick(t, h, shadow.view)
+	resyncShadow(t, h)
+	assertStrongInvariants(t, shadow.view, h.room)
 }
 
 func TestOnLeave_MasterFailover_MixedPingsIgnoresUnknown(t *testing.T) {
@@ -74,16 +92,22 @@ func TestOnLeave_MasterFailover_MixedPingsIgnoresUnknown(t *testing.T) {
 	unknown := newCapturePeerWithPing(2, "unknown", pingUnknown)
 	initialized := newCapturePeerWithPing(3, "init", 100)
 	mustJoin(t, h.room, master, unknown, initialized)
+	shadow := mustJoinShadow(t, h)
 	unknown.clear()
 	initialized.clear()
 
 	if err := h.room.Leave(master); err != nil {
 		t.Fatalf("Leave master: %v", err)
 	}
+	assertWeakInvariants(t, shadow.view)
 
 	// peer 3 has единственный инициализированный ping, хотя ID больше
 	assertPeerIsMasterInPatch(t, h, unknown, domain.PeerID(3))
 	assertPeerIsMasterInPatch(t, h, initialized, domain.PeerID(3))
+
+	settleTick(t, h, shadow.view)
+	resyncShadow(t, h)
+	assertStrongInvariants(t, shadow.view, h.room)
 }
 
 func TestOnLeave_NonMaster_KeepsCurrentMaster(t *testing.T) {
@@ -93,12 +117,14 @@ func TestOnLeave_NonMaster_KeepsCurrentMaster(t *testing.T) {
 	master := newCapturePeerWithPing(1, "master", 10)
 	client := newCapturePeerWithPing(2, "client", 5)
 	mustJoin(t, h.room, master, client)
+	shadow := mustJoinShadow(t, h)
 	master.clear()
 	client.clear()
 
 	if err := h.room.Leave(client); err != nil {
 		t.Fatalf("Leave client: %v", err)
 	}
+	assertWeakInvariants(t, shadow.view)
 
 	patches := filterOpcode(master.snapshot(), state.OpCodePatchState)
 	if len(patches) != 1 {
@@ -116,6 +142,10 @@ func TestOnLeave_NonMaster_KeepsCurrentMaster(t *testing.T) {
 			t.Fatalf("unexpected new master %d in patch", id)
 		}
 	}
+
+	settleTick(t, h, shadow.view)
+	resyncShadow(t, h)
+	assertStrongInvariants(t, shadow.view, h.room)
 }
 
 func TestOnLeave_RemovesPeerInputFromRoomState(t *testing.T) {
@@ -125,6 +155,7 @@ func TestOnLeave_RemovesPeerInputFromRoomState(t *testing.T) {
 	master := newCapturePeer(1, "master")
 	client := newCapturePeer(2, "client")
 	mustJoin(t, h.room, master, client)
+	shadow := mustJoinShadow(t, h)
 	master.clear()
 	client.clear()
 
@@ -162,6 +193,11 @@ func TestOnLeave_RemovesPeerInputFromRoomState(t *testing.T) {
 	if !slices.Contains(patch.Inputs.Removed, domain.PeerID(2)) {
 		t.Fatalf("patch inputs.removed = %#v", patch.Inputs.Removed)
 	}
+	assertWeakInvariants(t, shadow.view)
+
+	settleTick(t, h, shadow.view)
+	resyncShadow(t, h)
+	assertStrongInvariants(t, shadow.view, h.room)
 }
 
 func assertPeerIsMasterInPatch(t *testing.T, h *harness, peer *capturePeer, wantMaster domain.PeerID) {

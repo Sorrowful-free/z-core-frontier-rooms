@@ -11,6 +11,8 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 )
 
+// (shadow-наблюдатель не подключается: тест ассертит точный состав
+// state.Peers — «unchanged {1,2}»; лишний peer ломал бы premise.)
 func TestOnLeave_FailedPatchSend_StateAndMasterUntouched(t *testing.T) {
 	t.Parallel()
 
@@ -62,6 +64,7 @@ func TestOnMessage_InputFromUnknownPeer_ReturnsErrPeerNotFound(t *testing.T) {
 	h := newHarness(t, domain.RoomID(51), 4)
 	master := newCapturePeer(1, "master")
 	mustJoin(t, h.room, master)
+	shadow := mustJoinShadow(t, h)
 	master.clear()
 
 	fullPayload, err := h.inputCodec.Encode(&state.InputState{
@@ -106,8 +109,15 @@ func TestOnMessage_InputFromUnknownPeer_ReturnsErrPeerNotFound(t *testing.T) {
 	if len(got.Inputs) != 0 {
 		t.Fatalf("inputs = %#v, want empty after ghost input rejected", got.Inputs)
 	}
+
+	assertWeakInvariants(t, shadow.view)
+	settleTick(t, h, shadow.view)
+	resyncShadow(t, h)
+	assertStrongInvariants(t, shadow.view, h.room)
 }
 
+// (shadow-наблюдатель не подключается: capacity=1 занят конкурентным join'ом,
+// наблюдателю нет слота.)
 func TestJoin_ConcurrentLastSlot_LoserRolledBackFromState(t *testing.T) {
 	t.Parallel()
 

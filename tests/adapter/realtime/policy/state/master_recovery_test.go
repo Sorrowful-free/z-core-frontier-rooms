@@ -46,10 +46,13 @@ func failGetPeerAfter(okCalls int) memberGetPeerFails {
 // nilMasterRoom — политика + mock room в состоянии «post-failed-election»:
 // в state остаётся живой member, но p.master == nil (election на прошлом
 // тике упал). sent — все PeerEvent, прошедшие через room.Send.
+// shadow — виртуальный wire-наблюдатель, подпитанный sent.
 type nilMasterFixture struct {
 	policy *statepolicy.StateRoomPolicy
+	room   *mocks.MockRoom
 	member *capturePeer
 	sent   *[]events.PeerEvent
+	shadow *shadowView
 }
 
 // setupNilMasterRoom вгоняет политику в nil-master состояние: master(1)
@@ -62,10 +65,17 @@ func setupNilMasterRoom(t *testing.T, failMember memberGetPeerFails) *nilMasterF
 	room := mocks.NewMockRoom(ctrl)
 
 	var sent []events.PeerEvent
+	// Виртуальный наблюдатель материализует wire-трафик с конца setup —
+	// seedится на post-tick состояние (master вычищен, election упал).
+	shadow := newShadowView(codec.NewRoomStateCodec())
+	feedShadow := false
 	room.EXPECT().GetID().Return(domain.RoomID(90)).AnyTimes()
 	room.EXPECT().GetCapacity().Return(int8(4)).AnyTimes()
 	room.EXPECT().Send(gomock.Any()).DoAndReturn(func(ev events.PeerEvent) error {
 		sent = append(sent, ev)
+		if feedShadow {
+			shadow.feed(ev)
+		}
 		return nil
 	}).AnyTimes()
 
@@ -95,6 +105,9 @@ func setupNilMasterRoom(t *testing.T, failMember memberGetPeerFails) *nilMasterF
 	room.EXPECT().GetPeer(master.id).
 		Return(nil, fmt.Errorf("%w: %d", domain.ErrPeerNotFound, master.id)).
 		AnyTimes()
+	room.EXPECT().HasPeer(gomock.Any()).DoAndReturn(func(id domain.PeerID) bool {
+		return id == member.id
+	}).AnyTimes()
 	memberCalls := 0
 	room.EXPECT().GetPeer(member.id).DoAndReturn(func(domain.PeerID) (portrealtime.Peer, error) {
 		memberCalls++
@@ -110,7 +123,12 @@ func setupNilMasterRoom(t *testing.T, failMember memberGetPeerFails) *nilMasterF
 		t.Fatalf("OnTickPatchState (nil-master setup): %v", err)
 	}
 
-	return &nilMasterFixture{policy: policy, member: member, sent: &sent}
+	seed := state.NewRoomState(domain.RoomID(90), 4)
+	seed.Peers[member.id] = state.PeerState{NickName: member.nick, Ping: member.ping}
+	shadow.seed(seed)
+	feedShadow = true
+
+	return &nilMasterFixture{policy: policy, room: room, member: member, sent: &sent, shadow: shadow}
 }
 
 // Комната без master (election упал на прошлом тике) обязана переизбрать
@@ -137,6 +155,9 @@ func TestOnTickPatchState_NilMasterRoom_ReelectsOnNextTick(t *testing.T) {
 	if !ok || updated.IsMaster == nil || !*updated.IsMaster {
 		t.Fatalf("peers.updated[%d] = %#v ok=%v, want IsMaster=true", nm.member.id, updated, ok)
 	}
+
+	assertWeakInvariants(t, nm.shadow)
+	assertStrongInvariants(t, nm.shadow, nm.room)
 }
 
 // RPC→master при отсутствующем master: ленивое переизбрание по живому state
@@ -159,6 +180,9 @@ func TestOnMessage_RpcTargetMaster_NilMaster_LazyReelectsAndDelivers(t *testing.
 	if len(rpcs) != 1 || rpcs[0].PeerID != nm.member.id {
 		t.Fatalf("rpc deliveries = %v, want single rpc to elected master %d", opcodes(*nm.sent), nm.member.id)
 	}
+
+	assertWeakInvariants(t, nm.shadow)
+	assertStrongInvariants(t, nm.shadow, nm.room)
 }
 
 // Комната с peers, но без master и с продолжающим падать election:
@@ -179,9 +203,14 @@ func TestOnMessage_RpcTargetMaster_NilMasterElectionFails_ReturnsErrNoMaster(t *
 	if op := domain.InRoomErrorOpCode(err); op != domain.OpInRoomNoMaster {
 		t.Fatalf("InRoomErrorOpCode = %#x, want %#x", op, domain.OpInRoomNoMaster)
 	}
+
+	assertWeakInvariants(t, nm.shadow)
+	assertStrongInvariants(t, nm.shadow, nm.room)
 }
 
 // Пустая комната без master: переизбирать не из кого → ErrNoMaster.
+// (shadow-наблюдатель не подключается: он стал бы первым peer и master —
+// ломал бы premissу «комната без master».)
 func TestOnMessage_RpcTargetMaster_EmptyRoom_ReturnsErrNoMaster(t *testing.T) {
 	t.Parallel()
 
@@ -213,6 +242,7 @@ func TestOnLeave_ElectionSkipsStaleCandidate_ElectsLivePeer(t *testing.T) {
 	if err := h.room.Join(stale); err != nil {
 		t.Fatalf("Join stale: %v", err)
 	}
+	shadow := mustJoinShadow(t, h)
 
 	// stale уходит из room с упавшим broadcast — запись остаётся в state.Peers.
 	stale.setErr(errDeliverFailed)
@@ -221,14 +251,20 @@ func TestOnLeave_ElectionSkipsStaleCandidate_ElectsLivePeer(t *testing.T) {
 	}
 	stale.setErr(nil)
 	survivor.clear()
+	assertWeakInvariants(t, shadow.view)
 
 	// Master уходит: election видит кандидатов {2 (stale в state), 3 (живой)} —
 	// stale пропускается, master достаётся survivor.
 	if err := h.room.Leave(master); err != nil {
 		t.Fatalf("Leave master: %v (stale candidate must be skipped, not fail election)", err)
 	}
+	assertWeakInvariants(t, shadow.view)
 
 	assertPeerIsMasterInPatch(t, h, survivor, domain.PeerID(3))
+
+	settleTick(t, h, shadow.view)
+	resyncShadow(t, h)
+	assertStrongInvariants(t, shadow.view, h.room)
 }
 
 // Все кандидаты election — stale: пустые выборы — не ошибка, master
@@ -261,12 +297,16 @@ func TestOnLeave_ElectionAllStale_ResetsMasterWithoutFlags(t *testing.T) {
 	if err := h.room.Join(joiner); err != nil {
 		t.Fatalf("Join joiner: %v", err)
 	}
+	// Shadow подключается внутри masterless-окна (join не переизбирает
+	// master в непустой комнате): его join full-state — masterless вид.
+	shadow := mustJoinShadow(t, h)
 	got := decodeOnlyFullState(t, h, joiner)
 	for id, ps := range got.Peers {
 		if ps.IsMaster {
 			t.Fatalf("peer %d IsMaster=true after empty election, want no advertised master", id)
 		}
 	}
+	assertWeakInvariants(t, shadow.view)
 
 	// Masterless-эпизод не липкий: следующий тик вычищает stale и избирает joiner.
 	joiner.clear()
@@ -274,6 +314,8 @@ func TestOnLeave_ElectionAllStale_ResetsMasterWithoutFlags(t *testing.T) {
 		t.Fatalf("OnTickPatchState: %v", err)
 	}
 	assertPeerIsMasterInPatch(t, h, joiner, domain.PeerID(3))
+	resyncShadow(t, h)
+	assertStrongInvariants(t, shadow.view, h.room)
 }
 
 // assignMaster validate-first: GetPeer избранного падает уже после победы в
@@ -303,4 +345,7 @@ func TestOnTickPatchState_AssignMasterFails_NoIsMasterFlagDivergence(t *testing.
 	if got.Peers[nm.member.id].IsMaster {
 		t.Fatal("member IsMaster=true while policy master is nil — flag divergence")
 	}
+
+	assertWeakInvariants(t, nm.shadow)
+	assertStrongInvariants(t, nm.shadow, nm.room)
 }
