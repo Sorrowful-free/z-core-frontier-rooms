@@ -1,5 +1,7 @@
 # P1 — Channel ownership на shutdown
 
+> **Статус:** done (verified: build/vet/lint clean, go test -race -shuffle=on green).
+
 ## Контекст
 
 Ревью realtime-адаптеров нашло два потенциальных `send on closed channel` panic и один незавершённый lifecycle в ping-loop. Контракт из `internal/adapter/realtime/README.md` уже запрещает закрытие room-каналов по этой причине — peer/enet ему противоречат.

@@ -19,3 +19,11 @@ _Avoid_: Connected, Active, Online
 **Last seen**:
 Внутренний момент последней подтверждённой живости клиента. Для WS — успешный входящий кадр или pong; исходящие кадры живость не подтверждают. Не путать с RTT (`Ping()`): RTT — устаревающее значение, а не метка времени.
 _Avoid_: LastActivity, heartbeat timestamp
+
+**Orphan admitted**:
+Слот reservation в состоянии `admitted`, для которого в комнате нет живого peer'а (клиент получил ticket и зашёл, но peer ушёл/умер без revoke). Вычищается фоновым `SweepOrphanAdmittedUseCase` после `OrphanAdmittedTTL` или точечным revoke+reserve в `IssueTicket` при повторном issue того же peer'а.
+_Avoid_: stale slot, dangling slot, orphan reservation
+
+**Ghost input**:
+Входной кадр (input/RPC/state) от peer'а, которого уже нет в комнате (zombie или удалённый без вычистки из state). Policy отклоняет такие кадры проверкой членства (`ErrPeerNotFound`), иначе state получал бы записи от несуществующего peer'а.
+_Avoid_: phantom input, stale input

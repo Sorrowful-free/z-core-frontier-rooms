@@ -1,5 +1,7 @@
 # P5 — Lint leftovers
 
+> **Статус:** done (verified: build/vet/lint clean, go test -race -shuffle=on green).
+
 ## Контекст
 
 `golangci-lint run` (новый `.golangci.yml`: defaults + asciicheck + usestdlibvars) после вычитания находок P1–P4 оставляет три непокрытых долга. Атомарный микро-план, в основном удаление мёртвого кода.

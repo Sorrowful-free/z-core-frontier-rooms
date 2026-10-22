@@ -1,5 +1,7 @@
 # P2 — Codec correctness & hygiene
 
+> **Статус:** done (verified: build/vet/lint clean, go test -race -shuffle=on green).
+
 ## Контекст
 
 Ревью codec-пакета (`internal/adapter/realtime/codec`) нашло баг silent truncation на decode, кириллицу в идентификаторе, дубли и мёртвый код. Зона codec — жёлтая: план исполняется после отдельного «да», блоками с логом в чате.

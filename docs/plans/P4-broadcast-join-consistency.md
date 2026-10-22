@@ -1,5 +1,7 @@
 # P4 — Broadcast & join consistency
 
+> **Статус:** done (verified: build/vet/lint clean, go test -race -shuffle=on green).
+
 ## Контекст
 
 Ревью нашёл: ad-hoc «peer not found» вместо sentinel, фантомного пира в authoritative state при failed join, мёртвый код и magic-числа. Broadcast-abort при ошибке Deliver **оставляем как есть** (решение) — но README надо привести к факту.

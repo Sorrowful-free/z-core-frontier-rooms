@@ -1,5 +1,7 @@
 # P3 — Wire protocol alignment
 
+> **Статус:** done (verified: build/vet/lint clean, go test -race -shuffle=on green).
+
 ## Контекст
 
 Три расхождения кода с документированным wire-контрактом: `ErrRoomFull` уходит клиенту как `OpInternal`, flagless ENet-пакеты клиента мапятся не в `DeliveryUnreliable`, `dispatchLifecycle` возвращает «room stopped» без `ctx.Err()`.

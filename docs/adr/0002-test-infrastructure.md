@@ -10,6 +10,6 @@
 
 ## Consequences
 
-- `github.com/fasthttp/websocket` становится прямой зависимостью `go.mod` (используется только в `tests/`).
+- `github.com/fasthttp/websocket` становится прямой зависимостью `go.mod` (используется в `tests/` и production WS-транспорте).
 - Изменение конструктора любого use case правит один env, а не N тестовых файлов.
 - Порядок закрытия бэклога: unit-пачка (Join `errors.Join`, `Send` ExcludePeerID, `Peer.Stop`) → ws → integration; `go test -race ./tests/...` после каждой пачки.
