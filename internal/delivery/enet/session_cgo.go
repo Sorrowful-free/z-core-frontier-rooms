@@ -3,6 +3,9 @@
 package enet
 
 import (
+	"time"
+
+	transportenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/enet"
@@ -10,13 +13,13 @@ import (
 )
 
 type peerSession struct {
-	id       uint16
-	peer     libenet.Peer
-	incoming chan domain.Frame
-	conn     transport.Connection
-	admitted bool
-	roomID   domain.RoomID
-	peerID   domain.PeerID
+	id          uint16
+	incoming    chan domain.Frame
+	conn        transport.Connection
+	admitted    bool
+	roomID      domain.RoomID
+	peerID      domain.PeerID
+	connectedAt time.Time
 }
 
 func newPeerSession(peer libenet.Peer, connectionFactory enet.EnetConnectionFactory, queueCap int) *peerSession {
@@ -26,10 +29,10 @@ func newPeerSession(peer libenet.Peer, connectionFactory enet.EnetConnectionFact
 	incoming := make(chan domain.Frame, queueCap)
 	connection := connectionFactory.CreateConnection(peer, incoming)
 	return &peerSession{
-		id:       peer.GetIncomingPeerId(),
-		peer:     peer,
-		incoming: incoming,
-		conn:     connection,
+		id:          transportenet.Call(func() uint16 { return peer.GetIncomingPeerId() }),
+		incoming:    incoming,
+		conn:        connection,
+		connectedAt: time.Now(),
 	}
 }
 
@@ -39,12 +42,6 @@ func (s *peerSession) deliver(frame domain.Frame) bool {
 		return true
 	default:
 		return false
-	}
-}
-
-func (s *peerSession) clearPeerData() {
-	if s.peer != nil {
-		s.peer.SetData(nil)
 	}
 }
 

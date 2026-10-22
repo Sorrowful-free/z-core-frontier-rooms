@@ -8,6 +8,7 @@ import (
 	reservationadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
 	serveradapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/server"
 	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
+	enetadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"
 )
 
 // Config — корневая конфигурация процесса; поля — типы из соответствующих adapter-пакетов.
@@ -19,4 +20,5 @@ type Config struct {
 	HTTPLimits  httplimitsadapter.HTTPLimitsConfig
 	Reservation reservationadapter.ReservationConfig
 	Transport   adaptertransport.TransportConfig
+	Enet        enetadapter.EnetConfig
 }

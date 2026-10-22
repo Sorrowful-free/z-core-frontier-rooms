@@ -11,6 +11,7 @@ import (
 	reservationadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
 	serveradapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/server"
 	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
+	enetadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"
 )
 
 func validSecret() string {
@@ -291,5 +292,79 @@ func TestLoadFromEnv_TransportIdleNegative(t *testing.T) {
 	_, err := appconfig.LoadFromEnv()
 	if err == nil {
 		t.Fatal("expected error for negative TRANSPORT_PEER_IDLE_TIMEOUT")
+	}
+}
+
+func TestLoadFromEnv_EnetDefaults(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	for _, k := range []string{"ENET_LISTEN_PORT", "ENET_PEER_LIMIT", "ENET_ADMIT_TIMEOUT"} {
+		t.Setenv(k, "")
+	}
+
+	cfg, err := appconfig.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv: %v", err)
+	}
+	def := enetadapter.DefaultEnetConfig()
+	if cfg.Enet.ListenPort != def.ListenPort {
+		t.Fatalf("enet listen port = %d, want %d", cfg.Enet.ListenPort, def.ListenPort)
+	}
+	if cfg.Enet.PeerLimit != def.PeerLimit {
+		t.Fatalf("enet peer limit = %d, want %d", cfg.Enet.PeerLimit, def.PeerLimit)
+	}
+	if cfg.Enet.AdmitTimeout != def.AdmitTimeout {
+		t.Fatalf("enet admit timeout = %v, want %v", cfg.Enet.AdmitTimeout, def.AdmitTimeout)
+	}
+}
+
+func TestLoadFromEnv_EnetOverrides(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	t.Setenv("ENET_LISTEN_PORT", "8899")
+	t.Setenv("ENET_PEER_LIMIT", "16")
+	t.Setenv("ENET_ADMIT_TIMEOUT", "3s")
+
+	cfg, err := appconfig.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv: %v", err)
+	}
+	if cfg.Enet.ListenPort != 8899 {
+		t.Fatalf("enet listen port = %d, want 8899", cfg.Enet.ListenPort)
+	}
+	if cfg.Enet.PeerLimit != 16 {
+		t.Fatalf("enet peer limit = %d, want 16", cfg.Enet.PeerLimit)
+	}
+	if cfg.Enet.AdmitTimeout != 3*time.Second {
+		t.Fatalf("enet admit timeout = %v, want 3s", cfg.Enet.AdmitTimeout)
+	}
+}
+
+func TestLoadFromEnv_EnetInvalid(t *testing.T) {
+	cases := []struct {
+		name string
+		env  map[string]string
+	}{
+		{"port zero", map[string]string{"ENET_LISTEN_PORT": "0"}},
+		{"port overflow", map[string]string{"ENET_LISTEN_PORT": "70000"}},
+		{"port negative", map[string]string{"ENET_LISTEN_PORT": "-1"}},
+		{"port not a number", map[string]string{"ENET_LISTEN_PORT": "abc"}},
+		{"peer limit zero", map[string]string{"ENET_PEER_LIMIT": "0"}},
+		{"peer limit negative", map[string]string{"ENET_PEER_LIMIT": "-5"}},
+		{"admit timeout zero", map[string]string{"ENET_ADMIT_TIMEOUT": "0s"}},
+		{"admit timeout negative", map[string]string{"ENET_ADMIT_TIMEOUT": "-1s"}},
+		{"admit timeout bad duration", map[string]string{"ENET_ADMIT_TIMEOUT": "soon"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("ADMISSION_SECRET", validSecret())
+			setHTTPAuthDisabled(t)
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			if _, err := appconfig.LoadFromEnv(); err == nil {
+				t.Fatalf("LoadFromEnv() = nil error, want failure for %v", tc.env)
+			}
+		})
 	}
 }

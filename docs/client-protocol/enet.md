@@ -10,14 +10,16 @@
 | Параметр | Default | Примечание |
 |----------|---------|------------|
 | HTTP (ticket) | `:3000` | `HTTP_ADDR` |
-| ENet UDP | `7777` | Отдельный слушатель, не Fiber |
+| ENet UDP | `7777` | `ENET_LISTEN_PORT`; отдельный слушатель, не Fiber |
+| Peer limit | `64` | `ENET_PEER_LIMIT` |
+| Admit deadline | `10s` | `ENET_ADMIT_TIMEOUT` — connect→первый пакет |
 | Build сервера | `-tags enet` + `CGO_ENABLED=1` | Без тега ENet host не поднимается |
 
 ```bash
 CGO_ENABLED=1 go build -tags enet -o bin/rooms ./cmd/rooms
 ```
 
-Параметры host (код, не env): `PeerLimit=64`, `ChannelLimit=2`, `ServiceTimeoutMs=10` — [internal/delivery/enet/config.go](../../internal/delivery/enet/config.go).
+Остальные параметры host — код: `ChannelLimit=2`, `ServiceTimeoutMs=10` — [internal/adapter/transport/enet/enet_config.go](../../internal/adapter/transport/enet/enet_config.go).
 
 Общие лимиты транспорта (env): `TRANSPORT_MAX_INCOMING_FRAME_BYTES` (default **256 KiB**), `TRANSPORT_ENET_INCOMING_QUEUE` (default **256**) — [internal/adapter/transport/README.md](../../internal/adapter/transport/README.md).
 
@@ -91,10 +93,13 @@ hmac        32 bytes
 
 | Условие | Действие сервера |
 |---------|------------------|
+| Нет первого пакета за `ENET_ADMIT_TIMEOUT` (default 10s) | Disconnect **без** wire-кадра |
 | Пакет пустой | Join reject `0x40` → disconnect |
 | Размер > `MaxIncomingFrameBytes` | Disconnect **без** wire-кадра |
 | `JoinRoom` ошибка | 1 байт OpCode `0x40+` / `0x70+` → disconnect |
 | Успех | `admitted=true`; дальше только кадры `OpCode+payload` |
+
+Reject-кадр reliable и гарантированно доезжает: сервер шлёт graceful disconnect (`enet_peer_disconnect_later`), который сначала выпускает queued пакеты.
 
 Отдельного success OpCode **нет**. Первый игровой пакет — `0x01` FullState (reliable, channel 0).
 
@@ -157,7 +162,8 @@ WS delivery не различает — для отладки всё implicit re
 ## Disconnect и Leave
 
 - Клиент закрыл соединение / timeout → сервер `LeaveRoom` → `Revoke` слота.
-- Oversized frame / invalid frame после admit → disconnect + leave.
+- Не завершил admit за `ENET_ADMIT_TIMEOUT` → disconnect (дедлайн на факт admit в host loop, не на прибытие пакета; слот peer limit не висит).
+- Oversized frame / invalid frame после admit → graceful disconnect + leave; queued outbound-фреймы доезжают до разрыва.
 - Переполнение входной очереди ENet на сервере → **drop** кадра (warn в логах), соединение не рвётся.
 
 Reconnect: новый issue ticket или Replace с тем же `peer_id` — [state-sync.md](state-sync.md).

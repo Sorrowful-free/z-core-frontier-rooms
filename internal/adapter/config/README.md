@@ -8,7 +8,7 @@
 
 ## Структура
 
-`Config` содержит поля типов из adapter-пакетов модулей (`Logging`, `Server`, `Admission`, `HTTPAuth`, …).
+`Config` содержит поля типов из adapter-пакетов модулей (`Logging`, `Server`, `Admission`, `HTTPAuth`, …, `Enet`).
 
 ## Env (process)
 
@@ -64,6 +64,18 @@
 
 Валидация — `reservation.ReservationConfig.Validate()`.
 
+## Env (enet listener)
+
+Часть `LoadFromEnv()` → `Config.Enet` (тип `transport/enet.EnetConfig`).
+
+| Переменная | Обязательна | Default | Описание |
+|------------|-------------|---------|----------|
+| `ENET_LISTEN_PORT` | нет | `7777` | UDP-порт ENet host; 1–65535 |
+| `ENET_PEER_LIMIT` | нет | `64` | Макс. одновременных ENet peers |
+| `ENET_ADMIT_TIMEOUT` | нет | `10s` | Deadline connect→admit; просроченный peer отключается |
+
+Валидация — `transport/enet.EnetConfig.Validate()` (вызывается в `loadEnetFromEnv` и повторно в `cmd/rooms` после копирования transport-лимитов).
+
 ## Env (transport / data plane)
 
 | Переменная | Обязательна | Default | Описание |
@@ -77,4 +89,4 @@
 
 Валидация — `transport.TransportConfig.Validate()`.
 
-Wiring — `cmd/rooms`: `LoadFromEnv()` → `ws.NewWsConnectionFactory(..., cfg.Transport)`, `enetCfg.MaxIncomingFrameBytes = cfg.Transport.MaxIncomingFrameBytes`.
+Wiring — `cmd/rooms`: `LoadFromEnv()` → `ws.NewWsConnectionFactory(..., cfg.Transport)`; `cfg.Enet` → `enetCfg`, затем `enetCfg.MaxIncomingFrameBytes = cfg.Transport.MaxIncomingFrameBytes`, `enetCfg.EnetIncomingQueueSize = cfg.Transport.EnetIncomingQueueSize`.

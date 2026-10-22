@@ -8,7 +8,7 @@
 tests/
   mocks/                — mockgen из internal/port (gomock), go generate ./tests/mocks/...
   delivery/errors/      — join_reject, reservation_reject, in_room, wire helpers
-  adapter/config/       — LoadFromEnv, admission + http auth + transport env
+  adapter/config/       — LoadFromEnv, admission + http auth + transport + enet env
   adapter/httpauth/     — HTTPAuthConfig.Validate
   adapter/httplimits/   — HTTPLimitsConfig, Limiter
   adapter/admission/    — ticket Issue/Validate, AdmissionConfig
@@ -22,6 +22,7 @@ tests/
   adapter/registry/     — RoomRegistry, Shutdown
   usecase/room/         — Create, Delete, GetList, IssueTicket, JoinRoom, LeaveRoom (gomock)
   testutil/env/         — общий composition root: adapters + use cases + HTTP/WS routes на fiber.App
+                          (defaults обязаны зеркалить prod transport config: zero-значения маскируют ошибки доставки — см. кейс ErrQueueFull)
   delivery/http/        — REST JSON (app.Test поверх testutil/env)
   delivery/ws/          — WS join lifecycle (реальный listener + fasthttp/websocket)
   integration/          — сквозные сценарии: room lifecycle create→issue→2×WS join→disconnect→leave
@@ -150,7 +151,7 @@ go test -fuzz=FuzzRoomStateDecode -fuzztime=30s ./tests/adapter/realtime/codec/
 | Пакет | Сценарии |
 |-------|----------|
 | `tests/delivery/errors` | `JoinRejectOpCode`, `ReservationRejectOpCode`, делегирование reservation в join, `InRoomErrorOpCode`, диапазоны `Is*OpCode` |
-| `tests/adapter/config` | `LoadFromEnv`: admission + HTTP API key / disabled; transport idle envs (`TRANSPORT_PEER_IDLE_TIMEOUT`, `TRANSPORT_PEER_IDLE_SWEEP_INTERVAL`) — defaults, custom, invalid, negative |
+| `tests/adapter/config` | `LoadFromEnv`: admission + HTTP API key / disabled; transport idle envs (`TRANSPORT_PEER_IDLE_TIMEOUT`, `TRANSPORT_PEER_IDLE_SWEEP_INTERVAL`) и enet envs (`ENET_LISTEN_PORT`, `ENET_PEER_LIMIT`, `ENET_ADMIT_TIMEOUT`) — defaults, custom, invalid, negative |
 | `tests/adapter/httpauth` | `HTTPAuthConfig.Validate` |
 | `tests/adapter/httplimits` | `HTTPLimitsConfig.Validate`, `Limits` rate + max rooms |
 | `tests/adapter/admission` | `AdmissionConfig.Validate`; round-trip ticket + NickName, invalid nick, invalid/expired token, invalid credentials |
@@ -165,7 +166,8 @@ go test -fuzz=FuzzRoomStateDecode -fuzztime=30s ./tests/adapter/realtime/codec/
 | `tests/usecase/room` | **Create** — success, rooms limit, ctx cancel, registry rollback + `errors.Join` на unregister; **Delete** — success, kick peers, room not found; **GetList**; **IssueTicket** — success, room/peer errors, slot held, orphan admitted cleanup, issue+revoke join; **JoinRoom** — validate error, room not found после validate, success, admit/join/revoke откаты, `errors.Join` при fail Revoke; **LeaveRoom** — success, not found, revoke idempotent; **EvictIdlePeers** — `RunOnce`: zombie peer evicted, alive skipped, per-peer error tolerated; **sweeps** — `SweepHandle.Stop` ждёт in-flight `RunOnce`, bad room пропускается (orphan sweep), nil-handle при `interval <= 0` |
 | `tests/delivery/http` | API key; rate limit 429 (create/issue/delete/list); rooms limit 503; create → list → delete; issue ticket; 409/404/400; `invalid_capacity` (0 и >127) |
 | `tests/delivery/ws` | невалидный token → `OpInvalidToken` frame + close; missing token → `OpEmptyToken`; malformed base64 → `OpInvalidToken`; issue ticket → join → peer в `Registry` → disconnect → leave |
-| `tests/delivery/enet` | smoke `TestEnetPackagesCompile` при `-tags enet` + cgo; без тега — skip с инструкцией |
+| `tests/adapter/transport/enet` | `EnetConfig.Validate` (defaults + граничные значения) |
+| `tests/delivery/enet` | stub-Listen чистый выход (без тега); e2e под `-tags enet` + cgo: bind-failure → `Err`, `Stop` ждёт loop, admit-timeout disconnect, join-reject доезжает (`DisconnectLater`) |
 | `tests/integration` | room lifecycle: create (host) → issue (joiner) → оба join по WS → 2 peers → joiner disconnect → 1 peer (host) |
 
 После изменения `internal/port/*` интерфейсов:

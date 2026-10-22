@@ -111,9 +111,13 @@ func run() error {
 	wsHandler := deliveryws.NewRoomsHandler(appCtx, joinRoomUseCase, leaveRoomUseCase, wsConnectionFactory, cfg.Transport, zaplog.NewFrom(z, "ws rooms handler"))
 	wsHandler.RegisterRoutes(fiberApp)
 
-	enetCfg := deliveryenet.DefaultConfig()
+	// cfg.Enet уже провалидирован в LoadFromEnv; после копирования transport-лимитов — повторная Validate.
+	enetCfg := cfg.Enet
 	enetCfg.MaxIncomingFrameBytes = cfg.Transport.MaxIncomingFrameBytes
 	enetCfg.EnetIncomingQueueSize = cfg.Transport.EnetIncomingQueueSize
+	if err := enetCfg.Validate(); err != nil {
+		return fmt.Errorf("enet config: %w", err)
+	}
 	enetHandler := deliveryenet.NewRoomsHandler(
 		appCtx,
 		joinRoomUseCase,
@@ -122,7 +126,7 @@ func run() error {
 		enetCfg,
 		zaplog.NewFrom(z, "enet rooms handler"),
 	)
-	enetHandler.Listen()
+	enetHandle := enetHandler.Listen()
 
 	listenErr := make(chan error, 1)
 	go func() {
@@ -134,14 +138,32 @@ func run() error {
 
 	var listenResult error
 	listenDone := false
-	select {
-	case sig := <-sigCh:
-		z.Info("shutdown signal received", zap.String("signal", sig.String()))
-	case err := <-listenErr:
-		listenDone = true
-		listenResult = err
-		if err != nil && !errors.Is(err, fiber.ErrServiceUnavailable) {
-			z.Error("fiber listen failed", zap.Error(err))
+	var enetResult error
+	enetDone := false
+	// enetDoneCh зануляем после чистого выхода listener'а (stub build / ENet disabled):
+	// закрытый Done иначе будет выигрывать select в бесконечном цикле.
+	enetDoneCh := enetHandle.Done()
+waitLoop:
+	for {
+		select {
+		case sig := <-sigCh:
+			z.Info("shutdown signal received", zap.String("signal", sig.String()))
+			break waitLoop
+		case err := <-listenErr:
+			listenDone = true
+			listenResult = err
+			if err != nil && !errors.Is(err, fiber.ErrServiceUnavailable) {
+				z.Error("fiber listen failed", zap.Error(err))
+			}
+			break waitLoop
+		case <-enetDoneCh:
+			if err := enetHandle.Err(); err != nil && !errors.Is(err, context.Canceled) {
+				enetDone = true
+				enetResult = err
+				z.Error("enet listen failed", zap.Error(err))
+				break waitLoop
+			}
+			enetDoneCh = nil
 		}
 	}
 	signal.Stop(sigCh)
@@ -171,6 +193,9 @@ func run() error {
 		z.Error("shutdown cleanup", zap.Error(shutdownErr))
 	}
 	appCancel()
+	// Stop отменяет host loop и ждёт реального выхода: сессии закрываются,
+	// Receive-горутины peer'ов просыпаются по closed-каналу.
+	enetHandle.Stop()
 	orphanSweep.Stop()
 	idleSweep.Stop()
 
@@ -179,8 +204,21 @@ func run() error {
 	if !listenDone {
 		listenResult = <-listenErr
 	}
+	var resultErr error
 	if listenResult != nil && !errors.Is(listenResult, fiber.ErrServiceUnavailable) {
-		return errors.Join(listenResult, shutdownErr)
+		resultErr = errors.Join(resultErr, listenResult)
+	}
+	// Финальный Err() listener'а: bind failure / падение host loop фейлят процесс.
+	if !enetDone {
+		if err := enetHandle.Err(); err != nil && !errors.Is(err, context.Canceled) {
+			enetResult = err
+		}
+	}
+	if enetResult != nil {
+		resultErr = errors.Join(resultErr, enetResult)
+	}
+	if resultErr != nil {
+		return errors.Join(resultErr, shutdownErr)
 	}
 
 	z.Info("shutdown complete")

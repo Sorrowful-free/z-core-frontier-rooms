@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	reservationadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
 	serveradapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/server"
 	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
+	enetadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"
 )
 
 const (
@@ -41,6 +43,10 @@ const (
 	envTransportEnetIncomingQueue     = "TRANSPORT_ENET_INCOMING_QUEUE"
 	envTransportPeerIdleTimeout       = "TRANSPORT_PEER_IDLE_TIMEOUT"
 	envTransportPeerIdleSweepInterval = "TRANSPORT_PEER_IDLE_SWEEP_INTERVAL"
+
+	envEnetListenPort   = "ENET_LISTEN_PORT"
+	envEnetPeerLimit    = "ENET_PEER_LIMIT"
+	envEnetAdmitTimeout = "ENET_ADMIT_TIMEOUT"
 )
 
 // LoadFromEnv читает переменные окружения и собирает Config.
@@ -73,6 +79,10 @@ func LoadFromEnv() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	enetCfg, err := loadEnetFromEnv()
+	if err != nil {
+		return nil, err
+	}
 	return &Config{
 		Logging:     logging,
 		Server:      serverCfg,
@@ -81,6 +91,7 @@ func LoadFromEnv() (*Config, error) {
 		HTTPLimits:  httpLimits,
 		Reservation: reservationCfg,
 		Transport:   transportCfg,
+		Enet:        enetCfg,
 	}, nil
 }
 
@@ -228,6 +239,41 @@ func loadReservationFromEnv() (reservationadapter.ReservationConfig, error) {
 	}
 	if err := cfg.Validate(); err != nil {
 		return reservationadapter.ReservationConfig{}, err
+	}
+	return cfg, nil
+}
+
+// loadEnetFromEnv собирает transport/enet.EnetConfig: env ENET_* поверх DefaultEnetConfig.
+// Лимиты кадров/очередей cmd/rooms копирует из cfg.Transport и затем вызывает Validate() повторно.
+func loadEnetFromEnv() (enetadapter.EnetConfig, error) {
+	cfg := enetadapter.DefaultEnetConfig()
+
+	port, err := intFromEnv(envEnetListenPort, int(cfg.ListenPort))
+	if err != nil {
+		return enetadapter.EnetConfig{}, err
+	}
+	if port <= 0 || port > math.MaxUint16 {
+		return enetadapter.EnetConfig{}, fmt.Errorf("%s: port %d out of range 1..%d", envEnetListenPort, port, math.MaxUint16)
+	}
+	cfg.ListenPort = uint16(port)
+
+	peerLimit, err := intFromEnv(envEnetPeerLimit, int(cfg.PeerLimit))
+	if err != nil {
+		return enetadapter.EnetConfig{}, err
+	}
+	if peerLimit <= 0 || peerLimit > 4095 {
+		return enetadapter.EnetConfig{}, fmt.Errorf("%s: peer limit %d out of range 1..4095", envEnetPeerLimit, peerLimit)
+	}
+	cfg.PeerLimit = uint64(peerLimit)
+
+	admitTimeout, err := durationFromEnv(envEnetAdmitTimeout, cfg.AdmitTimeout)
+	if err != nil {
+		return enetadapter.EnetConfig{}, err
+	}
+	cfg.AdmitTimeout = admitTimeout
+
+	if err := cfg.Validate(); err != nil {
+		return enetadapter.EnetConfig{}, err
 	}
 	return cfg, nil
 }

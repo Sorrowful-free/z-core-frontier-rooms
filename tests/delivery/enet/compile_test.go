@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	adapterenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"
-	deliveryenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/enet"
 )
 
 type discardLogger struct{}
@@ -21,7 +20,7 @@ func (discardLogger) Fatal(string, ...any) {}
 func TestEnetPackagesCompile(t *testing.T) {
 	t.Parallel()
 
-	cfg := deliveryenet.DefaultConfig()
+	cfg := adapterenet.DefaultEnetConfig()
 	if cfg.ListenPort != 7777 {
 		t.Fatalf("ListenPort = %d, want 7777", cfg.ListenPort)
 	}
