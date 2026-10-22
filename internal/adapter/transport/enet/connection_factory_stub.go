@@ -3,8 +3,10 @@
 package enet
 
 import (
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport"
+	portenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/enet"
 )
 
 type EnetConnectionFactory struct {
@@ -17,6 +19,8 @@ func NewEnetConnectionFactory(logger logging.Logger) *EnetConnectionFactory {
 	}
 }
 
-func (f *EnetConnectionFactory) CreateConnection() transport.Connection {
+// CreateConnection — та же сигнатура, что и в cgo-ветке (Peer = any под stub-тегами);
+// аргументы игнорируются: реальный peer существует только в enet+cgo сборке.
+func (f *EnetConnectionFactory) CreateConnection(_ portenet.Peer, _ chan domain.Frame) transport.Connection {
 	return NewEnetConnection()
 }

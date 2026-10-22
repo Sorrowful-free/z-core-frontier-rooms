@@ -37,6 +37,12 @@ ENet: проверка в `delivery/enet` до admit и в `frameFromPacket`.
 
 При превышении лимита — **disconnect** без wire-ошибки.
 
+## Фабрики соединений — транспортная деталь
+
+Единый seam между delivery и сервисом — `realtime.PeerFactory` (`CreatePeer(ctx, id, nick, transport.Connection, room, logger)`): сервису безразлично, WS или ENet под соединением. `EnetConnectionFactory`/`WsConnectionFactory` остаются в `port/transport/{enet,ws}` ради DI в handler'ах и тестируемости — это деталь конкретного транспорта, а не контракт домена.
+
+У `EnetConnectionFactory` одна untagged-сигнатура `CreateConnection(peer Peer, incoming chan domain.Frame)`: `Peer` — tagged type alias (`port/transport/enet/peer_{cgo,stub}.go`), под `enet && cgo` разворачивается в `libenet.Peer`, иначе — в `any`. Паттерн «tagged alias» убирает расщепление интерфейса по build-тегам без потери типобезопасности cgo-ветки; stub-реализация аргументы игнорирует.
+
 ## ENet: сериализация libenet (`Call`/`Do`)
 
 C API libenet не thread-safe; вызовы из host loop (delivery/enet) и peer-горутин (`EnetConnection`) конкурируют. Все вызовы, трогающие C-состояние (`Host`/`Peer`/`Packet`, `NewHost`, `Initialize`/`Deinitialize`), идут через `Call[T]`/`Do` (`enet/connection_cgo.go`) — один `apiMu` на процесс. Внутри fn — ровно один libenet-вызов, без вложенных `Call`/`Do` и без Go-колбэков. `Event`-аксессоры читают Go-копию события — лока не требуют.

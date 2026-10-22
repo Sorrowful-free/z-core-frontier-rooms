@@ -38,6 +38,10 @@ C API libenet не thread-safe; host loop и peer outbound-горутины зо
 
 Без `enet`/cgo: `Listen()` — stub run (warn + чистый выход, `Err() == nil`).
 
+## Connection factory — tagged alias `Peer`
+
+`EnetConnectionFactory` (`port/transport/enet`, адаптер `adapter/transport/enet`) — транспортная деталь delivery: настоящий seam с сервисом — `realtime.PeerFactory`, принимающий готовый `transport.Connection`. Интерфейс фабрики один на все build-теги — `CreateConnection(peer Peer, incoming chan domain.Frame)`, где `Peer` — tagged type alias: под `enet && cgo` это `libenet.Peer` (вызов `CreateConnection(peer, incoming)` из `session_cgo.go` типобезопасен и не менялся), в stub-сборке — `any`.
+
 ```bash
 CGO_ENABLED=1 go build -tags enet -o bin/rooms-enet ./cmd/rooms
 CGO_ENABLED=1 go test -tags enet ./tests/delivery/enet/...
