@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/env"
 	fwebsocket "github.com/fasthttp/websocket"
@@ -84,6 +85,29 @@ func TestWS_Join_MalformedTokenEncoding(t *testing.T) {
 
 	if msgType, msg, err := conn.ReadMessage(); err == nil {
 		t.Fatalf("expected closed connection after reject, got type=%d msg=%x", msgType, msg)
+	}
+}
+
+// Oversized token (len > MaxIncomingFrameBytes): сервер закрывает соединение
+// без reject-кадра — документируем текущее поведение (см. аудит: кандидат на
+// явный reject OpCode).
+func TestWS_Join_TokenTooLarge(t *testing.T) {
+	t.Parallel()
+
+	e := env.New(t, env.WithTransport(adaptertransport.TransportConfig{
+		MaxIncomingFrameBytes: 16,
+		RoomIncomingQueueSize: adaptertransport.DefaultRoomIncomingQueueSize,
+		PeerOutboundQueueSize: adaptertransport.DefaultPeerOutboundQueueSize,
+		EnetIncomingQueueSize: adaptertransport.DefaultEnetIncomingQueueSize,
+	}))
+
+	bigToken := base64.RawURLEncoding.EncodeToString(make([]byte, 64))
+	conn := e.DialWS(t, "token="+bigToken)
+	defer conn.Close()
+
+	_ = conn.SetReadDeadline(time.Now().Add(wsReadTimeout))
+	if _, _, err := conn.ReadMessage(); err == nil {
+		t.Fatal("expected closed connection for oversized token")
 	}
 }
 

@@ -158,17 +158,17 @@ func (c *MockReservationRegisterRoomCall) DoAndReturn(f func(context.Context, do
 }
 
 // Reserve mocks base method.
-func (m *MockReservation) Reserve(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, expiresAt time.Time) error {
+func (m *MockReservation) Reserve(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, nickName string, expiresAt time.Time) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Reserve", ctx, roomID, peerID, expiresAt)
+	ret := m.ctrl.Call(m, "Reserve", ctx, roomID, peerID, nickName, expiresAt)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Reserve indicates an expected call of Reserve.
-func (mr *MockReservationMockRecorder) Reserve(ctx, roomID, peerID, expiresAt any) *MockReservationReserveCall {
+func (mr *MockReservationMockRecorder) Reserve(ctx, roomID, peerID, nickName, expiresAt any) *MockReservationReserveCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Reserve", reflect.TypeOf((*MockReservation)(nil).Reserve), ctx, roomID, peerID, expiresAt)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Reserve", reflect.TypeOf((*MockReservation)(nil).Reserve), ctx, roomID, peerID, nickName, expiresAt)
 	return &MockReservationReserveCall{Call: call}
 }
 
@@ -184,13 +184,13 @@ func (c *MockReservationReserveCall) Return(arg0 error) *MockReservationReserveC
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockReservationReserveCall) Do(f func(context.Context, domain.RoomID, domain.PeerID, time.Time) error) *MockReservationReserveCall {
+func (c *MockReservationReserveCall) Do(f func(context.Context, domain.RoomID, domain.PeerID, string, time.Time) error) *MockReservationReserveCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockReservationReserveCall) DoAndReturn(f func(context.Context, domain.RoomID, domain.PeerID, time.Time) error) *MockReservationReserveCall {
+func (c *MockReservationReserveCall) DoAndReturn(f func(context.Context, domain.RoomID, domain.PeerID, string, time.Time) error) *MockReservationReserveCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

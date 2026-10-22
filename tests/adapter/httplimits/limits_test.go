@@ -2,6 +2,7 @@ package httplimits_test
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httplimits"
@@ -64,5 +65,47 @@ func TestLimits_HTTPRateLimit(t *testing.T) {
 	}
 	if limits.AllowHTTPIssueTicket(ip) {
 		t.Fatal("second issue request should be denied")
+	}
+}
+
+func TestLimits_HTTPRateLimit_DeleteAndList(t *testing.T) {
+	t.Parallel()
+
+	limits := mustNewLimits(t, httplimits.HTTPLimitsConfig{
+		DeleteRoomsPerMinute: 1,
+		ListRoomsPerMinute:   1,
+	})
+
+	const ip = "203.0.113.2"
+	if !limits.AllowHTTPDelete(ip) {
+		t.Fatal("first delete request should pass")
+	}
+	if limits.AllowHTTPDelete(ip) {
+		t.Fatal("second delete request should be denied")
+	}
+	if !limits.AllowHTTPList(ip) {
+		t.Fatal("first list request should pass")
+	}
+	if limits.AllowHTTPList(ip) {
+		t.Fatal("second list request should be denied")
+	}
+}
+
+// TestLimits_HTTPRateLimit_KeyRotation: много уникальных IP (ротация) —
+// каждый получает своё окно, per-IP лимит продолжает работать.
+func TestLimits_HTTPRateLimit_KeyRotation(t *testing.T) {
+	t.Parallel()
+
+	limits := mustNewLimits(t, httplimits.HTTPLimitsConfig{CreateRoomsPerMinute: 1})
+
+	const n = 512
+	for i := 0; i < n; i++ {
+		ip := fmt.Sprintf("198.51.100.%d", i)
+		if !limits.AllowHTTPCreate(ip) {
+			t.Fatalf("first request for new key %d should pass", i)
+		}
+		if limits.AllowHTTPCreate(ip) {
+			t.Fatalf("second request for key %d should be denied", i)
+		}
 	}
 }

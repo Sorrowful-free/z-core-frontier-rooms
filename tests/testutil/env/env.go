@@ -90,6 +90,12 @@ func New(t *testing.T, opts ...Option) *Env {
 
 	cfg := options{
 		httpAuth: httpauthadapter.HTTPAuthConfig{Disabled: true},
+		transport: adaptertransport.TransportConfig{
+			RoomIncomingQueueSize: adaptertransport.DefaultRoomIncomingQueueSize,
+			PeerOutboundQueueSize: adaptertransport.DefaultPeerOutboundQueueSize,
+			EnetIncomingQueueSize: adaptertransport.DefaultEnetIncomingQueueSize,
+			MaxIncomingFrameBytes: adaptertransport.DefaultMaxIncomingFrameBytes,
+		},
 	}
 	for _, opt := range opts {
 		opt(&cfg)

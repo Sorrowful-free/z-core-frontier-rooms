@@ -3,6 +3,8 @@ package room_test
 import (
 	"context"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
@@ -298,5 +300,91 @@ func TestCreate_RoomsLimitReached(t *testing.T) {
 	_, err := uc.Create(context.Background(), 4, "", nil, "host")
 	if !errors.Is(err, domain.ErrRoomsLimitReached) {
 		t.Fatalf("err = %v, want ErrRoomsLimitReached", err)
+	}
+}
+
+func TestCreate_InvalidCapacity(t *testing.T) {
+	t.Parallel()
+
+	for _, capacity := range []int{0, -1, domain.MaxRoomCapacity + 1} {
+		ctrl := gomock.NewController(t)
+		registry := mocks.NewMockRoomRegistry(ctrl)
+		allocator := mocks.NewMockAllocator(ctrl)
+		reservation := mocks.NewMockReservation(ctrl)
+		limits := mocks.NewMockLimits(ctrl)
+		logger := mocks.NewMockLogger(ctrl)
+
+		uc := useroom.NewCreateUseCase(registry, allocator, reservation, limits, unexpectedTicketIssuer(), logger)
+		_, err := uc.Create(context.Background(), capacity, "", nil, "host")
+		if !errors.Is(err, domain.ErrInvalidRoomCapacity) {
+			t.Fatalf("capacity %d: err = %v, want ErrInvalidRoomCapacity", capacity, err)
+		}
+	}
+}
+
+// createMu сериализует лимит+регистрацию: из двух конкурентных Create
+// проходит ровно один — второй видит уже созданную комнату в GetList.
+func TestCreate_ConcurrentLimitRace(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	registry := mocks.NewMockRoomRegistry(ctrl)
+	allocator := mocks.NewMockAllocator(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
+	limits := mocks.NewMockLimits(ctrl)
+	logger := mocks.NewMockLogger(ctrl)
+	room := mocks.NewMockRoom(ctrl)
+
+	var created atomic.Int32
+	registry.EXPECT().GetList(gomock.Any()).DoAndReturn(func(context.Context) ([]realtime.Room, error) {
+		return make([]realtime.Room, int(created.Load())), nil
+	}).AnyTimes()
+	limits.EXPECT().AllowCreateRoom(gomock.Any()).DoAndReturn(func(current int) error {
+		if current > 0 {
+			return domain.ErrRoomsLimitReached
+		}
+		return nil
+	}).AnyTimes()
+	allocator.EXPECT().AllocateRoomID(gomock.Any()).Return(domain.RoomID(1), nil)
+	reservation.EXPECT().RegisterRoom(gomock.Any(), domain.RoomID(1), 4, "").Return(nil)
+	registry.EXPECT().CreateRoom(gomock.Any(), domain.RoomID(1), 4, gomock.Nil()).DoAndReturn(
+		func(context.Context, domain.RoomID, int, domain.RoomAttributes) (realtime.Room, error) {
+			created.Add(1)
+			return room, nil
+		}).Times(1)
+	ticketIssuer := &stubTicketIssuer{
+		fn: func(context.Context, domain.RoomID, string, string) (useroom.IssueTicketResult, error) {
+			return useroom.IssueTicketResult{Token: []byte("ticket")}, nil
+		},
+	}
+	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
+	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
+
+	uc := useroom.NewCreateUseCase(registry, allocator, reservation, limits, ticketIssuer, logger)
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i := range errs {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, errs[idx] = uc.Create(context.Background(), 4, "", nil, "host")
+		}(i)
+	}
+	wg.Wait()
+
+	var succeeded, limited int
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			succeeded++
+		case errors.Is(err, domain.ErrRoomsLimitReached):
+			limited++
+		default:
+			t.Fatalf("unexpected err = %v", err)
+		}
+	}
+	if succeeded != 1 || limited != 1 {
+		t.Fatalf("succeeded = %d, limited = %d, want 1/1", succeeded, limited)
 	}
 }

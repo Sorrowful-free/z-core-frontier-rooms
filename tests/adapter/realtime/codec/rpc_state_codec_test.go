@@ -61,3 +61,22 @@ func TestRpcStateCodec_roundTrip_peerIDZero(t *testing.T) {
 		t.Fatalf("PeerID = %d, want 0", got.PeerID)
 	}
 }
+
+func TestRpcStateCodec_decode_trailingBytes(t *testing.T) {
+	t.Parallel()
+
+	c := codec.NewRpcStateCodec()
+	rpc := &state.RpcState{
+		ID:     state.RpcID(1),
+		Target: state.RpcTargetAll,
+		Values: state.NewMapState[state.ValueId, state.ValueState](),
+		PeerID: domain.PeerID(0),
+	}
+	data, err := c.Encode(rpc)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	if _, err := c.Decode(append(data, 0xFF)); err == nil {
+		t.Fatal("expected error on trailing bytes")
+	}
+}

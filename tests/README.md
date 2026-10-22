@@ -145,11 +145,11 @@ benchstat bench.txt
 | `tests/domain` | `ValidateNickName` |
 | `tests/domain/state` | atomic `ApplyPatch` rollback на entity/component |
 | `tests/adapter/realtime/codec` | Round-trip `InputStateCodec`, `RpcStateCodec`, `RoomStateCodec` (full + patch) |
-| `tests/adapter/registry` | `GetRoom` → `ErrRoomNotFound`; `Shutdown`; `DeleteRoom` при concurrent `Deliver` без паники |
+| `tests/adapter/registry` | `GetRoom` → `ErrRoomNotFound`; `Shutdown`; `DeleteRoom` при concurrent `Deliver` без паники; `CreateRoom` ×2 с одним id — один победитель, проигравшая комната остановлена; `GetList` не блокируется медленным `Stop` |
 | `tests/adapter/reservation` | Reserve → Admit → Revoke; expiry sweep; идемпотентный `Revoke`; `State` (none / reserved / admitted); concurrent ops по разным комнатам |
 | `tests/adapter/identity` | первый ID = 1; независимые room/peer; ctx cancel; wrap `MaxUint32` → 1; уникальность под конкуренцией |
-| `tests/usecase/room` | **Create** — success, rooms limit, ctx cancel, registry rollback + `errors.Join` на unregister; **Delete** — success, kick peers, room not found; **GetList**; **IssueTicket** — success, room/peer errors, slot held, orphan admitted cleanup, issue+revoke join; **JoinRoom** — validate error, room not found после validate, success, admit/join/revoke откаты, `errors.Join` при fail Revoke; **LeaveRoom** — success, not found, revoke idempotent; **EvictIdlePeers** — `RunOnce`: dead evicted, alive skipped, per-peer error tolerated |
-| `tests/delivery/http` | API key; rate limit 429; rooms limit 503; create → list → delete; issue ticket; 409/404/400; `invalid_capacity` (0 и >127) |
+| `tests/usecase/room` | **Create** — success, rooms limit, ctx cancel, registry rollback + `errors.Join` на unregister; **Delete** — success, kick peers, room not found; **GetList**; **IssueTicket** — success, room/peer errors, slot held, orphan admitted cleanup, issue+revoke join; **JoinRoom** — validate error, room not found после validate, success, admit/join/revoke откаты, `errors.Join` при fail Revoke; **LeaveRoom** — success, not found, revoke idempotent; **EvictIdlePeers** — `RunOnce`: zombie peer evicted, alive skipped, per-peer error tolerated; **sweeps** — `SweepHandle.Stop` ждёт in-flight `RunOnce`, bad room пропускается (orphan sweep), nil-handle при `interval <= 0` |
+| `tests/delivery/http` | API key; rate limit 429 (create/issue/delete/list); rooms limit 503; create → list → delete; issue ticket; 409/404/400; `invalid_capacity` (0 и >127) |
 | `tests/delivery/ws` | невалидный token → `OpInvalidToken` frame + close; missing token → `OpEmptyToken`; malformed base64 → `OpInvalidToken`; issue ticket → join → peer в `Registry` → disconnect → leave |
 | `tests/delivery/enet` | smoke `TestEnetPackagesCompile` при `-tags enet` + cgo; без тега — skip с инструкцией |
 | `tests/integration` | room lifecycle: create (host) → issue (joiner) → оба join по WS → 2 peers → joiner disconnect → 1 peer (host) |

@@ -440,7 +440,7 @@ func TestHTTP_RoomPasswordOnCreateIssueDelete(t *testing.T) {
 	assertErrorCode(t, body, "invalid_credentials")
 
 	resp, body = e.Do(t, http.MethodPost, roomPath+"/tickets", map[string]any{
-		"nick_name": "player",
+		"nick_name": "joiner",
 		"password":  "room-pass",
 	})
 	if resp.StatusCode != http.StatusCreated {

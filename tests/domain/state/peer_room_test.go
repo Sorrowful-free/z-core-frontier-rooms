@@ -32,8 +32,8 @@ func TestPeerState_MakePatch_apply_roundTrip(t *testing.T) {
 func TestRoomState_MakePatch_capacityOnly(t *testing.T) {
 	t.Parallel()
 
-	cur := state.NewRoomState(domain.RoomID(1), 4, "secret")
-	next := state.NewRoomState(domain.RoomID(1), 8, "secret")
+	cur := state.NewRoomState(domain.RoomID(1), 4)
+	next := state.NewRoomState(domain.RoomID(1), 8)
 
 	patch, err := cur.MakePatch(next)
 	if err != nil {
@@ -56,8 +56,8 @@ func TestRoomState_MakePatch_capacityOnly(t *testing.T) {
 func TestRoomState_addPeer_roundTrip(t *testing.T) {
 	t.Parallel()
 
-	cur := state.NewRoomState(domain.RoomID(1), 4, "")
-	next := state.NewRoomState(domain.RoomID(1), 4, "")
+	cur := state.NewRoomState(domain.RoomID(1), 4)
+	next := state.NewRoomState(domain.RoomID(1), 4)
 	next.Peers[domain.PeerID(2)] = state.PeerState{NickName: "p2", Ping: 5}
 
 	patch, err := cur.MakePatch(next)
@@ -88,7 +88,7 @@ func TestRoomState_addPeer_roundTrip(t *testing.T) {
 func TestRoomState_ApplyPatch_capacity(t *testing.T) {
 	t.Parallel()
 
-	cur := state.NewRoomState(domain.RoomID(1), 4, "x")
+	cur := state.NewRoomState(domain.RoomID(1), 4)
 	cap8 := int8(8)
 	patch := state.RoomStatePatch{
 		Capacity: &cap8,

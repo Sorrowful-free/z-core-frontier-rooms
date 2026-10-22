@@ -115,6 +115,44 @@ func (c *MockLimitsAllowHTTPCreateCall) DoAndReturn(f func(string) bool) *MockLi
 	return c
 }
 
+// AllowHTTPDelete mocks base method.
+func (m *MockLimits) AllowHTTPDelete(clientIP string) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AllowHTTPDelete", clientIP)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// AllowHTTPDelete indicates an expected call of AllowHTTPDelete.
+func (mr *MockLimitsMockRecorder) AllowHTTPDelete(clientIP any) *MockLimitsAllowHTTPDeleteCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllowHTTPDelete", reflect.TypeOf((*MockLimits)(nil).AllowHTTPDelete), clientIP)
+	return &MockLimitsAllowHTTPDeleteCall{Call: call}
+}
+
+// MockLimitsAllowHTTPDeleteCall wrap *gomock.Call
+type MockLimitsAllowHTTPDeleteCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockLimitsAllowHTTPDeleteCall) Return(arg0 bool) *MockLimitsAllowHTTPDeleteCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockLimitsAllowHTTPDeleteCall) Do(f func(string) bool) *MockLimitsAllowHTTPDeleteCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockLimitsAllowHTTPDeleteCall) DoAndReturn(f func(string) bool) *MockLimitsAllowHTTPDeleteCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // AllowHTTPIssueTicket mocks base method.
 func (m *MockLimits) AllowHTTPIssueTicket(clientIP string) bool {
 	m.ctrl.T.Helper()
@@ -149,6 +187,44 @@ func (c *MockLimitsAllowHTTPIssueTicketCall) Do(f func(string) bool) *MockLimits
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
 func (c *MockLimitsAllowHTTPIssueTicketCall) DoAndReturn(f func(string) bool) *MockLimitsAllowHTTPIssueTicketCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
+// AllowHTTPList mocks base method.
+func (m *MockLimits) AllowHTTPList(clientIP string) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AllowHTTPList", clientIP)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// AllowHTTPList indicates an expected call of AllowHTTPList.
+func (mr *MockLimitsMockRecorder) AllowHTTPList(clientIP any) *MockLimitsAllowHTTPListCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AllowHTTPList", reflect.TypeOf((*MockLimits)(nil).AllowHTTPList), clientIP)
+	return &MockLimitsAllowHTTPListCall{Call: call}
+}
+
+// MockLimitsAllowHTTPListCall wrap *gomock.Call
+type MockLimitsAllowHTTPListCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockLimitsAllowHTTPListCall) Return(arg0 bool) *MockLimitsAllowHTTPListCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockLimitsAllowHTTPListCall) Do(f func(string) bool) *MockLimitsAllowHTTPListCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockLimitsAllowHTTPListCall) DoAndReturn(f func(string) bool) *MockLimitsAllowHTTPListCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

@@ -88,3 +88,31 @@ func TestInputStateCodec_decode_truncatedValueBytes(t *testing.T) {
 		t.Fatal("expected error on truncated value bytes")
 	}
 }
+
+func TestInputStateCodec_decode_trailingBytes(t *testing.T) {
+	t.Parallel()
+
+	c := codec.NewInputStateCodec()
+	in := &state.InputState{Values: state.NewMapState[state.ValueId, state.ValueState]()}
+	data, err := c.Encode(in)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	if _, err := c.Decode(append(data, 0xFF)); err == nil {
+		t.Fatal("expected error on trailing bytes")
+	}
+}
+
+func TestInputStateCodec_decodePatch_trailingBytes(t *testing.T) {
+	t.Parallel()
+
+	c := codec.NewInputStateCodec()
+	patch := &state.InputStatePatch{}
+	data, err := c.EncodePatch(patch)
+	if err != nil {
+		t.Fatalf("EncodePatch: %v", err)
+	}
+	if _, err := c.DecodePatch(append(data, 0xFF)); err == nil {
+		t.Fatal("expected error on trailing bytes")
+	}
+}

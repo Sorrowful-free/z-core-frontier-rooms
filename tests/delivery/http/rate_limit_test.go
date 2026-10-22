@@ -46,6 +46,38 @@ func TestHTTP_IssueTicket_RateLimited(t *testing.T) {
 	}
 }
 
+func TestHTTP_DeleteRoom_RateLimited(t *testing.T) {
+	e := env.New(t, env.WithHTTPLimits(httplimitsadapter.HTTPLimitsConfig{
+		DeleteRoomsPerMinute: 1,
+	}))
+
+	resp1, _ := e.Do(t, http.MethodDelete, "/rooms/404", nil)
+	if resp1.StatusCode != http.StatusNotFound {
+		t.Fatalf("first delete status = %d, want 404", resp1.StatusCode)
+	}
+
+	resp2, body := e.Do(t, http.MethodDelete, "/rooms/404", nil)
+	if resp2.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("second delete status = %d, want 429, body = %s", resp2.StatusCode, body)
+	}
+}
+
+func TestHTTP_GetList_RateLimited(t *testing.T) {
+	e := env.New(t, env.WithHTTPLimits(httplimitsadapter.HTTPLimitsConfig{
+		ListRoomsPerMinute: 1,
+	}))
+
+	resp1, _ := e.Do(t, http.MethodGet, "/rooms", nil)
+	if resp1.StatusCode != http.StatusOK {
+		t.Fatalf("first list status = %d, want 200", resp1.StatusCode)
+	}
+
+	resp2, body := e.Do(t, http.MethodGet, "/rooms", nil)
+	if resp2.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("second list status = %d, want 429, body = %s", resp2.StatusCode, body)
+	}
+}
+
 func TestHTTP_CreateRoom_RoomsLimitReached(t *testing.T) {
 	e := env.New(t, env.WithHTTPLimits(httplimitsadapter.HTTPLimitsConfig{
 		MaxRooms:             1,

@@ -3,7 +3,9 @@ package integration_test
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/env"
 )
 
@@ -47,5 +49,33 @@ func TestIntegration_RoomLifecycle_WS(t *testing.T) {
 	}
 	if got := peers[0].GetNickName(); got != "host" {
 		t.Fatalf("remaining peer nick = %q, want %q", got, "host")
+	}
+}
+
+// TestIntegration_TicketReplay_WS — D3: тикет одноразовый. Повторный join
+// тем же токеном (слот уже admitted) → JoinReject-кадр 0x75
+// (OpReservationAlreadyAdmitted). Реконнект идёт через новый тикет.
+func TestIntegration_TicketReplay_WS(t *testing.T) {
+	t.Parallel()
+
+	e := env.New(t)
+
+	roomID, hostToken := e.CreateRoom(t, "host")
+	hostConn := e.DialWS(t, "token="+hostToken)
+	defer hostConn.Close()
+	e.WaitPeerCount(t, roomID, 1)
+
+	replay := e.DialWS(t, "token="+hostToken)
+	defer replay.Close()
+
+	if err := replay.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	_, msg, err := replay.ReadMessage()
+	if err != nil {
+		t.Fatalf("read reject frame: %v", err)
+	}
+	if len(msg) < 1 || domain.OpCode(msg[0]) != domain.OpReservationAlreadyAdmitted {
+		t.Fatalf("reject frame = %v, want opcode 0x75 (OpReservationAlreadyAdmitted)", msg)
 	}
 }

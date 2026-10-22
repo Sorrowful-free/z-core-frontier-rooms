@@ -10,7 +10,7 @@ import (
 func TestRoomState_Clone_isolatesNestedMaps(t *testing.T) {
 	t.Parallel()
 
-	room := state.NewRoomState(domain.RoomID(1), 4, "")
+	room := state.NewRoomState(domain.RoomID(1), 4)
 	room.Inputs[domain.PeerID(2)] = state.InputState{
 		Values: state.NewMapState[state.ValueId, state.ValueState](),
 	}
@@ -29,7 +29,7 @@ func TestRoomState_Clone_isolatesNestedMaps(t *testing.T) {
 func TestRoomState_Clone_MakePatch_afterInputPatch(t *testing.T) {
 	t.Parallel()
 
-	cur := state.NewRoomState(domain.RoomID(1), 4, "")
+	cur := state.NewRoomState(domain.RoomID(1), 4)
 	cur.Inputs[domain.PeerID(1)] = state.InputState{
 		Values: state.NewMapState[state.ValueId, state.ValueState](),
 	}

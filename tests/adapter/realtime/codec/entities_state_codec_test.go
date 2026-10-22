@@ -64,3 +64,31 @@ func TestEntitiesStateCodec_patch_entityTypeIDOnly(t *testing.T) {
 		t.Fatalf("entity_type_id patch = %v, want 7", updated.EntityTypeID)
 	}
 }
+
+func TestEntitiesStateCodec_decode_trailingBytes(t *testing.T) {
+	t.Parallel()
+
+	c := codec.NewEntitiesStateCodec()
+	entities := state.NewMapState[state.EntityID, state.EntityState]()
+	data, err := c.Encode(entities)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	if _, err := c.Decode(append(data, 0xFF)); err == nil {
+		t.Fatal("expected error on trailing bytes")
+	}
+}
+
+func TestEntitiesStateCodec_decodePatch_trailingBytes(t *testing.T) {
+	t.Parallel()
+
+	c := codec.NewEntitiesStateCodec()
+	patch := state.NewMapStatePatch[state.EntityID, state.EntityState, state.EntityStatePatch]()
+	data, err := c.EncodePatch(patch)
+	if err != nil {
+		t.Fatalf("EncodePatch: %v", err)
+	}
+	if _, err := c.DecodePatch(append(data, 0xFF)); err == nil {
+		t.Fatal("expected error on trailing bytes")
+	}
+}

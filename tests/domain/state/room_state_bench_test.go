@@ -41,7 +41,7 @@ func BenchmarkRoomState_ApplyPatch(b *testing.B) {
 			patch = &state.RoomStatePatch{Capacity: &cap8}
 		}
 
-		base := state.NewRoomState(domain.RoomID(1), 4, "")
+		base := state.NewRoomState(domain.RoomID(1), 4)
 		var sink error
 		b.ResetTimer()
 		for b.Loop() {

@@ -315,3 +315,46 @@ func TestJoinRoom_StartFailureRevokesWhenPeerNotInRoom(t *testing.T) {
 		t.Fatalf("err = %v, want ErrPeerStartFailed", err)
 	}
 }
+
+func TestJoinRoom_StartFailure_RollbackErrorsStillReturnStartErr(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	const (
+		roomID = domain.RoomID(1)
+		peerID = domain.PeerID(2)
+	)
+	claims := newTestClaims(roomID, peerID, "")
+	startErr := errors.New("start failed")
+	leaveErr := errors.New("rollback leave failed")
+	stopErr := errors.New("rollback stop failed")
+
+	admission := mocks.NewMockAdmission(ctrl)
+	registry := mocks.NewMockRoomRegistry(ctrl)
+	peerFactory := mocks.NewMockPeerFactory(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
+	logger := mocks.NewMockLogger(ctrl)
+	room := mocks.NewMockRoom(ctrl)
+	peer := mocks.NewMockPeer(ctrl)
+	conn := mocks.NewMockConnection(ctrl)
+
+	admission.EXPECT().Validate(gomock.Any(), gomock.Any()).Return(claims, nil)
+	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
+	reservation.EXPECT().Admit(gomock.Any(), roomID, peerID).Return(nil)
+	room.EXPECT().Context().Return(context.Background())
+	peerFactory.EXPECT().CreatePeer(gomock.Any(), peerID, gomock.Any(), conn, room, logger).Return(peer, nil)
+	room.EXPECT().HasPeer(peerID).Return(false).Times(2)
+	room.EXPECT().Join(peer).Return(nil)
+	peer.EXPECT().Start().Return(startErr)
+	room.EXPECT().Leave(peer).Return(leaveErr)
+	peer.EXPECT().Stop().Return(stopErr)
+	reservation.EXPECT().Revoke(gomock.Any(), roomID, peerID).Return(nil)
+	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
+
+	uc := useroom.NewJoinRoomUseCase(admission, peerFactory, registry, reservation, logger)
+	_, _, err := uc.JoinRoom(context.Background(), conn, []byte("t"))
+	if !errors.Is(err, domain.ErrPeerStartFailed) {
+		t.Fatalf("err = %v, want ErrPeerStartFailed", err)
+	}
+}

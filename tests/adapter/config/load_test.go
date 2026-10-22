@@ -36,7 +36,6 @@ func setHTTPAuthDisabled(t *testing.T) {
 func TestLoadFromEnv_AdmissionRequired(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", "")
 	t.Setenv("ADMISSION_TTL", "")
-	t.Setenv("ADMISSION_PASSWORD", "")
 	setHTTPAuthDisabled(t)
 
 	_, err := appconfig.LoadFromEnv()
@@ -51,7 +50,6 @@ func TestLoadFromEnv_AdmissionRequired(t *testing.T) {
 func TestLoadFromEnv_ForbiddenDefaultSecret(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", "dev-secret-change-me")
 	t.Setenv("ADMISSION_TTL", "")
-	t.Setenv("ADMISSION_PASSWORD", "")
 	setHTTPAuthDisabled(t)
 
 	_, err := appconfig.LoadFromEnv()
@@ -66,7 +64,6 @@ func TestLoadFromEnv_ForbiddenDefaultSecret(t *testing.T) {
 func TestLoadFromEnv_SecretTooShort(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", "short")
 	t.Setenv("ADMISSION_TTL", "")
-	t.Setenv("ADMISSION_PASSWORD", "")
 	setHTTPAuthDisabled(t)
 
 	_, err := appconfig.LoadFromEnv()
@@ -81,7 +78,6 @@ func TestLoadFromEnv_SecretTooShort(t *testing.T) {
 func TestLoadFromEnv_InvalidTTL(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", validSecret())
 	t.Setenv("ADMISSION_TTL", "not-a-duration")
-	t.Setenv("ADMISSION_PASSWORD", "")
 	setHTTPAuthDisabled(t)
 
 	_, err := appconfig.LoadFromEnv()
@@ -96,7 +92,6 @@ func TestLoadFromEnv_InvalidTTL(t *testing.T) {
 func TestLoadFromEnv_HTTPAPIKeyRequired(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", validSecret())
 	t.Setenv("ADMISSION_TTL", "")
-	t.Setenv("ADMISSION_PASSWORD", "")
 	t.Setenv("HTTP_API_KEY", "")
 	t.Setenv("HTTP_AUTH_DISABLED", "")
 
@@ -126,7 +121,6 @@ func TestLoadFromEnv_HTTPAPIKeyTooShort(t *testing.T) {
 func TestLoadFromEnv_SuccessDefaults(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", validSecret())
 	t.Setenv("ADMISSION_TTL", "")
-	t.Setenv("ADMISSION_PASSWORD", "")
 	setHTTPAuthEnabled(t)
 
 	cfg, err := appconfig.LoadFromEnv()
@@ -138,9 +132,6 @@ func TestLoadFromEnv_SuccessDefaults(t *testing.T) {
 	}
 	if cfg.Admission.TTL != time.Hour {
 		t.Fatalf("ttl = %v, want 1h", cfg.Admission.TTL)
-	}
-	if cfg.Admission.Password != "" {
-		t.Fatalf("password = %q", cfg.Admission.Password)
 	}
 	if cfg.HTTPAuth.APIKey != validHTTPAPIKey() {
 		t.Fatalf("api key = %q", cfg.HTTPAuth.APIKey)
@@ -215,10 +206,9 @@ func TestLoadFromEnv_InvalidLogMode(t *testing.T) {
 	}
 }
 
-func TestLoadFromEnv_SuccessCustomTTLAndPassword(t *testing.T) {
+func TestLoadFromEnv_SuccessCustomTTL(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", validSecret())
 	t.Setenv("ADMISSION_TTL", "30m")
-	t.Setenv("ADMISSION_PASSWORD", "room-gate")
 	setHTTPAuthEnabled(t)
 
 	cfg, err := appconfig.LoadFromEnv()
@@ -227,9 +217,6 @@ func TestLoadFromEnv_SuccessCustomTTLAndPassword(t *testing.T) {
 	}
 	if cfg.Admission.TTL != 30*time.Minute {
 		t.Fatalf("ttl = %v", cfg.Admission.TTL)
-	}
-	if cfg.Admission.Password != "room-gate" {
-		t.Fatalf("password = %q", cfg.Admission.Password)
 	}
 }
 

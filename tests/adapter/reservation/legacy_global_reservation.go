@@ -8,7 +8,10 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
 
-// legacyGlobalReservation — in-memory reservation с одним глобальным mutex (до per-room lock).
+// legacyGlobalReservation — in-memory reservation с одним глобальным mutex.
+// Зеркалит реализацию, заменённую per-room lock'ами в текущем
+// internal/adapter/reservation (см. git history reservation.go до per-room
+// mutex и docs/plans/P6b-ticket-semantics.md).
 // Только для бенчмарков сравнения; не production-код.
 type legacyGlobalReservation struct {
 	rooms map[domain.RoomID]legacyRoomSlot

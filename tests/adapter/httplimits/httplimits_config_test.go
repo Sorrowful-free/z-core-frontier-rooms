@@ -25,4 +25,18 @@ func TestHTTPLimitsConfig_Validate(t *testing.T) {
 	} else if !strings.Contains(err.Error(), "max rooms") {
 		t.Fatalf("err = %v", err)
 	}
+
+	invalid = httplimits.HTTPLimitsConfig{DeleteRoomsPerMinute: -1}
+	if err := invalid.Validate(); err == nil {
+		t.Fatal("expected error for negative delete rate")
+	} else if !strings.Contains(err.Error(), "delete rate") {
+		t.Fatalf("err = %v", err)
+	}
+
+	invalid = httplimits.HTTPLimitsConfig{ListRoomsPerMinute: -1}
+	if err := invalid.Validate(); err == nil {
+		t.Fatal("expected error for negative list rate")
+	} else if !strings.Contains(err.Error(), "list rate") {
+		t.Fatalf("err = %v", err)
+	}
 }

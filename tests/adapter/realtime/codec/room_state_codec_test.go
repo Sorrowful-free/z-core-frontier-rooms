@@ -1,6 +1,7 @@
 package codec_test
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
@@ -11,7 +12,7 @@ func TestRoomStateCodec_roundTrip_emptyRoom(t *testing.T) {
 	t.Parallel()
 
 	c := newRoomCodec()
-	room := state.NewRoomState(domain.RoomID(7), 16, "pw")
+	room := state.NewRoomState(domain.RoomID(7), 16)
 
 	data, err := c.Encode(room)
 	if err != nil {
@@ -21,7 +22,7 @@ func TestRoomStateCodec_roundTrip_emptyRoom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
-	if got.ID != room.ID || got.Capacity != room.Capacity || got.Password != room.Password {
+	if got.ID != room.ID || got.Capacity != room.Capacity {
 		t.Fatalf("header mismatch: %#v", got)
 	}
 	if len(got.Peers)+len(got.Inputs)+len(got.Entities) != 0 {
@@ -34,7 +35,7 @@ func TestRoomStateCodec_roundTrip_withPeerInputEntity(t *testing.T) {
 	t.Parallel()
 
 	c := newRoomCodec()
-	room := state.NewRoomState(domain.RoomID(1), 8, "")
+	room := state.NewRoomState(domain.RoomID(1), 8)
 
 	room.Peers[domain.PeerID(2)] = state.PeerState{NickName: "bob", Ping: 99, IsMaster: true}
 	room.Inputs[domain.PeerID(2)] = state.InputState{Values: state.NewMapState[state.ValueId, state.ValueState]()}
@@ -87,8 +88,8 @@ func TestRoomStateCodec_patch_capacityOnly(t *testing.T) {
 	t.Parallel()
 
 	c := newRoomCodec()
-	cur := state.NewRoomState(domain.RoomID(1), 4, "x")
-	next := state.NewRoomState(domain.RoomID(1), 8, "x")
+	cur := state.NewRoomState(domain.RoomID(1), 4)
+	next := state.NewRoomState(domain.RoomID(1), 8)
 
 	patch, err := cur.MakePatch(next)
 	if err != nil {
@@ -118,19 +119,34 @@ func TestRoomStateCodec_patch_capacityOnly(t *testing.T) {
 	}
 }
 
-func TestRoomStateCodec_decodePatch_truncatedPassword(t *testing.T) {
+func TestRoomStateCodec_decodePatch_truncatedPeerNick(t *testing.T) {
 	t.Parallel()
 
 	c := newRoomCodec()
-	pw := "abc"
-	patch := &state.RoomStatePatch{Password: &pw}
+	patch := &state.RoomStatePatch{}
+	patch.Peers.Added = map[domain.PeerID]state.PeerState{
+		domain.PeerID(1): {NickName: "abc"},
+	}
 	data, err := c.EncodePatch(patch)
 	if err != nil {
 		t.Fatalf("EncodePatch: %v", err)
 	}
-	// длина строки = 3, а байт осталось два: раньше buf.Read тихо возвращал короче
+	// обрезанный peer payload: раньше buf.Read тихо возвращал короче
 	if _, err := c.DecodePatch(data[:len(data)-1]); err == nil {
-		t.Fatal("expected error on truncated string payload")
+		t.Fatal("expected error on truncated payload")
+	}
+}
+
+func TestRoomStateCodec_decodePatch_legacyPasswordFlag(t *testing.T) {
+	t.Parallel()
+
+	c := newRoomCodec()
+	// Старый wire layout: flags 0x02 = password string "abc".
+	// В новом layout 0x02 = peers map patch — легаси-байты разбираются как
+	// added_count u16 = 0x0361 > RoomStateMaxPeers → ошибка.
+	legacy := []byte{0x02, 0x03, 'a', 'b', 'c'}
+	if _, err := c.DecodePatch(legacy); err == nil {
+		t.Fatal("expected error decoding legacy password-flag payload")
 	}
 }
 
@@ -138,8 +154,8 @@ func TestRoomStateCodec_patch_addPeer(t *testing.T) {
 	t.Parallel()
 
 	c := newRoomCodec()
-	cur := state.NewRoomState(domain.RoomID(1), 4, "")
-	next := state.NewRoomState(domain.RoomID(1), 4, "")
+	cur := state.NewRoomState(domain.RoomID(1), 4)
+	next := state.NewRoomState(domain.RoomID(1), 4)
 	next.Peers[domain.PeerID(3)] = state.PeerState{NickName: "x", Ping: 1}
 
 	patch, err := cur.MakePatch(next)
@@ -161,5 +177,52 @@ func TestRoomStateCodec_patch_addPeer(t *testing.T) {
 	gotPeer := cur.Peers[domain.PeerID(3)]
 	if !gotPeer.Equals(&wantPeer) {
 		t.Fatalf("peer = %#v", gotPeer)
+	}
+}
+
+// Регрессия D2: пароль комнаты — серверный секрет, на wire его быть не должно.
+// Пустая комната кодируется ровно в header + три пустых map, без password-поля.
+func TestRoomStateCodec_encode_neverSerializesPassword(t *testing.T) {
+	t.Parallel()
+
+	c := newRoomCodec()
+	room := state.NewRoomState(domain.RoomID(7), 16)
+
+	data, err := c.Encode(room)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	// room_id u32 | capacity i8 | peers u16 | inputs u16 | entities u16
+	want := []byte{0, 0, 0, 7, 16, 0, 0, 0, 0, 0, 0}
+	if !bytes.Equal(data, want) {
+		t.Fatalf("encoded = %v, want exact layout %v (no password field)", data, want)
+	}
+}
+
+func TestRoomStateCodec_decode_trailingBytes(t *testing.T) {
+	t.Parallel()
+
+	c := newRoomCodec()
+	room := state.NewRoomState(domain.RoomID(1), 4)
+	data, err := c.Encode(room)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	if _, err := c.Decode(append(data, 0xFF)); err == nil {
+		t.Fatal("expected error on trailing bytes")
+	}
+}
+
+func TestRoomStateCodec_decodePatch_trailingBytes(t *testing.T) {
+	t.Parallel()
+
+	c := newRoomCodec()
+	cap8 := int8(8)
+	data, err := c.EncodePatch(&state.RoomStatePatch{Capacity: &cap8})
+	if err != nil {
+		t.Fatalf("EncodePatch: %v", err)
+	}
+	if _, err := c.DecodePatch(append(data, 0xFF)); err == nil {
+		t.Fatal("expected error on trailing bytes")
 	}
 }

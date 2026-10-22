@@ -3,6 +3,7 @@ package reservation_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -10,6 +11,10 @@ import (
 	adapterreservation "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
+
+func testNick(id domain.PeerID) string {
+	return fmt.Sprintf("peer-%d", id)
+}
 
 type discardLogger struct{}
 
@@ -38,7 +43,7 @@ func TestReserveAdmitRevoke_ReleasesSlot(t *testing.T) {
 	}
 	expires := time.Now().Add(time.Hour)
 
-	if err := res.Reserve(ctx, roomID, peerID, expires); err != nil {
+	if err := res.Reserve(ctx, roomID, peerID, testNick(peerID), expires); err != nil {
 		t.Fatalf("Reserve: %v", err)
 	}
 	if err := res.Admit(ctx, roomID, peerID); err != nil {
@@ -47,7 +52,7 @@ func TestReserveAdmitRevoke_ReleasesSlot(t *testing.T) {
 	if err := res.Revoke(ctx, roomID, peerID); err != nil {
 		t.Fatalf("Revoke: %v", err)
 	}
-	if err := res.Reserve(ctx, roomID, peerID, expires); err != nil {
+	if err := res.Reserve(ctx, roomID, peerID, testNick(peerID), expires); err != nil {
 		t.Fatalf("Reserve after Revoke: %v", err)
 	}
 }
@@ -70,10 +75,10 @@ func TestReserve_ExpiredRemovedOnNextReserve(t *testing.T) {
 	past := time.Now().Add(-time.Hour)
 	future := time.Now().Add(time.Hour)
 
-	if err := res.Reserve(ctx, roomID, expired, past); err != nil {
+	if err := res.Reserve(ctx, roomID, expired, testNick(expired), past); err != nil {
 		t.Fatalf("Reserve expired peer: %v", err)
 	}
-	if err := res.Reserve(ctx, roomID, active, future); err != nil {
+	if err := res.Reserve(ctx, roomID, active, testNick(active), future); err != nil {
 		t.Fatalf("Reserve active peer: %v", err)
 	}
 	if err := res.Admit(ctx, roomID, expired); !errors.Is(err, domain.ErrReservationNotReserved) {
@@ -84,7 +89,8 @@ func TestReserve_ExpiredRemovedOnNextReserve(t *testing.T) {
 	}
 }
 
-func TestAdmit_IdempotentWhenAlreadyAdmitted(t *testing.T) {
+// D3: тикет одноразовый — повторный Admit на admitted-слоте отклоняется.
+func TestAdmit_AlreadyAdmittedRejected(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -99,14 +105,47 @@ func TestAdmit_IdempotentWhenAlreadyAdmitted(t *testing.T) {
 	}
 	expires := time.Now().Add(time.Hour)
 
-	if err := res.Reserve(ctx, roomID, peerID, expires); err != nil {
+	if err := res.Reserve(ctx, roomID, peerID, testNick(peerID), expires); err != nil {
 		t.Fatalf("Reserve: %v", err)
 	}
 	if err := res.Admit(ctx, roomID, peerID); err != nil {
 		t.Fatalf("Admit first: %v", err)
 	}
-	if err := res.Admit(ctx, roomID, peerID); err != nil {
-		t.Fatalf("Admit second: %v", err)
+	if err := res.Admit(ctx, roomID, peerID); !errors.Is(err, domain.ErrReservationAlreadyAdmitted) {
+		t.Fatalf("Admit second err = %v, want ErrReservationAlreadyAdmitted", err)
+	}
+}
+
+// D5: один outstanding reserved-слот на nick в комнате; admitted не блокирует.
+func TestReserve_SameNickSlotHeld(t *testing.T) {
+	t.Parallel()
+
+	const (
+		roomID = domain.RoomID(11)
+		peerA  = domain.PeerID(110)
+		peerB  = domain.PeerID(111)
+		peerC  = domain.PeerID(112)
+		nick   = "alex"
+	)
+	ctx := context.Background()
+	res := newTestReservation()
+
+	if err := res.RegisterRoom(ctx, roomID, 3, ""); err != nil {
+		t.Fatalf("RegisterRoom: %v", err)
+	}
+	expires := time.Now().Add(time.Hour)
+
+	if err := res.Reserve(ctx, roomID, peerA, nick, expires); err != nil {
+		t.Fatalf("Reserve peerA: %v", err)
+	}
+	if err := res.Reserve(ctx, roomID, peerB, nick, expires); !errors.Is(err, domain.ErrTicketSlotHeld) {
+		t.Fatalf("Reserve same nick err = %v, want ErrTicketSlotHeld", err)
+	}
+	if err := res.Admit(ctx, roomID, peerA); err != nil {
+		t.Fatalf("Admit peerA: %v", err)
+	}
+	if err := res.Reserve(ctx, roomID, peerC, nick, expires); err != nil {
+		t.Fatalf("Reserve same nick after admit (reconnect): %v", err)
 	}
 }
 
@@ -124,7 +163,7 @@ func TestAdmit_ExpiredReservation(t *testing.T) {
 		t.Fatalf("RegisterRoom: %v", err)
 	}
 
-	if err := res.Reserve(ctx, roomID, peerID, time.Now().Add(-time.Minute)); err != nil {
+	if err := res.Reserve(ctx, roomID, peerID, testNick(peerID), time.Now().Add(-time.Minute)); err != nil {
 		t.Fatalf("Reserve: %v", err)
 	}
 	err := res.Admit(ctx, roomID, peerID)
@@ -153,16 +192,16 @@ func TestSweep_DoesNotRemoveAdmitted(t *testing.T) {
 	}
 	future := time.Now().Add(time.Hour)
 
-	if err := res.Reserve(ctx, roomID, admitted, future); err != nil {
+	if err := res.Reserve(ctx, roomID, admitted, testNick(admitted), future); err != nil {
 		t.Fatalf("Reserve admitted peer: %v", err)
 	}
 	if err := res.Admit(ctx, roomID, admitted); err != nil {
 		t.Fatalf("Admit: %v", err)
 	}
-	if err := res.Reserve(ctx, roomID, reserved, future); err != nil {
+	if err := res.Reserve(ctx, roomID, reserved, testNick(reserved), future); err != nil {
 		t.Fatalf("Reserve second peer: %v", err)
 	}
-	if err := res.Reserve(ctx, roomID, overflow, future); !errors.Is(err, domain.ErrReservationFull) {
+	if err := res.Reserve(ctx, roomID, overflow, testNick(overflow), future); !errors.Is(err, domain.ErrReservationFull) {
 		t.Fatalf("Reserve overflow err = %v, want ErrReservationFull", err)
 	}
 }
@@ -185,7 +224,7 @@ func TestRevoke_IdempotentWhenPeerMissing(t *testing.T) {
 	}
 
 	expires := time.Now().Add(time.Hour)
-	if err := res.Reserve(ctx, roomID, peerID, expires); err != nil {
+	if err := res.Reserve(ctx, roomID, peerID, testNick(peerID), expires); err != nil {
 		t.Fatalf("Reserve: %v", err)
 	}
 	if err := res.Revoke(ctx, roomID, peerID); err != nil {
@@ -231,7 +270,7 @@ func TestState(t *testing.T) {
 	}
 
 	expires := time.Now().Add(time.Hour)
-	if err := res.Reserve(ctx, roomID, peerID, expires); err != nil {
+	if err := res.Reserve(ctx, roomID, peerID, testNick(peerID), expires); err != nil {
 		t.Fatalf("Reserve: %v", err)
 	}
 	state, err = res.State(ctx, roomID, peerID)
@@ -270,13 +309,13 @@ func TestListAdmittedPeers(t *testing.T) {
 	}
 	expires := time.Now().Add(time.Hour)
 
-	if err := res.Reserve(ctx, roomID, admitted, expires); err != nil {
+	if err := res.Reserve(ctx, roomID, admitted, testNick(admitted), expires); err != nil {
 		t.Fatalf("Reserve admitted: %v", err)
 	}
 	if err := res.Admit(ctx, roomID, admitted); err != nil {
 		t.Fatalf("Admit: %v", err)
 	}
-	if err := res.Reserve(ctx, roomID, reserved, expires); err != nil {
+	if err := res.Reserve(ctx, roomID, reserved, testNick(reserved), expires); err != nil {
 		t.Fatalf("Reserve reserved: %v", err)
 	}
 
@@ -343,7 +382,7 @@ func TestReservation_ConcurrentDifferentRooms(t *testing.T) {
 		go func(roomID domain.RoomID) {
 			defer wg.Done()
 			peerID := domain.PeerID(roomID * 100)
-			if err := res.Reserve(ctx, roomID, peerID, expires); err != nil {
+			if err := res.Reserve(ctx, roomID, peerID, testNick(peerID), expires); err != nil {
 				t.Errorf("Reserve room %d: %v", roomID, err)
 				return
 			}

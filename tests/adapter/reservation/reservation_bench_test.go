@@ -28,8 +28,11 @@ func BenchmarkReservation_Reserve(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		peerID := domain.PeerID(peerSeq.Add(1))
-		if err := res.Reserve(ctx, roomID, peerID, expires); err != nil {
+		if err := res.Reserve(ctx, roomID, peerID, testNick(peerID), expires); err != nil {
 			b.Fatalf("Reserve: %v", err)
+		}
+		if err := res.Revoke(ctx, roomID, peerID); err != nil {
+			b.Fatalf("Revoke: %v", err)
 		}
 	}
 }
@@ -92,7 +95,7 @@ func benchmarkIssueJoinPath(b *testing.B, roomCount int, legacy bool) {
 			continue
 		}
 
-		if err := modern.Reserve(ctx, roomID, peerID, expires); err != nil {
+		if err := modern.Reserve(ctx, roomID, peerID, testNick(peerID), expires); err != nil {
 			b.Fatalf("Reserve: %v", err)
 		}
 		if err := modern.Admit(ctx, roomID, peerID); err != nil {
@@ -158,7 +161,7 @@ func benchmarkReserveParallelSpread(b *testing.B, roomCount int, legacy bool) {
 				continue
 			}
 
-			if err := modern.Reserve(ctx, roomID, peerID, expires); err != nil {
+			if err := modern.Reserve(ctx, roomID, peerID, testNick(peerID), expires); err != nil {
 				panic(fmt.Sprintf("Reserve: %v", err))
 			}
 			if err := modern.Revoke(ctx, roomID, peerID); err != nil {
@@ -175,11 +178,11 @@ func BenchmarkReservation_Reserve_ParallelSameRoom(b *testing.B) {
 
 	b.Run("per_room_lock", func(b *testing.B) {
 		res := newTestReservation()
-		if err := res.RegisterRoom(ctx, roomID, benchRoomCapacity*128, ""); err != nil {
+		if err := res.RegisterRoom(ctx, roomID, domain.MaxRoomCapacity, ""); err != nil {
 			b.Fatalf("RegisterRoom: %v", err)
 		}
 		runParallelReserveRevoke(b, func(peerID domain.PeerID) error {
-			if err := res.Reserve(ctx, roomID, peerID, expires); err != nil {
+			if err := res.Reserve(ctx, roomID, peerID, testNick(peerID), expires); err != nil {
 				return err
 			}
 			return res.Revoke(ctx, roomID, peerID)
@@ -188,7 +191,7 @@ func BenchmarkReservation_Reserve_ParallelSameRoom(b *testing.B) {
 
 	b.Run("global_legacy", func(b *testing.B) {
 		res := newLegacyGlobalReservation()
-		res.registerRoom(roomID, benchRoomCapacity*128)
+		res.registerRoom(roomID, domain.MaxRoomCapacity)
 		runParallelReserveRevoke(b, func(peerID domain.PeerID) error {
 			if err := res.reserve(roomID, peerID, expires); err != nil {
 				return err

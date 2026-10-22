@@ -45,10 +45,10 @@ func TestIssueTicket_Success(t *testing.T) {
 	reservation.EXPECT().VerifyRoomPassword(gomock.Any(), roomID, password).Return(nil)
 	admission.EXPECT().TTL().Return(ttl)
 	reservation.EXPECT().
-		Reserve(gomock.Any(), roomID, peerID, gomock.Any()).
+		Reserve(gomock.Any(), roomID, peerID, testNickName, gomock.Any()).
 		Return(nil)
 	admission.EXPECT().
-		Issue(gomock.Any(), roomID, peerID, testNickName, password).
+		Issue(gomock.Any(), roomID, peerID, testNickName).
 		Return(wantToken, nil)
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 	expectIssueTicketRoomSummary(room, roomID)
@@ -182,7 +182,7 @@ func TestIssueTicket_ReservationFull(t *testing.T) {
 	reservation.EXPECT().VerifyRoomPassword(gomock.Any(), roomID, "").Return(nil)
 	admission.EXPECT().TTL().Return(time.Hour)
 	reservation.EXPECT().
-		Reserve(gomock.Any(), roomID, peerID, gomock.Any()).
+		Reserve(gomock.Any(), roomID, peerID, testNickName, gomock.Any()).
 		Return(domain.ErrReservationFull)
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 
@@ -215,7 +215,7 @@ func TestIssueTicket_SlotHeld(t *testing.T) {
 	reservation.EXPECT().VerifyRoomPassword(gomock.Any(), roomID, "").Return(nil)
 	admission.EXPECT().TTL().Return(time.Hour)
 	reservation.EXPECT().
-		Reserve(gomock.Any(), roomID, peerID, gomock.Any()).
+		Reserve(gomock.Any(), roomID, peerID, testNickName, gomock.Any()).
 		Return(domain.ErrReservationAlreadyExists)
 	reservation.EXPECT().
 		State(gomock.Any(), roomID, peerID).
@@ -257,18 +257,18 @@ func TestIssueTicket_OrphanAdmittedCleanup(t *testing.T) {
 	admission.EXPECT().TTL().Return(time.Hour)
 	gomock.InOrder(
 		reservation.EXPECT().
-			Reserve(gomock.Any(), roomID, peerID, gomock.Any()).
+			Reserve(gomock.Any(), roomID, peerID, testNickName, gomock.Any()).
 			Return(domain.ErrReservationAlreadyAdmitted),
 		reservation.EXPECT().
 			State(gomock.Any(), roomID, peerID).
 			Return(domain.ReservationSlotAdmitted, nil),
 		reservation.EXPECT().Revoke(gomock.Any(), roomID, peerID).Return(nil),
 		reservation.EXPECT().
-			Reserve(gomock.Any(), roomID, peerID, gomock.Any()).
+			Reserve(gomock.Any(), roomID, peerID, testNickName, gomock.Any()).
 			Return(nil),
 	)
 	admission.EXPECT().
-		Issue(gomock.Any(), roomID, peerID, testNickName, password).
+		Issue(gomock.Any(), roomID, peerID, testNickName).
 		Return(wantToken, nil)
 	logger.EXPECT().Warn(gomock.Any(), gomock.Any()).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
@@ -305,8 +305,8 @@ func TestIssueTicket_AdmissionErrorJoinsRevokeError(t *testing.T) {
 	room.EXPECT().HasPeer(peerID).Return(false)
 	reservation.EXPECT().VerifyRoomPassword(gomock.Any(), roomID, "").Return(nil)
 	admission.EXPECT().TTL().Return(time.Hour)
-	reservation.EXPECT().Reserve(gomock.Any(), roomID, peerID, gomock.Any()).Return(nil)
-	admission.EXPECT().Issue(gomock.Any(), roomID, peerID, gomock.Any(), gomock.Any()).Return(nil, domain.ErrInvalidCredentials)
+	reservation.EXPECT().Reserve(gomock.Any(), roomID, peerID, testNickName, gomock.Any()).Return(nil)
+	admission.EXPECT().Issue(gomock.Any(), roomID, peerID, gomock.Any()).Return(nil, domain.ErrInvalidCredentials)
 	reservation.EXPECT().Revoke(gomock.Any(), roomID, peerID).Return(domain.ErrReservationNotFound)
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).MinTimes(1)
 
@@ -341,8 +341,8 @@ func TestIssueTicket_AdmissionErrorRevokesReserve(t *testing.T) {
 	room.EXPECT().HasPeer(peerID).Return(false)
 	reservation.EXPECT().VerifyRoomPassword(gomock.Any(), roomID, "").Return(nil)
 	admission.EXPECT().TTL().Return(time.Hour)
-	reservation.EXPECT().Reserve(gomock.Any(), roomID, peerID, gomock.Any()).Return(nil)
-	admission.EXPECT().Issue(gomock.Any(), roomID, peerID, gomock.Any(), gomock.Any()).Return(nil, domain.ErrInvalidCredentials)
+	reservation.EXPECT().Reserve(gomock.Any(), roomID, peerID, testNickName, gomock.Any()).Return(nil)
+	admission.EXPECT().Issue(gomock.Any(), roomID, peerID, gomock.Any()).Return(nil, domain.ErrInvalidCredentials)
 	reservation.EXPECT().Revoke(gomock.Any(), roomID, peerID).Return(nil)
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).MinTimes(1)
 
