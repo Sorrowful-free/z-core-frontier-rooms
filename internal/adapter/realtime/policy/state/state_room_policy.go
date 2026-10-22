@@ -47,8 +47,8 @@ func normalizeTickInterval(interval, defaultInterval time.Duration) time.Duratio
 
 func NewStateRoomPolicy(logger logging.Logger, stateCodec codec.RoomStateCodec, entitiesCodec codec.EntitiesStateCodec, inputCodec codec.InputStateCodec, rpcCodec codec.RpcStateCodec, fullStateInterval time.Duration, patchStateInterval time.Duration) *StateRoomPolicy {
 	return &StateRoomPolicy{
-		prevState: *state.NewRoomState(domain.RoomID(0), 0, ""),
-		state:     *state.NewRoomState(domain.RoomID(0), 0, ""),
+		prevState: *state.NewRoomState(domain.RoomIDInvalid, 0),
+		state:     *state.NewRoomState(domain.RoomIDInvalid, 0),
 
 		stateCodec:         stateCodec,
 		entitiesCodec:      entitiesCodec,
@@ -77,7 +77,7 @@ func (p *StateRoomPolicy) TickIntervals() (time.Duration, time.Duration) {
 }
 
 func (p *StateRoomPolicy) syncRoomStateFromRoom(room realtime.Room) {
-	rs := state.NewRoomState(room.GetID(), room.GetCapacity(), "")
+	rs := state.NewRoomState(room.GetID(), room.GetCapacity())
 	p.state = *rs
 	p.prevState = *rs.Clone()
 }

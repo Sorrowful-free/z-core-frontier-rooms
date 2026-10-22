@@ -1,6 +1,7 @@
 package state
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
@@ -31,13 +32,39 @@ func (p *StateRoomPolicy) OnTickPatchState() error {
 }
 
 func (p *StateRoomPolicy) refreshPeerPings() error {
+	var stale []domain.PeerID
 	for peerID, peerState := range p.state.Peers {
 		peer, err := p.room.GetPeer(peerID)
 		if err != nil {
+			// stale — только когда peer реально отсутствует в room;
+			// прочие ошибки GetPeer не повод выкидывать peer из state.
+			if errors.Is(err, domain.ErrPeerNotFound) {
+				stale = append(stale, peerID)
+				continue
+			}
 			return fmt.Errorf("get peer %d: %w", peerID, err)
 		}
 		peerState.Ping = peer.Ping()
 		p.state.Peers[peerID] = peerState
+	}
+
+	// Сначала вычищаем все stale-записи, потом один раз переизбираем master —
+	// иначе выборы могли бы попасть на ещё не вычищенный stale peer.
+	masterPruned := false
+	for _, peerID := range stale {
+		p.logger.Warn("pruning stale peer from room state", "peerID", peerID)
+		delete(p.state.Peers, peerID)
+		delete(p.state.Inputs, peerID)
+		if p.master != nil && p.master.GetID() == peerID {
+			masterPruned = true
+		}
+	}
+	if masterPruned {
+		if err := p.electAndAssignMaster(&p.state); err != nil {
+			// master не должен висеть на удалённом peer — сбрасываем.
+			p.logger.Error("elect master after pruning stale peers failed", "error", err)
+			p.master = nil
+		}
 	}
 	return nil
 }
@@ -65,7 +92,7 @@ func (p *StateRoomPolicy) joinPeerAndSyncState(peer realtime.Peer) error {
 		}
 	}
 
-	if err := p.sendFullStateToPeer(peerID, newState); err != nil {
+	if err := p.deliverFullStateToPeer(peer, newState); err != nil {
 		return fmt.Errorf("send full state to peer %d: %w", peerID, err)
 	}
 
@@ -108,6 +135,22 @@ func (p *StateRoomPolicy) sendFullStateToPeer(peerID domain.PeerID, full *state.
 		peerEvent.PeerID = peerID
 	}
 	return p.room.Send(peerEvent)
+}
+
+// deliverFullStateToPeer шлёт full state напрямую в peer: на момент OnJoin
+// peer ещё не вставлен в r.peers, поэтому room.Send по peerID не находит его.
+func (p *StateRoomPolicy) deliverFullStateToPeer(peer realtime.Peer, full *state.RoomState) error {
+	payload, err := p.stateCodec.Encode(full)
+	if err != nil {
+		return err
+	}
+	return peer.Deliver(events.PeerEvent{
+		PeerID: peer.GetID(),
+		Frame: domain.Frame{
+			OpCode:  state.OpCodeFullState,
+			Payload: payload,
+		},
+	})
 }
 
 func (p *StateRoomPolicy) publishRoomStateChange(old *state.RoomState, exclude domain.PeerID) error {
@@ -155,17 +198,31 @@ func (p *StateRoomPolicy) commitPrevState() {
 }
 
 func (p *StateRoomPolicy) prepareAndSendRoomStatePatch(applyChanges func(roomState *state.RoomState) error) error {
-	oldRoomState := p.state.Clone()
-	err := applyChanges(&p.state)
-	if err != nil {
+	oldMaster := p.master
+	committed := false
+	// applyChanges может переназначить p.master — откатываем на всех ветках ошибок.
+	defer func() {
+		if !committed {
+			p.master = oldMaster
+		}
+	}()
+
+	newRoomState := p.state.Clone()
+	if err := applyChanges(newRoomState); err != nil {
 		return err
 	}
-	roomPatch, err := oldRoomState.MakePatch(&p.state)
+	roomPatch, err := p.state.MakePatch(newRoomState)
 	if err != nil {
 		return err
 	}
 	if roomPatch == nil {
 		return nil
 	}
-	return p.sendPatchState(roomPatch)
+	if err := p.sendPatchStateExclude(domain.PeerIDInvalid, roomPatch); err != nil {
+		return err
+	}
+	p.state = *newRoomState
+	p.commitPrevState()
+	committed = true
+	return nil
 }

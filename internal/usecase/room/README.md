@@ -28,7 +28,7 @@ ValidateNickName (HTTP) → limits → RegisterRoom → CreateRoom
 
 ```text
 ValidateNickName → GetRoom → HasPeer? → VerifyRoomPassword
-→ Reserve(TTL) [orphan admitted cleanup] → Issue(nickName) → token + RoomSummary
+→ Reserve(nickName, TTL) [orphan admitted cleanup] → Issue(nickName) → token + RoomSummary
 ```
 
 Политика A: peer в room → `ErrPeerAlreadyInRoom`; слот held → `ErrTicketSlotHeld`.
@@ -45,7 +45,7 @@ Validate → GetRoom → Admit → CreatePeer(..., claims.NickName)
 
 ## LeaveRoom
 
-`GetPeer` → `Leave` → `Stop` → `Revoke`. Идемпотентно: комната или peer уже сняты → `Revoke` + `nil`; слот reservation отсутствует → `nil`.
+`GetPeer` → `Leave` → `Stop` → `Revoke`. Идемпотентно: комната или peer уже сняты → `Revoke` + `nil`; слот reservation отсутствует → `nil`. `room.Leave` изымает peer из комнаты даже при ошибке политики — `Stop` и `Revoke` выполняются всегда, ошибки возвращаются через `errors.Join`.
 
 ## Delete
 
@@ -58,7 +58,9 @@ VerifyRoomPassword (только Delete) → GetRoom → kick all peers (LeaveRo
 
 ## EvictIdlePeers
 
-Периодический sweep (`StartIdlePeerSweep`): `registry.GetList` → `room.GetPeers` → `!peer.IsAlive()` → `LeaveRoom` (`Leave` → `Stop` → `Revoke`, молчаливый `Close`). Ошибка одного peer логируется, sweep продолжается. `interval <= 0` — no-op; таймаут живости — внутри `WsConnection` (`TransportConfig.PeerIdleTimeout`).
+Периодический sweep (`StartIdlePeerSweep`): `registry.GetList` → `room.GetPeers` → `!peer.IsAlive()` → `LeaveRoom` (`Leave` → `Stop` → `Revoke`, молчаливый `Close`). Ошибка одного peer логируется, sweep продолжается. `interval <= 0` — no-op (nil handle); таймаут живости — внутри `WsConnection` (`TransportConfig.PeerIdleTimeout`).
+
+Оба sweep (`StartIdlePeerSweep`, `StartOrphanAdmittedSweep`) возвращают `*SweepHandle`: `Stop()` отменяет ctx и ждёт завершения горутины, включая in-flight `RunOnce`.
 
 ## HTTP / transport
 

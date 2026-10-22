@@ -49,22 +49,24 @@ func (uc *LeaveRoomUseCase) LeaveRoom(ctx context.Context, roomID domain.RoomID,
 		return err
 	}
 
-	if err := room.Leave(peer); err != nil {
-		if !room.HasPeer(peerID) {
-			uc.logging.Warn("leave room: peer already left", "roomID", roomID, "peerID", peerID)
-			return uc.revokeLeaveReservation(ctx, roomID, peerID)
-		}
-		uc.logging.Error("leave room: room leave failed", "error", err, "roomID", roomID, "peerID", peerID)
-		return err
+	// room.Leave изымает peer из комнаты даже при ошибке политики —
+	// Stop и Revoke выполняются всегда, ошибка leave не проглатывается.
+	leaveErr := room.Leave(peer)
+	if leaveErr != nil {
+		uc.logging.Error("leave room: room leave failed", "error", leaveErr, "roomID", roomID, "peerID", peerID)
 	}
 
-	if err := peer.Stop(); err != nil {
-		uc.logging.Error("leave room: peer stop failed", "error", err, "roomID", roomID, "peerID", peerID)
-		return err
+	stopErr := peer.Stop()
+	if stopErr != nil {
+		uc.logging.Error("leave room: peer stop failed", "error", stopErr, "roomID", roomID, "peerID", peerID)
 	}
 
-	if err := uc.revokeLeaveReservation(ctx, roomID, peerID); err != nil {
-		uc.logging.Error("leave room: reservation revoke failed", "error", err, "roomID", roomID, "peerID", peerID)
+	revokeErr := uc.revokeLeaveReservation(ctx, roomID, peerID)
+	if revokeErr != nil {
+		uc.logging.Error("leave room: reservation revoke failed", "error", revokeErr, "roomID", roomID, "peerID", peerID)
+	}
+
+	if err := errors.Join(leaveErr, stopErr, revokeErr); err != nil {
 		return err
 	}
 

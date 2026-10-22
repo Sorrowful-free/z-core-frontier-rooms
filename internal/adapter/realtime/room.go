@@ -28,10 +28,11 @@ type Room struct {
 	fullStateTicker  *time.Ticker
 	patchStateTicker *time.Ticker
 
-	ctx      context.Context
-	cancel   context.CancelFunc
-	stopOnce sync.Once
-	wg       sync.WaitGroup
+	ctx       context.Context
+	cancel    context.CancelFunc
+	startOnce sync.Once
+	stopOnce  sync.Once
+	wg        sync.WaitGroup
 }
 
 func NewRoom(ctx context.Context, id domain.RoomID, policy policy.RoomPolicy, capacity int, attributes domain.RoomAttributes, incomingQueue int, logger logging.Logger) *Room {
@@ -87,32 +88,40 @@ func (r *Room) GetPeers() []realtime.Peer {
 }
 
 func (r *Room) Start() error {
-	if err := r.policy.OnStart(r); err != nil {
-		return err
-	}
-	fullInterval, patchInterval := r.policy.TickIntervals()
-	if fullInterval > 0 {
-		r.fullStateTicker = time.NewTicker(fullInterval)
-	}
-	if patchInterval > 0 {
-		r.patchStateTicker = time.NewTicker(patchInterval)
-	}
+	var err error
+	r.startOnce.Do(func() {
+		if err = r.policy.OnStart(r); err != nil {
+			return
+		}
+		fullInterval, patchInterval := r.policy.TickIntervals()
 
-	r.wg.Add(1)
-	go processRoomEvents(r)
-	return nil
+		r.mutex.Lock()
+		if fullInterval > 0 {
+			r.fullStateTicker = time.NewTicker(fullInterval)
+		}
+		if patchInterval > 0 {
+			r.patchStateTicker = time.NewTicker(patchInterval)
+		}
+		r.mutex.Unlock()
+
+		r.wg.Add(1)
+		go processRoomEvents(r)
+	})
+	return err
 }
 
 func (r *Room) Stop() error {
 	var err error
 	r.stopOnce.Do(func() {
 		r.cancel()
+		r.mutex.Lock()
 		if r.fullStateTicker != nil {
 			r.fullStateTicker.Stop()
 		}
 		if r.patchStateTicker != nil {
 			r.patchStateTicker.Stop()
 		}
+		r.mutex.Unlock()
 		r.wg.Wait()
 		err = r.policy.OnStop(r)
 	})
@@ -122,49 +131,62 @@ func (r *Room) Stop() error {
 func (r *Room) Join(peer realtime.Peer) error {
 	peerID := peer.GetID()
 
+	r.mutex.RLock()
+	if len(r.peers) >= r.capacity {
+		r.mutex.RUnlock()
+		return fmt.Errorf("%w: %d", domain.ErrRoomFull, r.id)
+	}
+	r.mutex.RUnlock()
+
+	if err := r.dispatchLifecycle(lifecycleRequest{
+		op:   lifecycleJoin,
+		peer: peer,
+		done: make(chan error, 1),
+	}); err != nil {
+		return fmt.Errorf("%w: %w", domain.ErrJoinDenied, err)
+	}
+
 	r.mutex.Lock()
 	if len(r.peers) >= r.capacity {
 		r.mutex.Unlock()
+		if leaveErr := r.dispatchLifecycle(lifecycleRequest{
+			op:   lifecycleLeave,
+			peer: peer,
+			done: make(chan error, 1),
+		}); leaveErr != nil {
+			r.logger.Error("join room: rollback leave after capacity re-check failed", "error", leaveErr, "roomID", r.id, "peerID", peerID)
+		}
 		return fmt.Errorf("%w: %d", domain.ErrRoomFull, r.id)
 	}
 	r.peers[peerID] = peer
 	r.mutex.Unlock()
-
-	err := r.dispatchLifecycle(lifecycleRequest{
-		op:   lifecycleJoin,
-		peer: peer,
-		done: make(chan error, 1),
-	})
-	if err != nil {
-		r.mutex.Lock()
-		delete(r.peers, peerID)
-		r.mutex.Unlock()
-		return fmt.Errorf("%w: %w", domain.ErrJoinDenied, err)
-	}
 	return nil
 }
 
 func (r *Room) Leave(peer realtime.Peer) error {
 	peerID := peer.GetID()
 
-	r.mutex.Lock()
+	r.mutex.RLock()
 	if _, ok := r.peers[peerID]; !ok {
-		r.mutex.Unlock()
+		r.mutex.RUnlock()
 		return fmt.Errorf("%w: %d", domain.ErrPeerNotFound, peerID)
 	}
-	r.mutex.Unlock()
+	r.mutex.RUnlock()
 
-	if err := r.dispatchLifecycle(lifecycleRequest{
+	err := r.dispatchLifecycle(lifecycleRequest{
 		op:   lifecycleLeave,
 		peer: peer,
 		done: make(chan error, 1),
-	}); err != nil {
-		return err
-	}
+	})
 
 	r.mutex.Lock()
 	delete(r.peers, peerID)
 	r.mutex.Unlock()
+
+	if err != nil {
+		r.logger.Error("room leave: policy on leave failed", "error", err, "roomID", r.id, "peerID", peerID)
+		return err
+	}
 	return nil
 }
 

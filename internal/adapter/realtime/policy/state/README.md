@@ -14,7 +14,7 @@
 - **Master:** первый peer; failover — min `Ping()` ≥ 0, tie-break min `PeerID`; пустая комната → `master = nil`
 - **Join:** full state новому peer; patch остальным; `NickName` из `peer.GetNickName()`; stage-then-commit — при ошибке send `p.state`/`p.master` не мутируются (фантомного peer нет)
 - **Ticks:** full state 4s, patch 50ms (дефолты); `0` в конструкторе → подстановка дефолтов
-- **Master-only:** `FullEntities`, `PatchEntities`, input opcodes, RPC routing
+- **Master-only:** `FullEntities`, `PatchEntities`; input opcodes и RPC routing принимаются от всех peers (проверка членства в room state)
 - **Patch apply:** атомарно (`ApplyMapStatePatchCopy` + entity/component)
 - **Ошибки:** sentinel `domain` → in-room OpCode отправителю
 

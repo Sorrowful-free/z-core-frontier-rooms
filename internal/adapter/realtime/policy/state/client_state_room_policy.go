@@ -57,6 +57,9 @@ func (p *StateRoomPolicy) onClientFullInput(roomEvent events.RoomEvent) error {
 	}
 
 	return p.prepareAndSendRoomStatePatch(func(roomState *state.RoomState) error {
+		if _, ok := roomState.Peers[roomEvent.PeerID]; !ok {
+			return fmt.Errorf("%w: %d", domain.ErrPeerNotFound, roomEvent.PeerID)
+		}
 		roomState.Inputs[roomEvent.PeerID] = *full
 		return nil
 	})
@@ -70,6 +73,9 @@ func (p *StateRoomPolicy) onClientPatchInput(roomEvent events.RoomEvent) error {
 	peerID := roomEvent.PeerID
 
 	return p.prepareAndSendRoomStatePatch(func(roomState *state.RoomState) error {
+		if _, ok := roomState.Peers[peerID]; !ok {
+			return fmt.Errorf("%w: %d", domain.ErrPeerNotFound, peerID)
+		}
 		inputState, ok := roomState.Inputs[peerID]
 		if !ok {
 			inputState = state.InputState{Values: state.NewMapState[state.ValueId, state.ValueState]()}

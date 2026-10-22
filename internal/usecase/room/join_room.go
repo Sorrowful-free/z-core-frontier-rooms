@@ -76,8 +76,12 @@ func (uc *JoinRoomUseCase) JoinRoom(ctx context.Context, connection transport.Co
 	}
 
 	if err := peer.Start(); err != nil {
-		_ = room.Leave(peer)
-		_ = peer.Stop()
+		if leaveErr := room.Leave(peer); leaveErr != nil {
+			uc.logging.Error("join room: rollback leave failed", "error", leaveErr, "peerID", claims.PeerID)
+		}
+		if stopErr := peer.Stop(); stopErr != nil {
+			uc.logging.Error("join room: rollback peer stop failed", "error", stopErr, "peerID", claims.PeerID)
+		}
 		startErr := fmt.Errorf("%w: %w", domain.ErrPeerStartFailed, err)
 		uc.logging.Error("join room: start peer failed", "error", startErr, "peerID", claims.PeerID)
 		return EmptyRoomSummary, domain.PeerIDInvalid, uc.revokeJoinReservation(ctx, room, claims.RoomID, claims.PeerID, startErr)

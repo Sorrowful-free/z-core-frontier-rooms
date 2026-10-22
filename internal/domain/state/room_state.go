@@ -9,7 +9,6 @@ import (
 type RoomState struct {
 	ID       domain.RoomID
 	Capacity int8
-	Password string
 
 	Peers    MapState[domain.PeerID, PeerState]
 	Inputs   MapState[domain.PeerID, InputState]
@@ -18,17 +17,15 @@ type RoomState struct {
 
 type RoomStatePatch struct {
 	Capacity *int8
-	Password *string
 	Peers    MapStatePatch[domain.PeerID, PeerState, PeerStatePatch]
 	Inputs   MapStatePatch[domain.PeerID, InputState, InputStatePatch]
 	Entities MapStatePatch[EntityID, EntityState, EntityStatePatch]
 }
 
-func NewRoomState(roomID domain.RoomID, capacity int8, password string) *RoomState {
+func NewRoomState(roomID domain.RoomID, capacity int8) *RoomState {
 	return &RoomState{
 		ID:       roomID,
 		Capacity: capacity,
-		Password: password,
 		Peers:    NewMapState[domain.PeerID, PeerState](),
 		Inputs:   NewMapState[domain.PeerID, InputState](),
 		Entities: NewMapState[EntityID, EntityState](),
@@ -43,11 +40,6 @@ func (s *RoomState) MakePatch(newRoomState *RoomState) (*RoomStatePatch, error) 
 		patch.Capacity = &newRoomState.Capacity
 		hasChanges = true
 	}
-	if s.Password != newRoomState.Password {
-		patch.Password = &newRoomState.Password
-		hasChanges = true
-	}
-
 	patchPeers, err := MakeMapStatePatch(s.Peers, newRoomState.Peers, func(p1, p2 PeerState) bool {
 		return p1.Equals(&p2)
 	}, func(p1, p2 PeerState) (*PeerStatePatch, error) {
@@ -103,10 +95,6 @@ func (s *RoomState) ApplyPatch(patch RoomStatePatch) error {
 	if patch.Capacity != nil && *patch.Capacity != s.Capacity {
 		s.Capacity = *patch.Capacity
 	}
-	if patch.Password != nil && *patch.Password != s.Password {
-		s.Password = *patch.Password
-	}
-
 	err := ApplyMapStatePatch(s.Peers, patch.Peers, func(p1 PeerState, p2 PeerStatePatch) (*PeerState, error) {
 		err := p1.ApplyPatch(p2)
 		if err != nil {
@@ -152,7 +140,6 @@ func (s *RoomState) Clone() *RoomState {
 	return &RoomState{
 		ID:       s.ID,
 		Capacity: s.Capacity,
-		Password: s.Password,
 		Peers:    peers,
 		Inputs:   inputs,
 		Entities: entities,

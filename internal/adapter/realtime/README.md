@@ -12,9 +12,10 @@ Runtime комнаты: `Room`, `Peer`, фабрики.
 
 Публичные операции:
 
-- `Join` — peers map + `OnJoin`
-- `Leave` — `OnLeave` + удаление из map
+- `Join` — `OnJoin` → повторная проверка capacity → вставка в peers map (peer невидим до commit; гонка capacity → компенсирующий `lifecycleLeave` + `ErrRoomFull`)
+- `Leave` — `OnLeave`, затем удаление из peers map **всегда**, даже при ошибке политики (ошибка возвращается; peer не остаётся в реестре — ADR-0004)
 - `Replace` — `OnLeave(old)` → swap peer → `OnJoin(new)`; при ошибке join — rollback map + `OnJoin(old)`
+- `Start`/`Stop` — `sync.Once`-guards; повторные вызовы идемпотентны
 - `Send` / `Deliver` — исходящие `PeerEvent` / входящие `RoomEvent`
 
 ### Контракт `Deliver`
