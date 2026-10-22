@@ -105,6 +105,7 @@ func newWSClient(t *testing.T, e *env.Env, nick, token string) *wsClient {
 	c.conn = e.DialWS(t, "token="+token)
 	go c.readPump()
 	go c.sendLoop()
+	go c.statsLoop()
 	return c
 }
 
@@ -138,6 +139,44 @@ func (c *wsClient) stop() {
 
 func (c *wsClient) stopSend() {
 	c.quitOnce.Do(func() { close(c.quit) })
+}
+
+// statsLoop — периодический дайджест наблюдаемого state: видно, что стейт
+// реально течёт (позиции меняются, патчи приходят), а не только «первые»
+// события. Печатается каждые 5s пока клиент жив.
+func (c *wsClient) statsLoop() {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.pumpDone:
+			return
+		case <-ticker.C:
+			c.logStats()
+		}
+	}
+}
+
+func (c *wsClient) logStats() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.room == nil {
+		c.t.Logf("[%s] stats: no state yet (patches=%d)", c.nick, c.patchCount)
+		return
+	}
+	master := "-"
+	positions := make([]string, 0, len(c.entityPos))
+	for pid, ps := range c.room.Peers {
+		if ps.IsMaster {
+			master = c.peerNicks[pid]
+		}
+	}
+	for owner, pos := range c.entityPos {
+		positions = append(positions, fmt.Sprintf("%s=%s", c.peerNicks[owner], pos))
+	}
+	c.t.Logf("[%s] stats: peers=%d master=%s entities={%s} inputsSeen=%d patches=%d me=%d",
+		c.nick, len(c.room.Peers), master, strings.Join(positions, ","),
+		len(c.inputNicks), c.patchCount, c.peerID.Load())
 }
 
 func (c *wsClient) sendDisabled() bool {
