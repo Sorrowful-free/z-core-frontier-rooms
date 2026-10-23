@@ -13,6 +13,12 @@ const DefaultAdmitTimeout = 10 * time.Second
 
 // EnetConfig — параметры ENet host (отдельный UDP-слушатель, не Fiber).
 // Файл без build-тегов: конфиг нужен и stub-сборкам без cgo.
+//
+// ServiceTimeoutMs — бюджет одного вызова host.Service на HostLoop'е (P15):
+// это верхняя граница latency очереди команд (send/disconnect ждут возврата
+// Service). Дефолт 1ms — ~1000 итераций/сек на host, цена пустого poll'а
+// минимальна; поднять можно через ENET_SERVICE_TIMEOUT_MS, если цикл на
+// пустом хосте станет заметен.
 type EnetConfig struct {
 	ListenPort            uint16
 	PeerLimit             uint64
@@ -29,7 +35,7 @@ func DefaultEnetConfig() EnetConfig {
 		ListenPort:            7777,
 		PeerLimit:             64,
 		ChannelLimit:          2,
-		ServiceTimeoutMs:      10,
+		ServiceTimeoutMs:      1,
 		MaxIncomingFrameBytes: adaptertransport.DefaultMaxIncomingFrameBytes,
 		EnetIncomingQueueSize: adaptertransport.DefaultEnetIncomingQueueSize,
 		AdmitTimeout:          DefaultAdmitTimeout,

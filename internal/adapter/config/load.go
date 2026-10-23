@@ -45,9 +45,10 @@ const (
 	envTransportPeerIdleSweepInterval = "TRANSPORT_PEER_IDLE_SWEEP_INTERVAL"
 	envTransportWSWriteDeadline       = "TRANSPORT_WS_WRITE_DEADLINE"
 
-	envEnetListenPort   = "ENET_LISTEN_PORT"
-	envEnetPeerLimit    = "ENET_PEER_LIMIT"
-	envEnetAdmitTimeout = "ENET_ADMIT_TIMEOUT"
+	envEnetListenPort       = "ENET_LISTEN_PORT"
+	envEnetPeerLimit        = "ENET_PEER_LIMIT"
+	envEnetAdmitTimeout     = "ENET_ADMIT_TIMEOUT"
+	envEnetServiceTimeoutMs = "ENET_SERVICE_TIMEOUT_MS"
 )
 
 // LoadFromEnv читает переменные окружения и собирает Config.
@@ -277,6 +278,15 @@ func loadEnetFromEnv() (enetadapter.EnetConfig, error) {
 		return enetadapter.EnetConfig{}, err
 	}
 	cfg.AdmitTimeout = admitTimeout
+
+	serviceTimeout, err := intFromEnv(envEnetServiceTimeoutMs, int(cfg.ServiceTimeoutMs))
+	if err != nil {
+		return enetadapter.EnetConfig{}, err
+	}
+	if serviceTimeout <= 0 {
+		return enetadapter.EnetConfig{}, fmt.Errorf("%s: service timeout %d must be > 0", envEnetServiceTimeoutMs, serviceTimeout)
+	}
+	cfg.ServiceTimeoutMs = uint32(serviceTimeout)
 
 	if err := cfg.Validate(); err != nil {
 		return enetadapter.EnetConfig{}, err

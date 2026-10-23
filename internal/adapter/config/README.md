@@ -73,6 +73,7 @@
 | `ENET_LISTEN_PORT` | нет | `7777` | UDP-порт ENet host; 1–65535 |
 | `ENET_PEER_LIMIT` | нет | `64` | Макс. одновременных ENet peers |
 | `ENET_ADMIT_TIMEOUT` | нет | `10s` | Deadline connect→admit; просроченный peer отключается |
+| `ENET_SERVICE_TIMEOUT_MS` | нет | `1` | Бюджет host.Service итерации = потолок latency очереди команд HostLoop; >0 |
 
 Валидация — `transport/enet.EnetConfig.Validate()` (вызывается в `loadEnetFromEnv` и повторно в `cmd/rooms` после копирования transport-лимитов).
 

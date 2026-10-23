@@ -116,7 +116,14 @@ func processOutgoingEvents(peer *Peer) {
 				// Ошибка записи — соединение мертво (закрыт извне, сетевой
 				// сбой): продолжать бессмысленно — закрываем и выходим,
 				// иначе Error логируется на каждый кадр очереди.
-				peer.logger.Error("error sending frame, closing connection", "error", err)
+				// Если соединение уже помечено неживым — это ожидаемый
+				// teardown (evict/leave/Stop закрыл conn раньше кадра),
+				// не сбой: Debug вместо Error.
+				if peer.connection.IsAlive() {
+					peer.logger.Error("error sending frame, closing connection", "error", err)
+				} else {
+					peer.logger.Debug("send on already closed connection, closing", "error", err)
+				}
 				_ = peer.connection.Close()
 				return
 			}
