@@ -54,6 +54,32 @@ caller не держит `r.mutex`, блокируясь на `r.lifecycle`/`req
 
 Не трогать: codec, transport, delivery, usecase, остальные планы.
 
+## Implemented (решения после grill-with-docs)
+
+- **Окно в `Replace`** — принято: два независимых dispatch'а, между ними
+  peerID может отсутствовать в `r.peers` (~мкс, внутри одного loop'а).
+  Семантика честная: «leave, потом join». Тику в окне делать нечего
+  (peer нет ни в peers, ни в state — prune не затрагивается).
+- **Ошибка `OnLeave` после удаления** — принято: `delete(peers)` до
+  `OnLeave`. Выход всегда финальный; при откате broadcast state-запись
+  вычищается следующим prune-тиком. Альтернатива (delete после успеха)
+  оставляла бы зомби-членство при ошибке — хуже.
+- **Дубликат `Join`** — поведение сохранено: `peers[id]=peer` молча
+  перезаписывает (как и раньше). Дедупликация reconnect — ответственность
+  `Replace`, не `Join`.
+- **Stale-инъекция в тестах** — механизм сместился: уходящий peer вне
+  broadcast'а, stale-запись создаётся падением `Deliver` у выжившего
+  (откат state). Обновлены `master_recovery_test.go` (комнаты 92/93) и
+  `flakyLeaveOp` в property-харнесе; `capturePeer` получил `setErr`.
+- **Митигация снята** — `WithRoomPatchInterval(1s)` убран из всех трёх
+  e2e, они работают на реальном 50ms тике. Опция оставлена в env как
+  общий инструмент настройки тика.
+- **Регрессия** — `TestLifecyclePeerRegistryOrdering`: spy-policy
+  проверяет `GetPeer` внутри `OnJoin` (виден) и `OnLeave`
+  (`ErrPeerNotFound`) — точка наблюдения тиков.
+- **Проверено**: `pruning stale peer` — 0 вхождений в логах WS e2e и
+  tagged Docker-прогона (все три e2e, 116s).
+
 ## Верификация
 
 - `go build ./... && go vet ./... && ~/go/bin/golangci-lint run ./...`
