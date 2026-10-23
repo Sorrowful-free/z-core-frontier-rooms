@@ -7,6 +7,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
+	portmetrics "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/metrics"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 )
 
@@ -27,6 +28,7 @@ type masterMachine struct {
 	peer             realtime.Peer
 	masterlessLogged bool
 	logger           logging.Logger
+	metrics          portmetrics.Metrics
 }
 
 // masterEventKind - события триггеров, способные сменить master.
@@ -87,6 +89,12 @@ func (m *masterMachine) onPeerJoined(peer realtime.Peer, roomState *state.RoomSt
 	}
 	if first {
 		m.peer = peer
+		// Первое избрание - то же "назначение master", что и assign при
+		// перевыборах: считаем здесь, иначе первый элекшн комнаты
+		// невидим для master_elections_total. Эмит staged (до commit-
+		// точки join): откаченный join даёт лишний счёт - приближение
+		// то же, что у staged-эмита в assign.
+		m.metrics.MasterElected()
 	}
 	return nil
 }
@@ -234,6 +242,7 @@ func (m *masterMachine) assign(room realtime.Room, roomState *state.RoomState, m
 	}
 
 	m.peer = newMaster
+	m.metrics.MasterElected()
 	return nil
 }
 

@@ -25,7 +25,7 @@ func (discardLogger) Warn(string, ...any)  {}
 func (discardLogger) Fatal(string, ...any) {}
 
 func newTestReservation() *adapterreservation.Reservation {
-	return adapterreservation.NewReservation(discardLogger{})
+	return adapterreservation.NewReservation(discardLogger{}, nil)
 }
 
 func TestReserveAdmitRevoke_ReleasesSlot(t *testing.T) {

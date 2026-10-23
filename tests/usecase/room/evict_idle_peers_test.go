@@ -46,7 +46,7 @@ func TestEvictIdlePeers_DeadPeerEvicted(t *testing.T) {
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
 	leaveUC := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
-	uc := useroom.NewEvictIdlePeersUseCase(registry, leaveUC, logger)
+	uc := useroom.NewEvictIdlePeersUseCase(registry, leaveUC, logger, nil)
 	evicted, err := uc.RunOnce(context.Background())
 	if err != nil {
 		t.Fatalf("RunOnce: %v", err)
@@ -76,7 +76,7 @@ func TestEvictIdlePeers_AlivePeerSkipped(t *testing.T) {
 	peer.EXPECT().IsAlive().Return(true)
 
 	leaveUC := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
-	uc := useroom.NewEvictIdlePeersUseCase(registry, leaveUC, logger)
+	uc := useroom.NewEvictIdlePeersUseCase(registry, leaveUC, logger, nil)
 	evicted, err := uc.RunOnce(context.Background())
 	if err != nil {
 		t.Fatalf("RunOnce: %v", err)
@@ -132,7 +132,7 @@ func TestEvictIdlePeers_LeaveErrorTolerated(t *testing.T) {
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
 	leaveUC := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
-	uc := useroom.NewEvictIdlePeersUseCase(registry, leaveUC, logger)
+	uc := useroom.NewEvictIdlePeersUseCase(registry, leaveUC, logger, nil)
 	evicted, err := uc.RunOnce(context.Background())
 	if err != nil {
 		t.Fatalf("RunOnce: %v", err)
@@ -164,7 +164,7 @@ func TestStartIdlePeerSweep_StopWaitsForRunOnce(t *testing.T) {
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
 	leaveUC := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
-	uc := useroom.NewEvictIdlePeersUseCase(registry, leaveUC, logger)
+	uc := useroom.NewEvictIdlePeersUseCase(registry, leaveUC, logger, nil)
 	handle := useroom.StartIdlePeerSweep(context.Background(), uc, time.Millisecond, logger)
 	if handle == nil {
 		t.Fatal("handle = nil, want non-nil")

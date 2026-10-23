@@ -5,9 +5,13 @@ import (
 	"time"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
+	portmetrics "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/metrics"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/registry"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/reservation"
 )
+
+// Значение label `sweep` для SweepRan/OrphanAdmittedRevoked (bounded в адаптере).
+const sweepKindOrphanAdmitted = "orphan_admitted"
 
 // SweepOrphanAdmittedUseCase освобождает admitted-слоты без peer в room (шаг 4A).
 type SweepOrphanAdmittedUseCase struct {
@@ -15,6 +19,7 @@ type SweepOrphanAdmittedUseCase struct {
 	reservation  reservation.Reservation
 	orphanTTL    time.Duration
 	logger       logging.Logger
+	metrics      portmetrics.Metrics
 }
 
 func NewSweepOrphanAdmittedUseCase(
@@ -22,12 +27,14 @@ func NewSweepOrphanAdmittedUseCase(
 	reservation reservation.Reservation,
 	orphanTTL time.Duration,
 	logger logging.Logger,
+	m portmetrics.Metrics,
 ) *SweepOrphanAdmittedUseCase {
 	return &SweepOrphanAdmittedUseCase{
 		roomRegistry: roomRegistry,
 		reservation:  reservation,
 		orphanTTL:    orphanTTL,
 		logger:       logger,
+		metrics:      portmetrics.OrNoop(m),
 	}
 }
 
@@ -36,6 +43,8 @@ func (uc *SweepOrphanAdmittedUseCase) RunOnce(ctx context.Context) (int, error) 
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
+	// Проход sweep считается отдельно от обработанных записей (P19b).
+	uc.metrics.SweepRan(sweepKindOrphanAdmitted)
 
 	rooms, err := uc.roomRegistry.GetList(ctx)
 	if err != nil {
@@ -73,6 +82,9 @@ func (uc *SweepOrphanAdmittedUseCase) RunOnce(ctx context.Context) (int, error) 
 		}
 	}
 
+	if revoked > 0 {
+		uc.metrics.OrphanAdmittedRevoked(revoked)
+	}
 	return revoked, nil
 }
 

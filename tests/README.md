@@ -20,6 +20,8 @@ tests/
   domain/               — ValidateNickName, DecodeIncomingFrame
   domain/state/         — atomic apply patch (entity/component)
   adapter/registry/     — RoomRegistry, Shutdown
+  adapter/metrics/      — prometheus Metrics: counters/gauges через Gatherer, MetricsConfig.Validate
+  delivery/admin/       — GET /metrics admin listener'а: 200 + exposition-текст (app.Test)
   usecase/room/         — Create, Delete, GetList, IssueTicket, JoinRoom, LeaveRoom (gomock)
   testutil/peer/        — параметризуемый realtime.Peer: ping/alive/deliverErr + захват PeerEvent
   testutil/env/         — общий composition root: adapters + use cases + HTTP/WS routes на fiber.App
@@ -160,18 +162,20 @@ go test -fuzz=FuzzRoomStateDecode -fuzztime=30s ./tests/adapter/realtime/codec/
 | `tests/adapter/httpauth` | `HTTPAuthConfig.Validate` |
 | `tests/adapter/httplimits` | `HTTPLimitsConfig.Validate`, `Limits` rate + max rooms |
 | `tests/adapter/admission` | `AdmissionConfig.Validate`; round-trip ticket v3 (+ hostID в claims) + NickName, legacy v2 → `HostIDAny`, invalid nick, invalid/expired token, invalid credentials |
-| `tests/adapter/realtime` | `OnJoin` → `room.Send` без deadlock; откат map при `ErrJoinDenied`; Replace rollback policy; `PeerFactory` nick; concurrent `Deliver`/`Join`/`Leave` + `Stop` без паники; `Deliver` → `ErrQueueFull` / stopped; `Send` с `ExcludePeerID` не доставляет отправителю; `Peer.Stop` разблокирует `Receive` через `Close` |
+| `tests/adapter/realtime` | `OnJoin` → `room.Send` без deadlock; откат map при `ErrJoinDenied`; Replace rollback policy; `PeerFactory` nick; concurrent `Deliver`/`Join`/`Leave` + `Stop` без паники; `Deliver` → `ErrQueueFull` / stopped; `Send` с `ExcludePeerID` не доставляет отправителю; `Peer.Stop` разблокирует `Receive` через `Close`; metrics (P19b): первый `master_elections` на join, re-election на уходе мастера, двойной `Leave` не декрементит `active_peers`/`peer_leaves` повторно |
 | `tests/adapter/realtime/policy/state` | join/full/patch/master; `NewStateRoomPolicy` zero intervals → defaults; `PatchEntities` add/update/reject non-master; malformed payload → `ErrInRoomInvalidPayload` + wire mapping (все 5 in-room opcodes + вложенный patch-input); send-failure проброс из `OnJoin`/tick/broadcast (`testutil/peer` SetDeliverErr); nil-master recovery (tick-перевыбор + ленивый на RPC→master) |
 | `tests/domain` | `ValidateNickName` |
 | `tests/domain/state` | atomic `ApplyPatch` rollback на entity/component |
 | `tests/adapter/realtime/codec` | Round-trip `InputStateCodec`, `RpcStateCodec`, `RoomStateCodec` (full + patch); fuzz всех Decode/DecodePatch |
 | `tests/adapter/registry` | `GetRoom` → `ErrRoomNotFound`; `Shutdown`; `DeleteRoom` при concurrent `Deliver` без паники; `CreateRoom` ×2 с одним id — один победитель, проигравшая комната остановлена; `GetList` не блокируется медленным `Stop` |
-| `tests/adapter/reservation` | Reserve → Admit → Revoke; expiry sweep; идемпотентный `Revoke`; `State` (none / reserved / admitted); concurrent ops по разным комнатам |
+| `tests/adapter/reservation` | Reserve → Admit → Revoke; expiry sweep; идемпотентный `Revoke`; `State` (none / reserved / admitted); concurrent ops по разным комнатам; metrics (P19b): expired-slot в `Admit` → `reservation_ops{revoke}` + `reservation_active_slots`, lazy sweep на `Reserve` → revoke по удалённым |
+| `tests/adapter/metrics` | новые сигналы P19b через `Gather()`: queue-depth gauges, tick summary, `peer_send_errors`, `enet_host_peers`, host-loop latency summary, `reservation_active_slots`, `sweep_runs_total`, http histogram; `Noop`/`OrNoop` |
 | `tests/adapter/identity` | первый ID = 1; независимые room/peer; ctx cancel; wrap `MaxUint32` → 1; уникальность под конкуренцией |
 | `tests/usecase/room` | **Create** — success, rooms limit, ctx cancel, registry rollback + `errors.Join` на unregister; **Delete** — success, kick peers, room not found; **GetList**; **IssueTicket** — success, room/peer errors, slot held, orphan admitted cleanup, issue+revoke join; **JoinRoom** — validate error, room not found после validate, success, admit/join/revoke откаты, `errors.Join` при fail Revoke; **LeaveRoom** — success, not found, revoke idempotent; **EvictIdlePeers** — `RunOnce`: zombie peer evicted, alive skipped, per-peer error tolerated; **sweeps** — `SweepHandle.Stop` ждёт in-flight `RunOnce`, bad room пропускается (orphan sweep), nil-handle при `interval <= 0` |
 | `tests/delivery/http` | API key; rate limit 429 (create/issue/delete/list); rooms limit 503; create → list → delete; issue ticket; 409/404/400; `invalid_capacity` (0 и >127) |
 | `tests/delivery/ws` | невалидный token → `OpInvalidToken` frame + close; missing token → `OpEmptyToken`; malformed base64 → `OpInvalidToken`; issue ticket → join → peer в `Registry` → disconnect → leave |
 | `tests/adapter/transport/enet` | `EnetConfig.Validate` (defaults + граничные значения) |
+| `tests/delivery/admin` | `GET /metrics` happy path; падающий `Gatherer` → 500 с контекстом (P19b) |
 | `tests/delivery/enet` | stub-Listen чистый выход (без тега); e2e под `-tags enet` + cgo: bind-failure → `Err`, `Stop` ждёт loop, admit-timeout disconnect, join-reject доезжает (`DisconnectLater`) |
 | `tests/integration` | room lifecycle: create (host) → issue (joiner) → оба join по WS → 2 peers → joiner disconnect → 1 peer (host); e2e live match (`runLiveMatch` поверх `matchClient`): silent host → evict → master→slave, clean leave master-2 → master-3, slaves видят entities от 2+ мастеров и input друг друга; транспорты: WS (`TestE2E_LiveMatch_HostMigration`, ~60s, idle sweep evict), 4×ENet (`TestE2E_LiveMatch_ENet`, ~115s, libenet peer timeout ~10s, bound 70s), mixed ENet host + WS/ENet slaves (`TestE2E_LiveMatch_Mixed`, ~115s) — оба под `-tags enet` |
 

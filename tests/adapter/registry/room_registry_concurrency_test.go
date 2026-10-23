@@ -45,13 +45,13 @@ func TestCreateRoom_ConcurrentSameID_SingleWinner(t *testing.T) {
 	t.Parallel()
 
 	logger := stdlib.New("test")
-	inner := adapterrealtime.NewRoomFactory(logger, statepolicy.NewStateRoomPolicyFactory(logger), 0)
+	inner := adapterrealtime.NewRoomFactory(logger, statepolicy.NewStateRoomPolicyFactory(logger, nil), 0, nil)
 	factory := &gatingRoomFactory{
 		inner:   inner,
 		arrived: make(chan struct{}, 2),
 		gate:    make(chan struct{}),
 	}
-	reg := adapterregistry.NewRoomRegistry(context.Background(), factory, logger)
+	reg := adapterregistry.NewRoomRegistry(context.Background(), factory, logger, nil)
 	t.Cleanup(func() { _ = reg.Shutdown(context.Background()) })
 
 	const id = domain.RoomID(77)
@@ -158,8 +158,8 @@ func TestDeleteRoom_SlowStop_GetListNotBlocked(t *testing.T) {
 		entered: make(chan struct{}),
 		release: make(chan struct{}),
 	}
-	roomFactory := adapterrealtime.NewRoomFactory(logger, fixedPolicyFactory{policy: policy}, 0)
-	reg := adapterregistry.NewRoomRegistry(context.Background(), roomFactory, logger)
+	roomFactory := adapterrealtime.NewRoomFactory(logger, fixedPolicyFactory{policy: policy}, 0, nil)
+	reg := adapterregistry.NewRoomRegistry(context.Background(), roomFactory, logger, nil)
 	t.Cleanup(func() { _ = reg.Shutdown(context.Background()) })
 
 	const id = domain.RoomID(88)

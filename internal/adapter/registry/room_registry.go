@@ -8,6 +8,7 @@ import (
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
+	portmetrics "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/metrics"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 )
 
@@ -16,17 +17,19 @@ type RoomRegistry struct {
 	mutex       sync.RWMutex
 	rooms       map[domain.RoomID]realtime.Room
 	logger      logging.Logger
+	metrics     portmetrics.Metrics
 
 	lifecycle       context.Context
 	lifecycleCancel context.CancelFunc
 }
 
-func NewRoomRegistry(lifecycle context.Context, roomFactory realtime.RoomFactory, logger logging.Logger) *RoomRegistry {
+func NewRoomRegistry(lifecycle context.Context, roomFactory realtime.RoomFactory, logger logging.Logger, m portmetrics.Metrics) *RoomRegistry {
 	lifecycle, lifecycleCancel := context.WithCancel(lifecycle)
 	return &RoomRegistry{
 		roomFactory:     roomFactory,
 		rooms:           make(map[domain.RoomID]realtime.Room),
 		logger:          logger,
+		metrics:         portmetrics.OrNoop(m),
 		lifecycle:       lifecycle,
 		lifecycleCancel: lifecycleCancel,
 	}
@@ -66,6 +69,9 @@ func (r *RoomRegistry) CreateRoom(ctx context.Context, id domain.RoomID, capacit
 		return nil, fmt.Errorf("%w: %d", domain.ErrRoomAlreadyExists, id)
 	}
 	r.rooms[id] = room
+	// Gauge пересчитывается по map, а не инкрементами - самолечится
+	// от любых рассинхронов счётчиков.
+	r.metrics.SetActiveRooms(len(r.rooms))
 	r.mutex.Unlock()
 
 	return room, nil
@@ -99,6 +105,7 @@ func (r *RoomRegistry) DeleteRoom(ctx context.Context, id domain.RoomID) error {
 		return fmt.Errorf("%w: %d", domain.ErrRoomNotFound, id)
 	}
 	delete(r.rooms, id)
+	r.metrics.SetActiveRooms(len(r.rooms))
 	r.mutex.Unlock()
 
 	if err := room.Stop(); err != nil {

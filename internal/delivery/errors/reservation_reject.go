@@ -16,8 +16,9 @@ func ReservationRejectOpCode(err error) domain.OpCode {
 }
 
 // SendReservationReject sends one reject frame before the transport is closed.
-func SendReservationReject(conn transport.Connection, err error) {
-	sendErrorFrame(conn, ReservationRejectOpCode(err))
+// Ошибка send возвращается caller'у (безопасно игнорировать).
+func SendReservationReject(conn transport.Connection, err error) error {
+	return sendErrorFrame(conn, ReservationRejectOpCode(err))
 }
 
 // IsReservationRejectOpCode reports whether op belongs to the reservation reject range (0x70–0x7F).

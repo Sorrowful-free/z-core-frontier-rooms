@@ -33,7 +33,7 @@ type shardClient struct {
 func newShardClient(t *testing.T, port uint16) *shardClient {
 	t.Helper()
 
-	loop, err := adapterenet.NewHostLoop(nil, 1, 2)
+	loop, err := adapterenet.NewHostLoop(nil, 1, 2, nil)
 	if err != nil {
 		t.Fatalf("client host: %v", err)
 	}

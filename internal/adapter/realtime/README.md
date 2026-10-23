@@ -2,6 +2,8 @@
 
 Runtime комнаты: `Room`, `Peer`, фабрики.
 
+Фабрики (`NewRoomFactory`, `NewPeerFactory`) принимают `port/metrics.Metrics` (nil-safe) и вливают его полем в создаваемые `Room`/`Peer` — сигнатуры `NewRoom`/`NewPeer` остаются стабильными для white-box тестов (умолчание `Noop`). Эмит: joins/leaves + gauge `active_peers` на lifecycle-переходах (**по факту мутации `peers` map** - повторный join/leave того же peer'а не даёт дрейф, P19b), drops переполненных `incoming`/`outbound`, gauge-сэмплы глубины обеих очередей (`len(chan)` на enqueue/dequeue, приближение), duration тиков `rooms_room_tick_seconds{kind}`, ошибки send на живом соединении `rooms_peer_send_errors_total` (ожидаемый teardown `!IsAlive` не считается).
+
 ## Room
 
 Один goroutine event loop (`processRoomEvents`):

@@ -5,6 +5,7 @@ import (
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
+	portmetrics "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/metrics"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport"
 )
@@ -12,12 +13,14 @@ import (
 type PeerFactory struct {
 	logger        logging.Logger
 	outboundQueue int
+	metrics       portmetrics.Metrics
 }
 
-func NewPeerFactory(logger logging.Logger, outboundQueue int) *PeerFactory {
+func NewPeerFactory(logger logging.Logger, outboundQueue int, m portmetrics.Metrics) *PeerFactory {
 	return &PeerFactory{
 		logger:        logger,
 		outboundQueue: outboundQueue,
+		metrics:       portmetrics.OrNoop(m),
 	}
 }
 
@@ -29,5 +32,7 @@ func (f *PeerFactory) CreatePeer(ctx context.Context, id domain.PeerID, nickName
 	if logger == nil {
 		logger = f.logger
 	}
-	return NewPeer(ctx, id, nickName, connection, room, f.outboundQueue, logger), nil
+	peer := NewPeer(ctx, id, nickName, connection, room, f.outboundQueue, logger)
+	peer.metrics = f.metrics
+	return peer, nil
 }

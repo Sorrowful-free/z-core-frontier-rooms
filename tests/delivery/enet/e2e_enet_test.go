@@ -36,7 +36,7 @@ type enetTestClient struct {
 
 func newEnetTestClient(t *testing.T, port uint16) *enetTestClient {
 	t.Helper()
-	loop, err := adapterenet.NewHostLoop(nil, 1, 2)
+	loop, err := adapterenet.NewHostLoop(nil, 1, 2, nil)
 	if err != nil {
 		t.Fatalf("client host: %v", err)
 	}
@@ -85,6 +85,7 @@ func newTestHandler(cfg adapterenet.EnetConfig) *deliveryenet.RoomsHandler {
 		admissionadapter.NewAdmission(admissionadapter.AdmissionConfig{Secret: []byte("test-secret"), TTL: time.Hour}),
 		cfg,
 		discardLogger{},
+		nil,
 	)
 }
 

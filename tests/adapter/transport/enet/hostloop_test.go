@@ -16,7 +16,7 @@ import (
 
 func mustLoop(t *testing.T) *adapterenet.HostLoop {
 	t.Helper()
-	loop, err := adapterenet.NewHostLoop(nil, 8, 2)
+	loop, err := adapterenet.NewHostLoop(nil, 8, 2, nil)
 	if err != nil {
 		t.Fatalf("NewHostLoop: %v", err)
 	}

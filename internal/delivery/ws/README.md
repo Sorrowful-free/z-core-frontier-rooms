@@ -19,6 +19,8 @@ Ticket по-прежнему в query (контракт клиента). Стр�
 
 Нет `token` в query — reject-кадр `OpEmptyToken` (`0x40`) → close; битый base64url — `OpInvalidToken` (`0x41`); token длиннее `MaxIncomingFrameBytes` — close **без** кадра (паритет с oversize-пакетом ENet).
 
+Каждый **успешно отправленный** reject-кадр считается метрикой `rooms_join_rejects_total{opcode}` (P19b: `SendJoinReject` возвращает ошибку send; `sendJoinReject` эмитит `JoinRejected(op)` только при nil, ошибка - Warn-лог).
+
 Idle peer'ы выводятся sweep'ом (`EvictIdlePeersUseCase`), когда соединение перестаёт подтверждать живость: входящие кадры и pong двигают `lastSeen`, `Send` — нет; мёртвый транспорт → `IsAlive() = false` → молчаливый `Close` через `LeaveRoom` (ADR 0001).
 
 Импорт ошибок: `deliveryerrors ".../delivery/errors"`.

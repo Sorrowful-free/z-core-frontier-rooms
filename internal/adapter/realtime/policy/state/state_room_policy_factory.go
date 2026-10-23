@@ -3,21 +3,24 @@ package state
 import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/codec"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
+	portmetrics "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/metrics"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/policy"
 )
 
 type StateRoomPolicyFactory struct {
-	logger logging.Logger
+	logger  logging.Logger
+	metrics portmetrics.Metrics
 }
 
-func NewStateRoomPolicyFactory(logger logging.Logger) *StateRoomPolicyFactory {
+func NewStateRoomPolicyFactory(logger logging.Logger, m portmetrics.Metrics) *StateRoomPolicyFactory {
 	return &StateRoomPolicyFactory{
-		logger: logger,
+		logger:  logger,
+		metrics: portmetrics.OrNoop(m),
 	}
 }
 
 func (f *StateRoomPolicyFactory) CreateRoomPolicy() policy.RoomPolicy {
-	return NewStateRoomPolicy(
+	p := NewStateRoomPolicy(
 		f.logger,
 		codec.NewRoomStateCodec(),
 		codec.NewEntitiesStateCodec(),
@@ -26,4 +29,8 @@ func (f *StateRoomPolicyFactory) CreateRoomPolicy() policy.RoomPolicy {
 		DefaultFullStateInterval,
 		DefaultPatchStateInterval,
 	)
+	// Счётчик master-elections живёт в машине эпизодов; вливается
+	// полем, чтобы сигнатура NewStateRoomPolicy осталась стабильной.
+	p.master.metrics = f.metrics
+	return p
 }

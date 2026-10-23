@@ -20,23 +20,23 @@ import (
 	httplimitsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httplimits"
 	identityadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/identity"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/stdlib"
+	metricsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/metrics"
 	adapterrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/codec"
 	statepolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy/state"
 	adapterregistry "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/registry"
 	adapterreservation "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
 	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
 	adapterenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"
 	transportws "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/ws"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/admin"
 	deliveryenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/enet"
 	deliveryhttp "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/http"
 	deliveryws "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/ws"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	portadmission "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/admission"
 	portidentity "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/identity"
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
+	portmetrics "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/metrics"
 	portrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
-	portpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/policy"
 	portregistry "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/registry"
 	portreservation "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/reservation"
 	portenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/enet"
@@ -54,6 +54,11 @@ type Env struct {
 	Admission   portadmission.Admission
 	Allocator   portidentity.Allocator
 
+	// Metrics - реальный prometheus-адаптер (только с WithMetrics);
+	// Admin - admin Fiber-app с GET /metrics на том же fiber.Test-клиенте.
+	Metrics *metricsadapter.Metrics
+	Admin   *fiber.App
+
 	wsMu       sync.Mutex
 	wsListener net.Listener
 	wsAddr     string
@@ -67,6 +72,7 @@ type options struct {
 	httpLimits        httplimitsadapter.HTTPLimitsConfig
 	transport         adaptertransport.TransportConfig
 	idleSweepInterval time.Duration
+	metrics           bool     // WithMetrics: реальный adapter/metrics + admin app
 	enet              bool     // выставляется tagged-опцией WithEnet (env_enet.go)
 	enetPorts         []uint16 // 0-элемент = auto (свободный порт)
 }
@@ -92,6 +98,17 @@ func WithHTTPLimits(cfg httplimitsadapter.HTTPLimitsConfig) Option {
 func WithTransport(cfg adaptertransport.TransportConfig) Option {
 	return func(o *options) {
 		o.transport = cfg
+	}
+}
+
+// WithMetrics подключает продовую телеметрию (P19b): реальный
+// metricsadapter.Metrics вливается во все метрико-ёмкие компоненты
+// (фабрики, registry, reservation, handlers, sweeps), на публичный app
+// ставится HTTP metrics middleware, а Env.Admin получает admin app
+// с GET /metrics (тот же fiber.Test-клиент, что и Env.App).
+func WithMetrics() Option {
+	return func(o *options) {
+		o.metrics = true
 	}
 }
 
@@ -129,13 +146,27 @@ func New(t *testing.T, opts ...Option) *Env {
 		t.Fatalf("httplimits.New: %v", err)
 	}
 
-	logger := stdlib.New("test-env")
-	roomPolicyFactory := newRoomPolicyFactory(logger)
-	roomFactory := adapterrealtime.NewRoomFactory(logger, roomPolicyFactory, cfg.transport.RoomIncomingQueueSize)
-	peerFactory := adapterrealtime.NewPeerFactory(logger, cfg.transport.PeerOutboundQueueSize)
+	// Телеметрия opt-in (WithMetrics): реальный prometheus-адаптер;
+	// без опции - nil → Noop в каждом конструкторе, как раньше.
+	var metricsAdapter *metricsadapter.Metrics
+	var m portmetrics.Metrics
+	if cfg.metrics {
+		metricsAdapter, err = metricsadapter.New(metricsadapter.MetricsConfig{})
+		if err != nil {
+			t.Fatalf("metrics.New: %v", err)
+		}
+		m = metricsAdapter
+	}
 
-	registry := adapterregistry.NewRoomRegistry(context.Background(), roomFactory, logger)
-	reservation := adapterreservation.NewReservation(logger)
+	logger := stdlib.New("test-env")
+	// Продовая фабрика policy (та же сборка, что cmd/rooms): metrics
+	// попадает в master-машину полем внутри фабрики.
+	roomPolicyFactory := statepolicy.NewStateRoomPolicyFactory(logger, m)
+	roomFactory := adapterrealtime.NewRoomFactory(logger, roomPolicyFactory, cfg.transport.RoomIncomingQueueSize, m)
+	peerFactory := adapterrealtime.NewPeerFactory(logger, cfg.transport.PeerOutboundQueueSize, m)
+
+	registry := adapterregistry.NewRoomRegistry(context.Background(), roomFactory, logger, m)
+	reservation := adapterreservation.NewReservation(logger, m)
 	admission := admissionadapter.NewAdmission(admissionadapter.AdmissionConfig{
 		Secret: []byte("test-secret"),
 		TTL:    time.Hour,
@@ -166,7 +197,7 @@ func New(t *testing.T, opts ...Option) *Env {
 		enetCfg.ServiceTimeoutMs = 1
 		enetPorts = enetCfg.ListenPorts
 		enetHandler = deliveryenet.NewRoomsHandler(context.Background(), joinUC, leaveUC,
-			adapterenet.NewEnetConnectionFactory(nil, logger), admission, enetCfg, logger)
+			adapterenet.NewEnetConnectionFactory(nil, logger), admission, enetCfg, logger, m)
 	}
 
 	// Handler (когда ENet включён) - HostRegistry: strict binding ticket'ов
@@ -180,15 +211,23 @@ func New(t *testing.T, opts ...Option) *Env {
 
 	var idleSweep *useroom.SweepHandle
 	if cfg.idleSweepInterval > 0 {
-		evictIdleUC := useroom.NewEvictIdlePeersUseCase(registry, leaveUC, logger)
+		evictIdleUC := useroom.NewEvictIdlePeersUseCase(registry, leaveUC, logger, m)
 		idleSweep = useroom.StartIdlePeerSweep(context.Background(), evictIdleUC, cfg.idleSweepInterval, logger)
 	}
 
 	app := fiber.New()
+	if m != nil {
+		app.Use(deliveryhttp.NewMetricsMiddleware(m))
+	}
 	deliveryhttp.NewRoomsHandler(createUC, issueUC, deleteUC, getListUC, logger).
 		RegisterRoutes(app, cfg.httpAuth, limits)
-	deliveryws.NewRoomsHandler(context.Background(), joinUC, leaveUC, connectionFactory, cfg.transport, logger).
+	deliveryws.NewRoomsHandler(context.Background(), joinUC, leaveUC, connectionFactory, cfg.transport, logger, m).
 		RegisterRoutes(app)
+
+	var adminApp *fiber.App
+	if metricsAdapter != nil {
+		adminApp = admin.NewMetricsApp(metricsAdapter.Gatherer(), logger)
+	}
 
 	e := &Env{
 		App:         app,
@@ -196,6 +235,8 @@ func New(t *testing.T, opts ...Option) *Env {
 		Reservation: reservation,
 		Admission:   admission,
 		Allocator:   allocator,
+		Metrics:     metricsAdapter,
+		Admin:       adminApp,
 		enetPorts:   enetPorts,
 	}
 
@@ -221,6 +262,9 @@ func New(t *testing.T, opts ...Option) *Env {
 		e.closeWSListener()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+		if e.Admin != nil {
+			_ = e.Admin.ShutdownWithContext(shutdownCtx)
+		}
 		_ = e.App.ShutdownWithContext(shutdownCtx)
 		_ = e.Registry.Shutdown(shutdownCtx)
 	})
@@ -316,28 +360,6 @@ func (e *Env) closeWSListener() {
 		_ = e.wsListener.Close()
 		e.wsListener = nil
 	}
-}
-
-// roomPolicyFactory — фабрика policy с продовыми дефолтами тиков
-// (интервалы <=0 нормализуются внутри NewStateRoomPolicy).
-type roomPolicyFactory struct {
-	logger logging.Logger
-}
-
-func newRoomPolicyFactory(logger logging.Logger) *roomPolicyFactory {
-	return &roomPolicyFactory{logger: logger}
-}
-
-func (f *roomPolicyFactory) CreateRoomPolicy() portpolicy.RoomPolicy {
-	return statepolicy.NewStateRoomPolicy(
-		f.logger,
-		codec.NewRoomStateCodec(),
-		codec.NewEntitiesStateCodec(),
-		codec.NewInputStateCodec(),
-		codec.NewRpcStateCodec(),
-		0, // full — дефолт 4s
-		0, // patch — дефолт
-	)
 }
 
 // freeUDPPort резервирует свободный UDP-порт (bind :0 → close) для ENet listener'а.

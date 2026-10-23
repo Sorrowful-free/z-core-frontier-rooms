@@ -5,6 +5,7 @@ import (
 	httpauthadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httpauth"
 	httplimitsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httplimits"
 	zaplogadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/zap"
+	metricsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/metrics"
 	reservationadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
 	serveradapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/server"
 	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
@@ -21,4 +22,5 @@ type Config struct {
 	Reservation reservationadapter.ReservationConfig
 	Transport   adaptertransport.TransportConfig
 	Enet        enetadapter.EnetConfig
+	Metrics     metricsadapter.MetricsConfig
 }

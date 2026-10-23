@@ -12,6 +12,7 @@ import (
 	httpauthadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httpauth"
 	httplimitsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httplimits"
 	zaplogadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/zap"
+	metricsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/metrics"
 	reservationadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
 	serveradapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/server"
 	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
@@ -50,6 +51,8 @@ const (
 	envEnetPeerLimit        = "ENET_PEER_LIMIT"
 	envEnetAdmitTimeout     = "ENET_ADMIT_TIMEOUT"
 	envEnetServiceTimeoutMs = "ENET_SERVICE_TIMEOUT_MS"
+
+	envAdminListenAddr = "ADMIN_LISTEN_ADDR"
 )
 
 // LoadFromEnv читает переменные окружения и собирает Config.
@@ -86,6 +89,10 @@ func LoadFromEnv() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	metricsCfg, err := loadMetricsFromEnv()
+	if err != nil {
+		return nil, err
+	}
 	return &Config{
 		Logging:     logging,
 		Server:      serverCfg,
@@ -95,7 +102,20 @@ func LoadFromEnv() (*Config, error) {
 		Reservation: reservationCfg,
 		Transport:   transportCfg,
 		Enet:        enetCfg,
+		Metrics:     metricsCfg,
 	}, nil
+}
+
+// loadMetricsFromEnv собирает metrics.MetricsConfig: ADMIN_LISTEN_ADDR —
+// admin listener `GET /metrics`; пустой (дефолт) — endpoint отключён.
+func loadMetricsFromEnv() (metricsadapter.MetricsConfig, error) {
+	cfg := metricsadapter.MetricsConfig{
+		AdminListenAddr: strings.TrimSpace(os.Getenv(envAdminListenAddr)),
+	}
+	if err := cfg.Validate(); err != nil {
+		return metricsadapter.MetricsConfig{}, err
+	}
+	return cfg, nil
 }
 
 func loadLoggingFromEnv() (zaplogadapter.RootConfig, error) {

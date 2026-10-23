@@ -57,7 +57,7 @@ func newEnetClient(t *testing.T, e *env.Env, nick, token string, port uint16) *e
 		t.Fatalf("[%s] decode ticket token: %v", nick, err)
 	}
 
-	loop, err := adapterenet.NewHostLoop(nil, 1, 2)
+	loop, err := adapterenet.NewHostLoop(nil, 1, 2, nil)
 	if err != nil {
 		t.Fatalf("[%s] enet host: %v", nick, err)
 	}

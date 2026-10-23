@@ -36,6 +36,10 @@ _Avoid_: phantom input, stale input
 Период, когда в комнате есть живые peers, но `p.master == nil` — обычно после упавшего election. Переизбрание идёт на patch-тиках и лениво при RPC→master; `Error` об эпизоде логируется один раз (не на каждый тик), `Info` — при восстановлении.
 _Avoid_: election gap, missing master
 
+**Admin listener**:
+Отдельный Fiber-инстанс вне публичного API (`ADMIN_LISTEN_ADDR`, пустой дефолт = выключен): служебные endpoint'ы процесса, сейчас `GET /metrics` (prometheus exposition, P19). Не путать с REST control plane на `HTTP_ADDR` — там auth + rate limits, тут голая телеметрия для scrape.
+_Avoid_: metrics port, health server, internal API
+
 **Master election semantics**:
 Правила выбора master в `StateRoomPolicy`: stale-кандидаты (`ErrPeerNotFound` от `GetPeer` — peer в state, но не в room) пропускаются, выборы идут среди живых; все stale → пустые выборы (`PeerIDInvalid`, не ошибка); прочие ошибки `GetPeer` фейлят выборы; `IsMaster`-флаги пишутся в state только после успешной проверки избранного peer (validate-first) — state не рекламирует master, которого нет у policy.
 _Avoid_: quorum, leader election

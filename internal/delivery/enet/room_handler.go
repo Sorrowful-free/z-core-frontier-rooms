@@ -9,6 +9,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	portadmission "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/admission"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
+	portmetrics "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/metrics"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/enet"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
 )
@@ -34,12 +35,13 @@ type RoomsHandler struct {
 	connectionFactory enet.EnetConnectionFactory
 	admission         portadmission.Admission
 	logger            logging.Logger
+	metrics           portmetrics.Metrics
 	cfg               transportenet.EnetConfig
 	hosts             []*enetHost
 	assignRR          atomic.Uint64
 }
 
-func NewRoomsHandler(ctx context.Context, joinRoomUseCase *room.JoinRoomUseCase, leaveRoomUseCase *room.LeaveRoomUseCase, connectionFactory enet.EnetConnectionFactory, admission portadmission.Admission, cfg transportenet.EnetConfig, logger logging.Logger) *RoomsHandler {
+func NewRoomsHandler(ctx context.Context, joinRoomUseCase *room.JoinRoomUseCase, leaveRoomUseCase *room.LeaveRoomUseCase, connectionFactory enet.EnetConnectionFactory, admission portadmission.Admission, cfg transportenet.EnetConfig, logger logging.Logger, m portmetrics.Metrics) *RoomsHandler {
 	hosts := make([]*enetHost, len(cfg.ListenPorts))
 	for i, port := range cfg.ListenPorts {
 		hosts[i] = &enetHost{id: domain.HostID(i + 1), port: port}
@@ -51,6 +53,7 @@ func NewRoomsHandler(ctx context.Context, joinRoomUseCase *room.JoinRoomUseCase,
 		connectionFactory: connectionFactory,
 		admission:         admission,
 		logger:            logger,
+		metrics:           portmetrics.OrNoop(m),
 		cfg:               cfg,
 		hosts:             hosts,
 	}

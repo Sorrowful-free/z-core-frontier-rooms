@@ -40,6 +40,7 @@ func (h *RoomsHandler) run(ctx context.Context, host *enetHost) error {
 		libenet.NewListenAddress(host.port),
 		h.cfg.PeerLimit,
 		h.cfg.ChannelLimit,
+		h.metrics,
 	)
 	if err != nil {
 		return fmt.Errorf("enet host create port %d: %w", host.port, err)
@@ -100,7 +101,7 @@ func (h *RoomsHandler) dispatchEvent(
 		return
 
 	case libenet.EventConnect:
-		sess := newPeerSession(host, loop, ev.GetPeer(), connFactory, h.cfg.EnetIncomingQueueSize)
+		sess := newPeerSession(host, loop, ev.GetPeer(), connFactory, h.cfg.EnetIncomingQueueSize, h.metrics)
 		sessions[sess.id] = sess
 		h.logger.Info("enet peer connected", "enet_peer_id", sess.id, "hostID", host.id)
 
@@ -124,7 +125,13 @@ func (h *RoomsHandler) dispatchEvent(
 				return
 			}
 			if err := h.admit(ctx, host, sess, data); err != nil {
-				deliveryerrors.SendJoinReject(sess.conn, err)
+				// Счётчик считает отправленные reject-кадры, не попытки
+				// (P19b): эмит только при успешном send, ошибка - в лог.
+				if sendErr := deliveryerrors.SendJoinReject(sess.conn, err); sendErr != nil {
+					h.logger.Warn("enet join reject send failed", "error", sendErr, "enet_peer_id", id)
+				} else {
+					h.metrics.JoinRejected(deliveryerrors.JoinRejectOpCode(err))
+				}
 				// Graceful close: conn.Close кладёт DisconnectLater в очередь
 				// loop'а - сначала на провод уходит queued reliable reject
 				// (тот же FIFO), затем disconnect (P7: reject доезжает).
@@ -147,6 +154,7 @@ func (h *RoomsHandler) dispatchEvent(
 		}
 		if !sess.deliver(frame) {
 			h.logger.Warn("enet incoming queue full, dropping frame", "enet_peer_id", id)
+			h.metrics.EnetIncomingDropped()
 		}
 
 	case libenet.EventDisconnect:

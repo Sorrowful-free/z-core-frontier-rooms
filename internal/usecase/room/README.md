@@ -65,6 +65,8 @@ VerifyRoomPassword (только Delete) → GetRoom → kick all peers (LeaveRo
 
 Оба sweep (`StartIdlePeerSweep`, `StartOrphanAdmittedSweep`) возвращают `*SweepHandle`: `Stop()` отменяет ctx и ждёт завершения горутины, включая in-flight `RunOnce`.
 
+Sweep-use-case'ы принимают `port/metrics.Metrics` (nil-safe) и считают обработанные записи за проход: `rooms_sweep_processed_total{sweep="idle_peers"}` / `{sweep="orphan_admitted"}` (P19), а каждый проход - `rooms_sweep_runs_total{sweep=...}` (P19b, отдельно от processed).
+
 ## HTTP / transport
 
 Вызываются из `delivery/http`, `delivery/ws`, `delivery/enet` — см. их README.

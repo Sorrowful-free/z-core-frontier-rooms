@@ -7,5 +7,6 @@ In-memory `RoomRegistry`. Порт: `port/registry`.
 - `DeleteRoom`: снятие с реестра под локом, `room.Stop()` вне лока (ошибка stop — в лог, комната остаётся снятой)
 - Lifecycle `context.Context` на комнату
 - `Shutdown` — остановка всех комнат при завершении процесса
+- `NewRoomRegistry(ctx, roomFactory, logger, metrics)` — `metrics` (`port/metrics`, nil-safe): gauge `active_rooms` пересчитывается по `len(rooms)` при Create/Delete
 
 Ошибки: `domain.ErrRoomNotFound`, `ErrRoomAlreadyExists`.

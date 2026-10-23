@@ -13,7 +13,7 @@ func TestPeerFactory_CreatePeerSetsNickName(t *testing.T) {
 	t.Parallel()
 
 	logger := stdlib.New("peer-factory-test")
-	factory := adapterrealtime.NewPeerFactory(logger, 0)
+	factory := adapterrealtime.NewPeerFactory(logger, 0, nil)
 	room := adapterrealtime.NewRoom(
 		context.Background(),
 		domain.RoomID(1),

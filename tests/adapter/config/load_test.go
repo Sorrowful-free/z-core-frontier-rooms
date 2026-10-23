@@ -433,3 +433,42 @@ func TestLoadFromEnv_EnetInvalid(t *testing.T) {
 		})
 	}
 }
+
+// P19: ADMIN_LISTEN_ADDR - пустой дефолт = admin listener выключен.
+func TestLoadFromEnv_MetricsDefaults(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	t.Setenv("ADMIN_LISTEN_ADDR", "")
+
+	cfg, err := appconfig.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv: %v", err)
+	}
+	if cfg.Metrics.AdminListenAddr != "" {
+		t.Fatalf("admin listen addr = %q, want empty (disabled)", cfg.Metrics.AdminListenAddr)
+	}
+}
+
+func TestLoadFromEnv_MetricsAdminAddr(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	t.Setenv("ADMIN_LISTEN_ADDR", ":9091")
+
+	cfg, err := appconfig.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv: %v", err)
+	}
+	if cfg.Metrics.AdminListenAddr != ":9091" {
+		t.Fatalf("admin listen addr = %q, want :9091", cfg.Metrics.AdminListenAddr)
+	}
+}
+
+func TestLoadFromEnv_MetricsAdminAddrInvalid(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	t.Setenv("ADMIN_LISTEN_ADDR", "not-an-addr")
+
+	if _, err := appconfig.LoadFromEnv(); err == nil {
+		t.Fatal("expected error for invalid ADMIN_LISTEN_ADDR")
+	}
+}

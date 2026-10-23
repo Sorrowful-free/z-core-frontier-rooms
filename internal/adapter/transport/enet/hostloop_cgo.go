@@ -6,8 +6,11 @@ import (
 	"container/list"
 	"errors"
 	"sync"
+	"time"
 
 	libenet "github.com/codecat/go-enet"
+
+	portmetrics "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/metrics"
 )
 
 // ErrHostLoopStopped возвращается submit'ам, пришедшим после Stop: loop больше
@@ -40,19 +43,23 @@ type HostLoop struct {
 	notify   chan struct{} // cap-1 будильник executor'а
 	done     chan struct{} // закрыт после host.Destroy
 	stopOnce sync.Once
+
+	metrics portmetrics.Metrics
 }
 
 type hostLoopCommand struct {
-	fn  func() error
-	ack chan struct{} // != nil у blocking-команд: закрывается после исполнения
-	err error
+	fn         func() error
+	ack        chan struct{} // != nil у blocking-команд: закрывается после исполнения
+	err        error
+	enqueuedAt time.Time // момент постановки в очередь: сэмпл queue latency
 }
 
 // NewHostLoop создаёт libenet host (addr = NewListenAddress для сервера, nil
 // для клиентского host'а) и запускает его loop-горутину. Host наружу не
 // отдаётся как "живой" объект: вся работа с ним - через Call/Do/enqueue
-// (Host() - только внутри таких команд).
-func NewHostLoop(addr libenet.Address, peerLimit, channelLimit uint64) (*HostLoop, error) {
+// (Host() - только внутри таких команд). m - телеметрия ожидания команд в
+// очереди (nil-safe, Noop).
+func NewHostLoop(addr libenet.Address, peerLimit, channelLimit uint64, m portmetrics.Metrics) (*HostLoop, error) {
 	host, err := libenet.NewHost(addr, peerLimit, channelLimit, 0, 0)
 	if err != nil {
 		return nil, err
@@ -63,6 +70,7 @@ func NewHostLoop(addr libenet.Address, peerLimit, channelLimit uint64) (*HostLoo
 		accepting: true,
 		notify:    make(chan struct{}, 1),
 		done:      make(chan struct{}),
+		metrics:   portmetrics.OrNoop(m),
 	}
 	go l.run()
 	return l, nil
@@ -120,6 +128,7 @@ func (l *HostLoop) submit(cmd *hostLoopCommand, async bool) error {
 		l.mu.Unlock()
 		return ErrHostLoopStopped
 	}
+	cmd.enqueuedAt = time.Now()
 	l.queue.PushBack(cmd)
 	l.mu.Unlock()
 	select {
@@ -170,6 +179,9 @@ func (l *HostLoop) run() {
 }
 
 func (l *HostLoop) exec(cmd *hostLoopCommand) {
+	// Queue latency: enqueue → начало исполнения (P19b). Команды drain
+	// учитываются так же - их ожидание тоже было реальным.
+	l.metrics.EnetHostLoopQueueLatency(time.Since(cmd.enqueuedAt))
 	cmd.err = cmd.fn()
 	if cmd.ack != nil {
 		close(cmd.ack)

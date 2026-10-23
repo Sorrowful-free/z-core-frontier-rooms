@@ -49,4 +49,4 @@ Env — [adapter/httplimits/README.md](../../adapter/httplimits/README.md).
 
 ## Файлы
 
-`rooms.go` — handlers; `auth_middleware.go` — API key; `rate_limit_middleware.go` — per-IP limits; `dto.go` — JSON types; `mapper.go` — summaries; `parse.go`, `errors.go`.
+`rooms.go` — handlers; `auth_middleware.go` — API key; `rate_limit_middleware.go` — per-IP limits; `metrics_middleware.go` — `NewMetricsMiddleware`: сигнал `HTTPRequestObserved` по route-шаблону (P19b; upgrade-запросы `/ws` пропускаются); `dto.go` — JSON types; `mapper.go` — summaries; `parse.go`, `errors.go`.

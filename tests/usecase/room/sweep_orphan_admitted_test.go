@@ -39,7 +39,7 @@ func TestSweepOrphanAdmitted_RevokesOrphanAfterTTL(t *testing.T) {
 	logger.EXPECT().Warn(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
 	reservation.EXPECT().Revoke(gomock.Any(), roomID, peerID).Return(nil)
 
-	uc := useroom.NewSweepOrphanAdmittedUseCase(registry, reservation, 30*time.Second, logger)
+	uc := useroom.NewSweepOrphanAdmittedUseCase(registry, reservation, 30*time.Second, logger, nil)
 	revoked, err := uc.RunOnce(context.Background())
 	if err != nil {
 		t.Fatalf("RunOnce: %v", err)
@@ -71,7 +71,7 @@ func TestSweepOrphanAdmitted_SkipsWhenPeerInRoom(t *testing.T) {
 	}}, nil)
 	room.EXPECT().HasPeer(peerID).Return(true)
 
-	uc := useroom.NewSweepOrphanAdmittedUseCase(registry, reservation, 0, logger)
+	uc := useroom.NewSweepOrphanAdmittedUseCase(registry, reservation, 0, logger, nil)
 	revoked, err := uc.RunOnce(context.Background())
 	if err != nil {
 		t.Fatalf("RunOnce: %v", err)
@@ -112,7 +112,7 @@ func TestSweepOrphanAdmitted_BadRoomSkipped(t *testing.T) {
 	logger.EXPECT().Warn(gomock.Any(), gomock.Any()).AnyTimes()
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 
-	uc := useroom.NewSweepOrphanAdmittedUseCase(registry, reservation, 0, logger)
+	uc := useroom.NewSweepOrphanAdmittedUseCase(registry, reservation, 0, logger, nil)
 	revoked, err := uc.RunOnce(context.Background())
 	if err != nil {
 		t.Fatalf("RunOnce: %v", err)
@@ -144,7 +144,7 @@ func TestSweepOrphanAdmitted_SkipsBeforeTTL(t *testing.T) {
 	}}, nil)
 	room.EXPECT().HasPeer(peerID).Return(false)
 
-	uc := useroom.NewSweepOrphanAdmittedUseCase(registry, reservation, time.Minute, logger)
+	uc := useroom.NewSweepOrphanAdmittedUseCase(registry, reservation, time.Minute, logger, nil)
 	revoked, err := uc.RunOnce(context.Background())
 	if err != nil {
 		t.Fatalf("RunOnce: %v", err)
@@ -175,7 +175,7 @@ func TestStartOrphanAdmittedSweep_StopWaitsForRunOnce(t *testing.T) {
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
-	uc := useroom.NewSweepOrphanAdmittedUseCase(registry, reservation, 0, logger)
+	uc := useroom.NewSweepOrphanAdmittedUseCase(registry, reservation, 0, logger, nil)
 	handle := useroom.StartOrphanAdmittedSweep(context.Background(), uc, time.Millisecond, logger)
 	if handle == nil {
 		t.Fatal("handle = nil, want non-nil")
@@ -215,7 +215,7 @@ func TestStartOrphanAdmittedSweep_ZeroInterval_NilHandle(t *testing.T) {
 	reservation := mocks.NewMockReservation(ctrl)
 	logger := mocks.NewMockLogger(ctrl)
 
-	uc := useroom.NewSweepOrphanAdmittedUseCase(registry, reservation, 0, logger)
+	uc := useroom.NewSweepOrphanAdmittedUseCase(registry, reservation, 0, logger, nil)
 	handle := useroom.StartOrphanAdmittedSweep(context.Background(), uc, 0, logger)
 	if handle != nil {
 		t.Fatalf("handle = %v, want nil", handle)

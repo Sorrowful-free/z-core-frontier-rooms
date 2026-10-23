@@ -45,6 +45,10 @@ func (r *Room) runJoinLocked(peer realtime.Peer) error {
 		r.mutex.Unlock()
 		return fmt.Errorf("%w: %d", domain.ErrRoomFull, r.id)
 	}
+	// Метрика членства привязана к реальной мутации map: join считается
+	// только если peerID реально добавлен (не перезаписан), иначе
+	// active_peers уедет в дрейф при повторном join того же peer.
+	_, existed := r.peers[peerID]
 	r.peers[peerID] = peer
 	r.mutex.Unlock()
 
@@ -54,17 +58,31 @@ func (r *Room) runJoinLocked(peer realtime.Peer) error {
 		r.mutex.Unlock()
 		return err
 	}
+	if !existed {
+		r.metrics.PeerJoined()
+		r.metrics.AddActivePeers(1)
+	}
 	return nil
 }
 
 func (r *Room) runLeaveLocked(peer realtime.Peer) error {
 	peerID := peer.GetID()
 	r.mutex.Lock()
+	// Декремент только по факту изъятия: повторный leave (оба caller'а
+	// проскочили pre-check до сериализации на loop'е) не должен
+	// дважды декрементить active_peers.
+	_, removed := r.peers[peerID]
 	delete(r.peers, peerID)
 	r.mutex.Unlock()
 	// При ошибке OnLeave state-запись peer'а само-вычищается следующим
 	// prune-тиком refreshPeerPings (GetPeer → ErrPeerNotFound → stale).
-	return r.policy.OnLeave(peer)
+	err := r.policy.OnLeave(peer)
+	// Peer уже изъят из r.peers - leave считается и при ошибке policy.
+	if removed {
+		r.metrics.PeerLeft()
+		r.metrics.AddActivePeers(-1)
+	}
+	return err
 }
 
 func (r *Room) dispatchLifecycle(req lifecycleRequest) error {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
+	portmetrics "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/metrics"
 )
 
 type reservationState int
@@ -39,12 +40,14 @@ type Reservation struct {
 	rooms   map[domain.RoomID]*reservationRoom
 	roomsMu sync.RWMutex
 	logger  logging.Logger
+	metrics portmetrics.Metrics
 }
 
-func NewReservation(logger logging.Logger) *Reservation {
+func NewReservation(logger logging.Logger, m portmetrics.Metrics) *Reservation {
 	return &Reservation{
-		rooms:  make(map[domain.RoomID]*reservationRoom),
-		logger: logger,
+		rooms:   make(map[domain.RoomID]*reservationRoom),
+		logger:  logger,
+		metrics: portmetrics.OrNoop(m),
 	}
 }
 
@@ -133,7 +136,14 @@ func (r *Reservation) UnregisterRoom(ctx context.Context, roomID domain.RoomID) 
 	// увидят unregistered под room.mu и откажутся писать в мёртвую map.
 	room.mu.Lock()
 	room.unregistered = true
+	slots := len(room.peers)
 	room.mu.Unlock()
+	// Слоты комнаты умирают вместе с tombstone: gauge живых слотов
+	// снимает их все (revoke-оповещения по одному не шлём - комната
+	// исчезает целиком, а не по слоту).
+	if slots > 0 {
+		r.metrics.ReservationActiveSlots(-slots)
+	}
 	return nil
 }
 
@@ -154,7 +164,14 @@ func (r *Reservation) Reserve(ctx context.Context, roomID domain.RoomID, peerID 
 		return err
 	}
 
-	room.sweepExpiredLocked()
+	if expired := room.sweepExpiredLocked(); expired > 0 {
+		// Просроченный слот освобождён - тот же revoke по метрике:
+		// счётчик сходится к живым слотам, gauge - к реальной дельте.
+		for range expired {
+			r.metrics.ReservationRevoked()
+		}
+		r.metrics.ReservationActiveSlots(-expired)
+	}
 
 	if len(room.peers) >= room.capacity {
 		return reservationErrRoom(domain.ErrReservationFull, roomID)
@@ -176,6 +193,8 @@ func (r *Reservation) Reserve(ctx context.Context, roomID domain.RoomID, peerID 
 		state:     reservationStateReserved,
 		expiresAt: expiresAt,
 	}
+	r.metrics.ReservationReserved()
+	r.metrics.ReservationActiveSlots(1)
 	return nil
 }
 
@@ -211,6 +230,10 @@ func (r *Reservation) Admit(ctx context.Context, roomID domain.RoomID, peerID do
 
 	if peer.expiresAt.Before(time.Now()) {
 		delete(room.peers, peerID)
+		// Просроченный слот удалён - это реальный revoke: счётчик
+		// должен сходиться к живым слотам, а не только к явным Revoke.
+		r.metrics.ReservationRevoked()
+		r.metrics.ReservationActiveSlots(-1)
 		return reservationErrPeer(domain.ErrReservationExpired, roomID, peerID)
 	}
 
@@ -220,6 +243,7 @@ func (r *Reservation) Admit(ctx context.Context, roomID domain.RoomID, peerID do
 		state:      reservationStateAdmitted,
 		admittedAt: time.Now(),
 	}
+	r.metrics.ReservationAdmitted()
 	return nil
 }
 
@@ -307,6 +331,8 @@ func (r *Reservation) Revoke(ctx context.Context, roomID domain.RoomID, peerID d
 	}
 
 	delete(room.peers, peerID)
+	r.metrics.ReservationRevoked()
+	r.metrics.ReservationActiveSlots(-1)
 	return nil
 }
 
@@ -327,10 +353,15 @@ func reservationErrPeer(err error, roomID domain.RoomID, peerID domain.PeerID) e
 	return fmt.Errorf("%w: room %d peer %d", err, roomID, peerID)
 }
 
-func (room *reservationRoom) sweepExpiredLocked() {
+// sweepExpiredLocked вычищает просроченные reserved-слоты и возвращает
+// число удалённых - caller эмитит revoke-метрики по факту удалений.
+func (room *reservationRoom) sweepExpiredLocked() int {
+	expired := 0
 	for peerID, peer := range room.peers {
 		if peer.state == reservationStateReserved && !peer.expiresAt.IsZero() && peer.expiresAt.Before(time.Now()) {
 			delete(room.peers, peerID)
+			expired++
 		}
 	}
+	return expired
 }

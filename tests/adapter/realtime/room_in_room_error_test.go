@@ -2,6 +2,7 @@ package realtime_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -42,12 +43,10 @@ func TestDeliver_UnknownOpcode_NotifiesSender(t *testing.T) {
 	}
 	peer.Clear()
 
-	if err := room.Deliver(events.RoomEvent{
+	deliverRoomEvent(t, room, events.RoomEvent{
 		PeerID: peer.GetID(),
 		Frame:  domain.Frame{OpCode: domain.OpCode(0x99)},
-	}); err != nil {
-		t.Fatalf("Deliver: %v", err)
-	}
+	})
 
 	waitForPeerDelivery(t, peer, 1)
 
@@ -75,12 +74,10 @@ func TestDeliver_NotifiesSenderOnPolicyError(t *testing.T) {
 	}
 	peer.Clear()
 
-	if err := room.Deliver(events.RoomEvent{
+	deliverRoomEvent(t, room, events.RoomEvent{
 		PeerID: peer.GetID(),
 		Frame:  domain.Frame{OpCode: 0x01},
-	}); err != nil {
-		t.Fatalf("Deliver: %v", err)
-	}
+	})
 
 	waitForPeerDelivery(t, peer, 1)
 
@@ -111,6 +108,24 @@ func (p *rejectMessagePolicy) OnTickFullState() error  { return nil }
 func (p *rejectMessagePolicy) OnTickPatchState() error { return nil }
 
 var _ portpolicy.RoomPolicy = (*rejectMessagePolicy)(nil)
+
+// Комнаты тут с incomingQueue=0: unbuffered `Deliver` успешен только когда
+// room-loop уже ждёт в select. Между ответом Join и повторным входом в select
+// есть гонка - ретраим ErrQueueFull до дедлайна.
+func deliverRoomEvent(t *testing.T, room *adapterrealtime.Room, ev events.RoomEvent) {
+	t.Helper()
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for {
+		err := room.Deliver(ev)
+		if err == nil {
+			return
+		}
+		if !errors.Is(err, domain.ErrQueueFull) || time.Now().After(deadline) {
+			t.Fatalf("Deliver: %v", err)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
 
 func waitForPeerDelivery(t *testing.T, peer *testpeer.Peer, want int) {
 	t.Helper()

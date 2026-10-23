@@ -8,5 +8,6 @@
 | `ws/` | [ws/README.md](ws/README.md) — WebSocket data plane |
 | `enet/` | [enet/README.md](enet/README.md) — ENet UDP |
 | `errors/` | [errors/README.md](errors/README.md) — OpCode join / in-room / reservation |
+| `admin/` | [admin/README.md](admin/README.md) — admin listener `GET /metrics` (отдельный Fiber-инстанс) |
 
 Handlers тонкие: парсинг → use case → ответ или wire-ошибка.

@@ -8,7 +8,7 @@
 
 ## Структура
 
-`Config` содержит поля типов из adapter-пакетов модулей (`Logging`, `Server`, `Admission`, `HTTPAuth`, …, `Enet`).
+`Config` содержит поля типов из adapter-пакетов модулей (`Logging`, `Server`, `Admission`, `HTTPAuth`, `HTTPLimits`, `Reservation`, `Transport`, `Enet`, `Metrics`).
 
 ## Env (process)
 
@@ -97,3 +97,13 @@
 Валидация — `transport.TransportConfig.Validate()`.
 
 Wiring — `cmd/rooms`: `LoadFromEnv()` → `ws.NewWsConnectionFactory(..., cfg.Transport)`; `cfg.Enet` → `enetCfg`, затем `enetCfg.MaxIncomingFrameBytes = cfg.Transport.MaxIncomingFrameBytes`, `enetCfg.EnetIncomingQueueSize = cfg.Transport.EnetIncomingQueueSize`.
+
+## Env (metrics / admin listener)
+
+| Переменная | Обязательна | Default | Описание |
+|------------|-------------|---------|----------|
+| `ADMIN_LISTEN_ADDR` | нет | `` (выключен) | Адрес отдельного admin Fiber listener'а с `GET /metrics` (prometheus exposition). Пустой — endpoint не поднимается |
+
+Дефолт выключен намеренно: scrape-endpoint — opt-in, порт не биндится без явного env. Валидация — `metrics.MetricsConfig.Validate()` (`net.ResolveTCPAddr`).
+
+Wiring — `cmd/rooms`: `metricsadapter.New(cfg.Metrics)` → `port/metrics` во все эмиттеры; при заданном адресе - `net.Listen` синхронно до serve-горутины, затем `admin.NewMetricsApp(gatherer).Listener(ln)` (P19b).

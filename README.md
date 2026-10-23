@@ -50,12 +50,14 @@ CGO_ENABLED=1 go test -tags enet ./tests/delivery/enet/...
 | HTTP limits | [internal/adapter/httplimits/README.md](internal/adapter/httplimits/README.md) |
 | Admission (ticket v2) | [internal/adapter/admission/README.md](internal/adapter/admission/README.md) |
 | Reservation | [internal/adapter/reservation/README.md](internal/adapter/reservation/README.md) |
+| Metrics (prometheus) | [internal/adapter/metrics/README.md](internal/adapter/metrics/README.md) |
 | Room registry | [internal/adapter/registry/README.md](internal/adapter/registry/README.md) |
 | Realtime (Room, Peer) | [internal/adapter/realtime/README.md](internal/adapter/realtime/README.md) |
 | StateRoomPolicy | [internal/adapter/realtime/policy/state/README.md](internal/adapter/realtime/policy/state/README.md) |
 | Wire codec | [internal/adapter/realtime/codec/README.md](internal/adapter/realtime/codec/README.md) → [docs/wire-state-codec.md](docs/wire-state-codec.md) |
 | Delivery (индекс) | [internal/delivery/README.md](internal/delivery/README.md) |
 | HTTP API | [internal/delivery/http/README.md](internal/delivery/http/README.md) |
+| Admin listener (`/metrics`) | [internal/delivery/admin/README.md](internal/delivery/admin/README.md) |
 | WebSocket | [internal/delivery/ws/README.md](internal/delivery/ws/README.md) |
 | ENet | [internal/delivery/enet/README.md](internal/delivery/enet/README.md) |
 | Wire OpCodes | [internal/delivery/errors/README.md](internal/delivery/errors/README.md) |

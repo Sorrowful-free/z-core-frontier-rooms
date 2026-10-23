@@ -20,6 +20,8 @@
 
 `JoinRejectOpCode`, `SendJoinReject` — `join_reject.go`. Reservation-ошибки на join делегируются в `0x70+`; `ErrRoomFull` (`Room.Join` переполнение) мапится в `OpReservationFull` (`0x71`), case выше `ErrJoinDenied` — `ErrRoomFull` может прийти обёрнутым в него (policy `OnJoin`), тогда ordering решает.
 
+`SendJoinReject` / `SendReservationReject` / `SendInRoomError` возвращают ошибку `conn.Send` (P19b): caller считает `join_rejects_total` только при успешной отправке, без неё - логирует. Ошибку можно безопасно игнорировать.
+
 `IsJoinRejectOpCode` покрывает **оба** reject-диапазона (`0x40–0x5F` и `0x70–0x7F`) — оба закрывают соединение. `IsReservationRejectOpCode` — только `0x70–0x7F`, `IsInRoomErrorOpCode` — только `0x60–0x6F`.
 
 ## In-room (`0x60–0x6F`)

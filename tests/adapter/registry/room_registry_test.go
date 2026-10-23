@@ -15,9 +15,9 @@ import (
 func newTestRegistry(t *testing.T) *adapterregistry.RoomRegistry {
 	t.Helper()
 	logger := stdlib.New("test")
-	roomPolicyFactory := statepolicy.NewStateRoomPolicyFactory(logger)
-	roomFactory := adapterrealtime.NewRoomFactory(logger, roomPolicyFactory, 0)
-	return adapterregistry.NewRoomRegistry(context.Background(), roomFactory, logger)
+	roomPolicyFactory := statepolicy.NewStateRoomPolicyFactory(logger, nil)
+	roomFactory := adapterrealtime.NewRoomFactory(logger, roomPolicyFactory, 0, nil)
+	return adapterregistry.NewRoomRegistry(context.Background(), roomFactory, logger, nil)
 }
 
 func TestGetRoomNotFoundMapsDomainError(t *testing.T) {

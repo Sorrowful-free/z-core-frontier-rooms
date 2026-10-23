@@ -11,6 +11,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
+	portmetrics "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/metrics"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/policy"
 )
@@ -25,6 +26,7 @@ type Room struct {
 	incoming         chan events.RoomEvent
 	lifecycle        chan lifecycleRequest
 	logger           logging.Logger
+	metrics          portmetrics.Metrics
 	fullStateTicker  *time.Ticker
 	patchStateTicker *time.Ticker
 
@@ -50,8 +52,11 @@ func NewRoom(ctx context.Context, id domain.RoomID, policy policy.RoomPolicy, ca
 		incoming:   make(chan events.RoomEvent, incomingQueue),
 		lifecycle:  make(chan lifecycleRequest),
 		logger:     logger,
-		ctx:        ctx,
-		cancel:     cancel,
+		// Прямое конструирование (тесты) - телеметрия-заглушка; продовый
+		// экземпляр метрик вливает RoomFactory полем (сигнатура стабильна).
+		metrics: portmetrics.Noop(),
+		ctx:     ctx,
+		cancel:  cancel,
 	}
 }
 
@@ -289,6 +294,8 @@ func processRoomEvents(room *Room) {
 			if !ok {
 				return
 			}
+			// Gauge-сэмпл глубины после dequeue (приближение, см. порт).
+			room.metrics.RoomIncomingDepth(len(room.incoming))
 			if err := room.policy.OnMessage(roomEvent); err != nil {
 				room.logger.Error("error processing room event", "error", err)
 				room.notifyInRoomError(roomEvent.PeerID, err)
@@ -299,16 +306,26 @@ func processRoomEvents(room *Room) {
 			}
 			room.runLifecycle(req)
 		case <-fullTick:
+			started := time.Now()
 			if err := room.policy.OnTickFullState(); err != nil {
 				room.logger.Error("tick full state", "error", err)
 			}
+			room.metrics.RoomTickObserved(tickKindFull, time.Since(started))
 		case <-patchTick:
+			started := time.Now()
 			if err := room.policy.OnTickPatchState(); err != nil {
 				room.logger.Error("tick patch state", "error", err)
 			}
+			room.metrics.RoomTickObserved(tickKindPatch, time.Since(started))
 		}
 	}
 }
+
+// Значения label `kind` для RoomTickObserved (bounded-множество в адаптере).
+const (
+	tickKindFull  = "full"
+	tickKindPatch = "patch"
+)
 
 func (r *Room) tryDeliver(ev events.RoomEvent) error {
 	if err := r.ctx.Err(); err != nil {
@@ -318,9 +335,12 @@ func (r *Room) tryDeliver(ev events.RoomEvent) error {
 	case <-r.ctx.Done():
 		return fmt.Errorf("room stopped: %d: %w", r.id, r.ctx.Err())
 	case r.incoming <- ev:
+		// Gauge-сэмпл глубины после enqueue (приближение, см. порт).
+		r.metrics.RoomIncomingDepth(len(r.incoming))
 		return nil
 	default:
 		r.logger.Warn("room incoming queue full, dropping frame", "roomID", r.id, "peerID", ev.PeerID)
+		r.metrics.RoomIncomingDropped()
 		return domain.ErrQueueFull
 	}
 }

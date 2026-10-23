@@ -8,6 +8,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
+	portmetrics "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/metrics"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/codec"
 	portpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/policy"
@@ -49,7 +50,9 @@ func normalizeTickInterval(interval, defaultInterval time.Duration) time.Duratio
 
 func NewStateRoomPolicy(logger logging.Logger, stateCodec codec.RoomStateCodec, entitiesCodec codec.EntitiesStateCodec, inputCodec codec.InputStateCodec, rpcCodec codec.RpcStateCodec, fullStateInterval time.Duration, patchStateInterval time.Duration) *StateRoomPolicy {
 	return &StateRoomPolicy{
-		master:    masterMachine{logger: logger},
+		// Умолчание Noop: продовый metrics вливает StateRoomPolicyFactory
+		// полем (сигнатура NewStateRoomPolicy стабильна для тестов).
+		master:    masterMachine{logger: logger, metrics: portmetrics.Noop()},
 		prevState: *state.NewRoomState(domain.RoomIDInvalid, 0),
 		state:     *state.NewRoomState(domain.RoomIDInvalid, 0),
 

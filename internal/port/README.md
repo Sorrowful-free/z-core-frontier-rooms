@@ -14,5 +14,6 @@
 | `identity` | `Allocator` | `adapter/identity` |
 | `logging` | `Logger` | `adapter/logging` |
 | `httplimits` | `Limits` | `adapter/httplimits` |
+| `metrics` | `Metrics` | `adapter/metrics` |
 
 Интерфейсы объявляет **потребитель** (use case / adapter), маленькие, без «на будущее».
