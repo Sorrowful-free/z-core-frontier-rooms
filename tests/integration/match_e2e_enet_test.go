@@ -4,7 +4,6 @@ package integration_test
 
 import (
 	"encoding/base64"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -32,19 +31,18 @@ import (
 
 var _ matchClient = (*enetClient)(nil)
 
-// enetClient — клиент комнаты на in-test libenet host. Event loop — единая
-// горутина, крутящая host.Service и раздающая кадры в общий handleFrame базы.
-// ВСЕ вызовы libenet идут через adapterenet.Call/Do — общий mutex сериализации
-// с серверным host loop'ом (libenet не thread-safe).
+// enetClient - клиент комнаты на in-test libenet host. Host'ом владеет
+// adapterenet.HostLoop (P15): pump гоняет Service командами через его очередь,
+// остальные libenet-вызовы - Call/Do в тот же loop. Per-host сериализация:
+// конвоя P12 на общем mutex больше нет, Service(1) остаётся ради темпа pump'а.
 type enetClient struct {
 	matchClientBase
-	host     libenet.Host
+	loop     *adapterenet.HostLoop
 	enetPeer libenet.Peer
 	token    []byte // admit: первый пакет после EventConnect — сырой (decoded) ticket
 
-	connected   atomic.Bool // EventConnect получен — handshake завершён
-	pumpStop    atomic.Bool // stop(): pump выходит без ожидания EventDisconnect
-	destroyOnce sync.Once
+	connected atomic.Bool // EventConnect получен - handshake завершён
+	pumpStop  atomic.Bool // stop(): pump выходит без ожидания EventDisconnect
 }
 
 func newEnetClient(t *testing.T, e *env.Env, nick, token string) *enetClient {
@@ -56,34 +54,28 @@ func newEnetClient(t *testing.T, e *env.Env, nick, token string) *enetClient {
 	if err != nil {
 		t.Fatalf("[%s] decode ticket token: %v", nick, err)
 	}
-	c := &enetClient{
-		matchClientBase: newMatchClientBase(t, nick),
-		token:           ticket,
-	}
 
-	var host libenet.Host
-	err = adapterenet.Call(func() error {
-		var err error
-		host, err = libenet.NewHost(nil, 1, 2, 0, 0)
-		return err
-	})
+	loop, err := adapterenet.NewHostLoop(nil, 1, 2)
 	if err != nil {
 		t.Fatalf("[%s] enet host: %v", nick, err)
 	}
-	c.host = host
-	// Страховка на случай t.Fatal до defer stop(): destroy идемпотентен.
-	t.Cleanup(c.destroyHost)
+	c := &enetClient{
+		matchClientBase: newMatchClientBase(t, nick),
+		token:           ticket,
+		loop:            loop,
+	}
+	// Страховка на случай t.Fatal до defer stop(): Stop идемпотентен
+	// (drain + host.Destroy + ожидание выхода loop-горутины).
+	t.Cleanup(loop.Stop)
 
-	var peer libenet.Peer
-	err = adapterenet.Call(func() error {
+	err = loop.Do(func() error {
 		var err error
-		peer, err = host.Connect(libenet.NewAddress("127.0.0.1", e.EnetPort()), 2, 0)
+		c.enetPeer, err = loop.Host().Connect(libenet.NewAddress("127.0.0.1", e.EnetPort()), 2, 0)
 		return err
 	})
 	if err != nil {
 		t.Fatalf("[%s] enet connect: %v", nick, err)
 	}
-	c.enetPeer = peer
 
 	go c.eventLoop()
 	go c.sendLoop(c.writeFrame)
@@ -98,7 +90,7 @@ func newEnetClient(t *testing.T, e *env.Env, nick, token string) *enetClient {
 	return c
 }
 
-// eventLoop — pump клиента: Service(10) + dispatch событий. Admit-кадр (сырой
+// eventLoop - pump клиента: Service(1) + dispatch событий. Admit-кадр (сырой
 // ticket) шлём на EventConnect; дальше кадры OpCode+payload идут в общий
 // handleFrame. Выход — EventDisconnect (любая причина) либо pumpStop/silent.
 func (c *enetClient) eventLoop() {
@@ -113,10 +105,13 @@ func (c *enetClient) eventLoop() {
 		if c.pumpStop.Load() {
 			return
 		}
-		// Service(1), не 10: timeout — это время удержания apiMu под локом; при
-		// N клиентах + серверный host loop в одном процессе Service(10) создаёт
-		// конвой (~10ms×N на кадр) и в-тестовые client-host'ы душат друг друга.
-		ev := adapterenet.Call(func() libenet.Event { return c.host.Service(1) })
+		// Service(1) командой в свой HostLoop: pump двигает клиентский service
+		// сам; per-host очередь - серверный loop и соседние клиенты не душат.
+		ev, err := adapterenet.Call(c.loop, func() libenet.Event { return c.loop.Host().Service(1) })
+		if err != nil {
+			c.connDead.Store(true)
+			return
+		}
 		switch ev.GetType() {
 		case libenet.EventNone:
 			continue
@@ -126,7 +121,7 @@ func (c *enetClient) eventLoop() {
 				continue
 			}
 			admitted = true
-			err := adapterenet.Call(func() error {
+			err := c.loop.Do(func() error {
 				return c.enetPeer.SendBytes(c.token, 0, libenet.PacketFlagReliable)
 			})
 			if err != nil {
@@ -136,8 +131,12 @@ func (c *enetClient) eventLoop() {
 			}
 			c.t.Logf("[%s] enet connected, admit sent", c.nick)
 		case libenet.EventReceive:
-			data := adapterenet.Call(func() []byte { return ev.GetPacket().GetData() })
-			adapterenet.Do(func() { ev.GetPacket().Destroy() })
+			data, err := adapterenet.Call(c.loop, func() []byte { return ev.GetPacket().GetData() })
+			if err != nil {
+				c.connDead.Store(true)
+				return
+			}
+			_ = c.loop.Do(func() error { ev.GetPacket().Destroy(); return nil })
 			if len(data) == 0 {
 				continue
 			}
@@ -161,7 +160,7 @@ func (c *enetClient) eventLoop() {
 // (EnetConnection.Send → packetFlagsFromDelivery → PacketFlagReliable).
 func (c *enetClient) writeFrame(op domain.OpCode, payload []byte) error {
 	frame := append([]byte{byte(op)}, payload...)
-	return adapterenet.Call(func() error {
+	return c.loop.Do(func() error {
 		return c.enetPeer.SendBytes(frame, 0, libenet.PacketFlagReliable)
 	})
 }
@@ -181,19 +180,19 @@ func (c *enetClient) goSilent() {
 func (c *enetClient) leaveClean() {
 	c.leftClean.Store(true)
 	c.stopSend()
-	adapterenet.Do(func() { c.enetPeer.Disconnect(0) })
+	_ = c.loop.Do(func() error { c.enetPeer.Disconnect(0); return nil })
 }
 
-// stop — финальный teardown: graceful disconnect (если pump ещё жив), bound на
-// выход pump'а, затем Destroy host. Destroy только после pumpDone — Service на
-// разрушенном host был бы UB.
+// stop - финальный teardown: graceful disconnect (если pump ещё жив), bound на
+// выход pump'а, затем loop.Stop → host.Destroy. Destroy только после pumpDone -
+// Service на разрушенном host был бы UB.
 func (c *enetClient) stop() {
 	c.leftClean.Store(true)
 	c.stopSend()
 	select {
 	case <-c.pumpDone:
 	default:
-		adapterenet.Do(func() { c.enetPeer.Disconnect(0) })
+		_ = c.loop.Do(func() error { c.enetPeer.Disconnect(0); return nil })
 	}
 	select {
 	case <-c.pumpDone:
@@ -202,15 +201,7 @@ func (c *enetClient) stop() {
 		<-c.pumpDone
 	}
 	<-c.sendDone
-	c.destroyHost()
-}
-
-func (c *enetClient) destroyHost() {
-	c.destroyOnce.Do(func() {
-		if c.host != nil {
-			adapterenet.Do(func() { c.host.Destroy() })
-		}
-	})
+	c.loop.Stop()
 }
 
 // TestE2E_LiveMatch_ENet — 4 ENet-клиента, host dropout = молчание libenet.

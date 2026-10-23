@@ -34,7 +34,7 @@ Disconnect везде graceful (`DisconnectLater` в `EnetConnection.Close`): qu
 
 ## Сериализация libenet
 
-C API libenet не thread-safe; host loop и peer outbound-горутины зовут его конкурентно. Все вызовы, трогающие C-состояние (`Host`/`Peer`/`Packet`, `NewHost`, `Initialize`), идут через `adapter/transport/enet.Call/Do` — один mutex на процесс (`connection_cgo.go`). Чтения `Event`-аксессоров (`GetType`/`GetPeer`/`GetPacket`/`GetData`) работают с Go-копией и лока не требуют. `sessions`-map трогает только host loop — отдельной синхронизации нет.
+C API libenet не thread-safe: весь C API host'а сериализует его `HostLoop` (`adapter/transport/enet`, P15). `host.Service` идёт blocking-командой `Call` в loop, peer/packet-операции dispatch'а (`session_cgo`/`frame_cgo`) - `Call`/`Do` в тот же loop. Сам dispatch исполняется на run-горутине, не на loop-горутине: admit/leave путь (`JoinRoom`/`LeaveRoom` → `dispatchLifecycle`) синхронно ждёт room-горутину, а та в `OnJoin`/`OnLeave` зовёт `EnetConnection.Ping` - blocking-вызов в тот же loop; dispatch на executor'е замкнул бы cross-deadlock executor↔room. `conn.Send`/`Close` - async enqueue в очередь loop'а (FIFO, wire-порядок сохраняется). `Event`-аксессоры (`GetType`/`GetPeer`/`GetPacket`/`GetData`) работают с Go-копией и диспатча не требуют. `sessions`-map трогает только run-горутина - синхронизации нет. Shutdown: `Stop` → `closeSessions` (graceful `DisconnectLater` в очередь) → `drainHost` (2 service-итерации через `Call`) → `loop.Stop()` → drain → `host.Destroy`.
 
 Без `enet`/cgo: `Listen()` — stub run (warn + чистый выход, `Err() == nil`).
 

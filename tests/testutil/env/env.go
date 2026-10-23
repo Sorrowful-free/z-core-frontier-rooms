@@ -177,13 +177,14 @@ func New(t *testing.T, opts ...Option) *Env {
 		enetCfg.ListenPort = freeUDPPort(t)
 		enetCfg.MaxIncomingFrameBytes = cfg.transport.MaxIncomingFrameBytes
 		enetCfg.EnetIncomingQueueSize = cfg.transport.EnetIncomingQueueSize
-		// ServiceTimeoutMs — время удержания apiMu на итерацию host.Service;
-		// в тесте сервер и клиентские host'ы в одном процессе и делят apiMu:
-		// 10ms-итерации создают конвой и starve client/peers (см. P12 e2e).
+		// ServiceTimeoutMs = 1: короткие service-итерации, чтобы серверный
+		// HostLoop чаще разгребал очередь команд - шаг poll'ов тестов ~10ms,
+		// лишний latency send-пути не нужен. Глобального apiMu-конвоя P12
+		// больше нет: у каждого host'а своя очередь (P15).
 		enetCfg.ServiceTimeoutMs = 1
 		e.enetPort = enetCfg.ListenPort
 		e.enetHandle = deliveryenet.NewRoomsHandler(context.Background(), joinUC, leaveUC,
-			adapterenet.NewEnetConnectionFactory(logger), enetCfg, logger).Listen()
+			adapterenet.NewEnetConnectionFactory(nil, logger), enetCfg, logger).Listen()
 		// Fail-fast на bind error: run() выходит сразу при ошибке NewHost.
 		select {
 		case <-e.enetHandle.Done():

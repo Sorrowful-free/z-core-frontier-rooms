@@ -51,7 +51,9 @@ func (h *ListenHandle) Err() error {
 	return h.err
 }
 
-// Stop отменяет host loop и блокируется до его выхода.
+// Stop отменяет host loop и блокируется до его выхода. Teardown идёт через
+// HostLoop.Stop внутри run: сессии закрываются, graceful disconnect'ы
+// флешатся service-итерациями, очередь команд доразбирается, host.Destroy.
 func (h *ListenHandle) Stop() {
 	h.cancel()
 	<-h.done

@@ -70,7 +70,9 @@ func run() error {
 	roomRegistry := registry.NewRoomRegistry(appCtx, roomFactory, zaplog.NewFrom(z, "rooms registry"))
 
 	wsConnectionFactory := ws.NewWsConnectionFactory(zaplog.NewFrom(z, "ws connection factory"), cfg.Transport)
-	enetConnectionFactory := enet.NewEnetConnectionFactory(zaplog.NewFrom(z, "enet connection factory"))
+	// HostLoop ещё не существует (создаётся внутри listener'а): nil + delivery
+	// привяжет его через BindLoop при старте host loop'а.
+	enetConnectionFactory := enet.NewEnetConnectionFactory(nil, zaplog.NewFrom(z, "enet connection factory"))
 
 	admission := admissionadapter.NewAdmission(cfg.Admission)
 	reservation := reservationadapter.NewReservation(zaplog.NewFrom(z, "reservation"))

@@ -27,7 +27,7 @@ func (discardLogger) Fatal(string, ...any) {}
 func TestEnetConnectionFactoryCreateConnection(t *testing.T) {
 	t.Parallel()
 
-	factory := adapterenet.NewEnetConnectionFactory(discardLogger{})
+	factory := adapterenet.NewEnetConnectionFactory(nil, discardLogger{})
 	conn := factory.CreateConnection(nil, make(chan domain.Frame, 1))
 	if conn == nil {
 		t.Fatal("CreateConnection returned nil")

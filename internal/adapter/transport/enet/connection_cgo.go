@@ -11,36 +11,18 @@ import (
 	libenet "github.com/codecat/go-enet"
 )
 
-// apiMu — единая точка сериализации вызовов libenet, трогающих C-состояние
-// (host/peer/packet): библиотека не
-// thread-safe, а host loop (delivery/enet) и peer outbound горутины (Send/Ping/Close)
-// обращаются к ней конкурентно. Хост один на процесс → один mutex на пакет.
+// EnetConnection - transport.Connection поверх libenet peer'а. Все libenet-
+// вызовы peer'а идут командами в очередь HostLoop владеющего host'а
+// (hostloop_cgo.go): потребители transport.Connection libenet не видят,
+// глобальной сериализации нет - только per-host.
 //
-// Tradeoff: host.Service(ServiceTimeoutMs) тоже держит apiMu — в худшем случае
-// вызовы из peer-горутин ждут ~ServiceTimeoutMs (10ms по умолчанию). Этот
-// ограниченный latency-конвой — принятая цена простой модели сериализации;
-// dispatch вызовов на host-loop горутину — возможный будущий редизайн.
-var apiMu sync.Mutex
-
-// Call выполняет fn под локом сериализации libenet и возвращает результат.
-// КАЖДЫЙ вызов libenet (Host/Peer/Packet методы, NewHost, Initialize…) из любого
-// пакета обязан идти через Call/Do — см. также internal/delivery/enet.
-// Внутри fn — только один libenet-вызов, без вложенных Call/Do и без Go-колбэков,
-// которые могут снова дотянуться до libenet (иначе дедлок).
-func Call[T any](fn func() T) T {
-	apiMu.Lock()
-	defer apiMu.Unlock()
-	return fn()
-}
-
-// Do — вариант Call для вызовов без результата.
-func Do(fn func()) {
-	apiMu.Lock()
-	defer apiMu.Unlock()
-	fn()
-}
-
+// Send/Close - async enqueue: им не нужен результат, а FIFO-очередь сохраняет
+// wire-порядок кадров и финального DisconnectLater. Ping - blocking Call:
+// зовётся с room/policy-горутин, результат нужен синхронно, а ожидание безопасно
+// - executor исполняет только ограниченные по времени libenet-вызовы и не ждёт
+// доменных горутин (см. инвариант в hostloop_cgo.go).
 type EnetConnection struct {
+	loop      *HostLoop
 	peer      libenet.Peer
 	incoming  chan domain.Frame
 	closed    chan struct{}
@@ -48,8 +30,9 @@ type EnetConnection struct {
 	alive     atomic.Bool
 }
 
-func NewEnetConnection(peer libenet.Peer, incoming chan domain.Frame) *EnetConnection {
+func NewEnetConnection(loop *HostLoop, peer libenet.Peer, incoming chan domain.Frame) *EnetConnection {
 	c := &EnetConnection{
+		loop:     loop,
 		peer:     peer,
 		incoming: incoming,
 		closed:   make(chan struct{}),
@@ -62,13 +45,16 @@ func (c *EnetConnection) Send(frame domain.Frame) error {
 	if !c.alive.Load() {
 		return io.EOF
 	}
+	if c.loop == nil {
+		return io.EOF
+	}
 	payload := append([]byte{byte(frame.OpCode)}, frame.Payload...)
-	return Call(func() error {
+	return c.loop.enqueue(func() {
 		// go-enet quirk: SendBytes → SendPacket игнорирует код возврата
-		// enet_peer_send — отправка disconnecting/zombie peer молча падает
-		// (nil error). Страховка — alive-флаг выше; разрыв всплывёт как
+		// enet_peer_send - отправка disconnecting/zombie peer молча падает
+		// (nil error). Страховка - alive-флаг выше; разрыв всплывёт как
 		// EventDisconnect → LeaveRoom на стороне host loop.
-		return c.peer.SendBytes(payload, 0, packetFlagsFromDelivery(frame.Delivery))
+		_ = c.peer.SendBytes(payload, 0, packetFlagsFromDelivery(frame.Delivery))
 	})
 }
 
@@ -82,10 +68,14 @@ func (c *EnetConnection) Receive() (domain.Frame, error) {
 }
 
 func (c *EnetConnection) Ping() int64 {
-	if c.peer == nil || !c.alive.Load() {
+	if c.peer == nil || c.loop == nil || !c.alive.Load() {
 		return -1
 	}
-	return Call(func() int64 { return int64(c.peer.GetRoundTripTime()) })
+	rtt, err := Call(c.loop, func() int64 { return int64(c.peer.GetRoundTripTime()) })
+	if err != nil {
+		return -1
+	}
+	return rtt
 }
 
 func (c *EnetConnection) Close() error {
@@ -93,18 +83,18 @@ func (c *EnetConnection) Close() error {
 		c.alive.Store(false)
 		// incoming не закрываем: peerSession.deliver шлёт из host-цикла вне нашего lifecycle → send-on-closed race (ADR 0003).
 		close(c.closed)
-		if c.peer != nil {
+		if c.peer != nil && c.loop != nil {
 			// Graceful disconnect: DisconnectLater ждёт, пока queued outgoing-пакеты
 			// (join reject, последние state-фреймы) уйдут на провод, и только потом шлёт
 			// disconnect. DisconnectNow ресетил бы peer и выбрасывал очередь; plain
 			// Disconnect тоже не гарантирует доставку уже стоящих в очереди команд.
-			Do(func() { c.peer.DisconnectLater(0) })
+			_ = c.loop.enqueue(func() { c.peer.DisconnectLater(0) })
 		}
 	})
 	return nil
 }
 
-// IsAlive — false после Close(); zombie на ENet вычищает собственный таймаут транспорта (EventDisconnect → LeaveRoom).
+// IsAlive - false после Close(); zombie на ENet вычищает собственный таймаут транспорта (EventDisconnect → LeaveRoom).
 func (c *EnetConnection) IsAlive() bool {
 	return c.alive.Load()
 }

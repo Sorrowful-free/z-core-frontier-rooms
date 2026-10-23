@@ -22,14 +22,17 @@ type peerSession struct {
 	connectedAt time.Time
 }
 
-func newPeerSession(peer libenet.Peer, connectionFactory enet.EnetConnectionFactory, queueCap int) *peerSession {
+func newPeerSession(loop *transportenet.HostLoop, peer libenet.Peer, connectionFactory enet.EnetConnectionFactory, queueCap int) *peerSession {
 	if queueCap < 0 {
 		queueCap = 0
 	}
 	incoming := make(chan domain.Frame, queueCap)
 	connection := connectionFactory.CreateConnection(peer, incoming)
+	// GetIncomingPeerId - peer-операция, диспатч через очередь loop'а
+	// (newPeerSession зовётся с run-горутины, не с loop-горутины).
+	id, _ := transportenet.Call(loop, func() uint16 { return peer.GetIncomingPeerId() })
 	return &peerSession{
-		id:          transportenet.Call(func() uint16 { return peer.GetIncomingPeerId() }),
+		id:          id,
 		incoming:    incoming,
 		conn:        connection,
 		connectedAt: time.Now(),

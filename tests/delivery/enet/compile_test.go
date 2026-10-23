@@ -25,7 +25,7 @@ func TestEnetPackagesCompile(t *testing.T) {
 		t.Fatalf("ListenPort = %d, want 7777", cfg.ListenPort)
 	}
 
-	factory := adapterenet.NewEnetConnectionFactory(discardLogger{})
+	factory := adapterenet.NewEnetConnectionFactory(nil, discardLogger{})
 	if factory == nil {
 		t.Fatal("NewEnetConnectionFactory returned nil")
 	}

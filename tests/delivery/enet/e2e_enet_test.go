@@ -25,43 +25,43 @@ func freeUDPPort(t *testing.T) uint16 {
 	return uint16(conn.LocalAddr().(*net.UDPAddr).Port)
 }
 
-// enetTestClient — вспомогательный ENet-клиент; все libenet-вызовы идут через
-// adapterenet.Call/Do, разделяя mutex сериализации с серверным host loop.
+// enetTestClient - вспомогательный ENet-клиент на собственном HostLoop
+// (adapterenet): все libenet-вызовы сериализует его loop-горутина, глобального
+// mutex с серверным host'ом больше нет.
 type enetTestClient struct {
-	host libenet.Host
+	loop *adapterenet.HostLoop
 	peer libenet.Peer
 }
 
 func newEnetTestClient(t *testing.T, port uint16) *enetTestClient {
 	t.Helper()
-	var host libenet.Host
-	err := adapterenet.Call(func() error {
-		var err error
-		host, err = libenet.NewHost(nil, 1, 2, 0, 0)
-		return err
-	})
+	loop, err := adapterenet.NewHostLoop(nil, 1, 2)
 	if err != nil {
 		t.Fatalf("client host: %v", err)
 	}
-	t.Cleanup(func() { adapterenet.Do(func() { host.Destroy() }) })
+	// Stop идемпотентен: drain + host.Destroy + ожидание выхода loop-горутины.
+	t.Cleanup(loop.Stop)
 
 	var peer libenet.Peer
-	err = adapterenet.Call(func() error {
+	err = loop.Do(func() error {
 		var err error
-		peer, err = host.Connect(libenet.NewAddress("127.0.0.1", port), 2, 0)
+		peer, err = loop.Host().Connect(libenet.NewAddress("127.0.0.1", port), 2, 0)
 		return err
 	})
 	if err != nil {
 		t.Fatalf("client connect: %v", err)
 	}
-	return &enetTestClient{host: host, peer: peer}
+	return &enetTestClient{loop: loop, peer: peer}
 }
 
 func (c *enetTestClient) waitEvent(t *testing.T, want libenet.EventType, timeout time.Duration) libenet.Event {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		ev := adapterenet.Call(func() libenet.Event { return c.host.Service(10) })
+		ev, err := adapterenet.Call(c.loop, func() libenet.Event { return c.loop.Host().Service(10) })
+		if err != nil {
+			t.Fatalf("client service: %v", err)
+		}
 		switch ev.GetType() {
 		case libenet.EventNone:
 			continue
@@ -80,7 +80,7 @@ func newTestHandler(cfg adapterenet.EnetConfig) *deliveryenet.RoomsHandler {
 		context.Background(),
 		nil, // joinRoomUseCase — e2e покрывает только пути до JoinRoom
 		nil, // leaveRoomUseCase
-		adapterenet.NewEnetConnectionFactory(discardLogger{}),
+		adapterenet.NewEnetConnectionFactory(nil, discardLogger{}),
 		cfg,
 		discardLogger{},
 	)
@@ -159,7 +159,7 @@ func TestJoinRejectFrameDelivered(t *testing.T) {
 	client := newEnetTestClient(t, cfg.ListenPort)
 	client.waitEvent(t, libenet.EventConnect, 3*time.Second)
 
-	err := adapterenet.Call(func() error {
+	err := client.loop.Do(func() error {
 		return client.peer.SendBytes([]byte{}, 0, libenet.PacketFlagReliable)
 	})
 	if err != nil {
@@ -167,8 +167,11 @@ func TestJoinRejectFrameDelivered(t *testing.T) {
 	}
 
 	ev := client.waitEvent(t, libenet.EventReceive, 3*time.Second)
-	data := adapterenet.Call(func() []byte { return ev.GetPacket().GetData() })
-	adapterenet.Do(func() { ev.GetPacket().Destroy() })
+	data, err := adapterenet.Call(client.loop, func() []byte { return ev.GetPacket().GetData() })
+	if err != nil {
+		t.Fatalf("packet get data: %v", err)
+	}
+	_ = client.loop.Do(func() error { ev.GetPacket().Destroy(); return nil })
 	if len(data) != 1 || domain.OpCode(data[0]) != domain.OpEmptyToken {
 		t.Fatalf("reject frame = %v, want single byte %#x", data, byte(domain.OpEmptyToken))
 	}

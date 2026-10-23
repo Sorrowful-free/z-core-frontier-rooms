@@ -13,7 +13,10 @@ type EnetConnectionFactory struct {
 	logger logging.Logger
 }
 
-func NewEnetConnectionFactory(logger logging.Logger) *EnetConnectionFactory {
+// NewEnetConnectionFactory - та же сигнатура, что и в cgo-ветке: *HostLoop
+// принимается в конструкторе (stub-тип, hostloop_stub.go), в stub-сборке
+// игнорируется.
+func NewEnetConnectionFactory(_ *HostLoop, logger logging.Logger) *EnetConnectionFactory {
 	return &EnetConnectionFactory{
 		logger: logger,
 	}

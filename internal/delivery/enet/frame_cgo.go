@@ -8,12 +8,15 @@ import (
 	libenet "github.com/codecat/go-enet"
 )
 
-func frameFromPacket(packet libenet.Packet, maxIncomingFrameBytes int) (domain.Frame, error) {
+// frameFromPacket - packet-чтения диспетчатся через очередь loop'а: функция
+// зовётся с run-горутины, а C-состояние packet'а трогает только loop-горутина.
+func frameFromPacket(loop *transportenet.HostLoop, packet libenet.Packet, maxIncomingFrameBytes int) (domain.Frame, error) {
 	var data []byte
 	var flags libenet.PacketFlags
-	transportenet.Do(func() {
+	_ = loop.Do(func() error {
 		data = packet.GetData()
 		flags = packet.GetFlags()
+		return nil
 	})
 	frame, err := domain.DecodeIncomingFrame(data, maxIncomingFrameBytes)
 	if err != nil {

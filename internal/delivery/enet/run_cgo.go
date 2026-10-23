@@ -14,29 +14,37 @@ import (
 	libenet "github.com/codecat/go-enet"
 )
 
-// Все вызовы libenet (Host/Peer/Packet) идут через transportenet.Call/Do —
-// единый mutex сериализации C API, см. adapter/transport/enet/connection_cgo.go.
-// sessions и поля peerSession трогает только host-loop горутина — отдельный mutex не нужен.
+// Все вызовы libenet (Host/Peer/Packet) сериализует HostLoop владеющего host'а
+// (adapter/transport/enet/hostloop_cgo.go): host.Service идёт blocking-
+// командой Call в loop, peer/packet-операции внутри dispatch - Call/Do в тот
+// же loop. Сам dispatch исполняется на run-горутине, НЕ на loop-горутине:
+// admit/leave путь (JoinRoom/LeaveRoom → dispatchLifecycle) синхронно ждёт
+// room-горутину, а та в OnJoin/OnLeave делает EnetConnection.Ping - blocking
+// Call в этот же loop. Dispatch на loop-горутине замыкал бы cross-deadlock
+// executor↔room; на run-горутине блокировка безобидна, executor при этом
+// свободен и обслуживает Ping/conn-операции.
+// sessions и поля peerSession трогает только run-горутина - mutex не нужен.
 func (h *RoomsHandler) run(ctx context.Context) error {
-	transportenet.Do(libenet.Initialize)
-	defer transportenet.Do(libenet.Deinitialize)
+	// Initialize без лока: вызов до старта любых host-loop'ов процесса,
+	// гонки нет по построению (P15, Q3).
+	libenet.Initialize()
+	defer libenet.Deinitialize()
 
-	var host libenet.Host
-	err := transportenet.Call(func() error {
-		var err error
-		host, err = libenet.NewHost(
-			libenet.NewListenAddress(h.cfg.ListenPort),
-			h.cfg.PeerLimit,
-			h.cfg.ChannelLimit,
-			0,
-			0,
-		)
-		return err
-	})
+	loop, err := transportenet.NewHostLoop(
+		libenet.NewListenAddress(h.cfg.ListenPort),
+		h.cfg.PeerLimit,
+		h.cfg.ChannelLimit,
+	)
 	if err != nil {
 		return fmt.Errorf("enet host create port %d: %w", h.cfg.ListenPort, err)
 	}
-	defer transportenet.Do(func() { host.Destroy() })
+	// Stop идемпотентен и ждёт выхода executor'а (drain + host.Destroy);
+	// до Deinitialize - обратный порядок.
+	defer loop.Stop()
+	// Peer→host привязка: фабрика конструируется в main/env раньше loop'а.
+	if f, ok := h.connectionFactory.(*transportenet.EnetConnectionFactory); ok {
+		f.BindLoop(loop)
+	}
 
 	h.logger.Info("enet host listening", "port", h.cfg.ListenPort)
 
@@ -45,83 +53,103 @@ func (h *RoomsHandler) run(ctx context.Context) error {
 	for {
 		if err := ctx.Err(); err != nil {
 			h.closeSessions(sessions)
-			// Best-effort drain: пара service-итераций, чтобы queued graceful
-			// disconnect'ы ушли на провод до host.Destroy.
-			h.drainHost(host)
+			// Best-effort drain: conn.Close из closeSessions закинул graceful
+			// DisconnectLater в очередь loop'а (FIFO - исполнится до service-
+			// команд ниже); пара service-итераций выгонит их на провод до Destroy.
+			h.drainHost(loop)
 			return err
 		}
 
 		h.disconnectExpiredAdmits(sessions)
 
-		ev := transportenet.Call(func() libenet.Event {
-			return host.Service(h.cfg.ServiceTimeoutMs)
+		ev, err := transportenet.Call(loop, func() libenet.Event {
+			return loop.Host().Service(h.cfg.ServiceTimeoutMs)
 		})
-		switch ev.GetType() {
-		case libenet.EventNone:
-			continue
+		if err != nil {
+			// Loop остановлен извне: shutdown-последовательность выше уже
+			// отработала либо не нужна (host на пути к Destroy).
+			h.closeSessions(sessions)
+			return transportenet.ErrHostLoopStopped
+		}
+		h.dispatchEvent(ctx, loop, sessions, ev)
+	}
+}
 
-		case libenet.EventConnect:
-			sess := newPeerSession(ev.GetPeer(), h.connectionFactory, h.cfg.EnetIncomingQueueSize)
-			sessions[sess.id] = sess
-			h.logger.Info("enet peer connected", "enet_peer_id", sess.id)
+// dispatchEvent - обработка одного события Service на run-горутине; обращения
+// к peer/packet - через Call/Do в loop (Event-аксессоры GetType/GetPeer/
+// GetPacket/GetData читают Go-копию события и диспатча не требуют).
+func (h *RoomsHandler) dispatchEvent(
+	ctx context.Context,
+	loop *transportenet.HostLoop,
+	sessions map[uint16]*peerSession,
+	ev libenet.Event,
+) {
+	switch ev.GetType() {
+	case libenet.EventNone:
+		return
 
-		case libenet.EventReceive:
-			id := transportenet.Call(func() uint16 { return ev.GetPeer().GetIncomingPeerId() })
-			packet := ev.GetPacket()
+	case libenet.EventConnect:
+		sess := newPeerSession(loop, ev.GetPeer(), h.connectionFactory, h.cfg.EnetIncomingQueueSize)
+		sessions[sess.id] = sess
+		h.logger.Info("enet peer connected", "enet_peer_id", sess.id)
 
-			sess, ok := sessions[id]
-			if !ok {
-				transportenet.Do(packet.Destroy)
-				h.logger.Warn("enet receive from unknown peer", "enet_peer_id", id)
-				continue
-			}
+	case libenet.EventReceive:
+		id, _ := transportenet.Call(loop, func() uint16 { return ev.GetPeer().GetIncomingPeerId() })
+		packet := ev.GetPacket()
 
-			if !sess.admitted {
-				data := transportenet.Call(func() []byte { return packet.GetData() })
-				transportenet.Do(packet.Destroy)
-				if h.packetTooLarge(len(data)) {
-					h.logger.Warn("enet admit packet too large", "enet_peer_id", id, "bytes", len(data))
-					h.disconnectSession(ctx, sessions, id, sess)
-					continue
-				}
-				if err := h.admit(ctx, sess, data); err != nil {
-					deliveryerrors.SendJoinReject(sess.conn, err)
-					// Graceful close: conn.Close → peer.Disconnect — сначала на провод
-					// уходит queued reliable reject, затем disconnect (P7: reject доезжает).
-					_ = sess.close()
-					delete(sessions, id)
-				}
-				continue
-			}
+		sess, ok := sessions[id]
+		if !ok {
+			_ = loop.Do(func() error { packet.Destroy(); return nil })
+			h.logger.Warn("enet receive from unknown peer", "enet_peer_id", id)
+			return
+		}
 
-			frame, err := frameFromPacket(packet, h.cfg.MaxIncomingFrameBytes)
-			transportenet.Do(packet.Destroy)
-			if err != nil {
-				if errors.Is(err, domain.ErrIncomingFrameTooLarge) {
-					h.logger.Warn("enet frame too large", "enet_peer_id", id)
-				} else {
-					h.logger.Warn("enet invalid frame", "error", err, "enet_peer_id", id)
-				}
+		if !sess.admitted {
+			data, _ := transportenet.Call(loop, func() []byte { return packet.GetData() })
+			_ = loop.Do(func() error { packet.Destroy(); return nil })
+			if h.packetTooLarge(len(data)) {
+				h.logger.Warn("enet admit packet too large", "enet_peer_id", id, "bytes", len(data))
 				h.disconnectSession(ctx, sessions, id, sess)
-				continue
+				return
 			}
-			if !sess.deliver(frame) {
-				h.logger.Warn("enet incoming queue full, dropping frame", "enet_peer_id", id)
-			}
-
-		case libenet.EventDisconnect:
-			id := transportenet.Call(func() uint16 { return ev.GetPeer().GetIncomingPeerId() })
-			sess, ok := sessions[id]
-			delete(sessions, id)
-			if ok {
-				if sess.admitted && sess.roomID.IsValid() && sess.peerID.IsValid() {
-					if err := h.leaveRoomUseCase.LeaveRoom(ctx, sess.roomID, sess.peerID); err != nil {
-						h.logger.Error("enet leave room failed", "error", err, "enet_peer_id", id, "roomID", sess.roomID, "peerID", sess.peerID)
-					}
-				}
+			if err := h.admit(ctx, sess, data); err != nil {
+				deliveryerrors.SendJoinReject(sess.conn, err)
+				// Graceful close: conn.Close кладёт DisconnectLater в очередь
+				// loop'а - сначала на провод уходит queued reliable reject
+				// (тот же FIFO), затем disconnect (P7: reject доезжает).
 				_ = sess.close()
-				h.logger.Info("enet peer disconnected", "enet_peer_id", id, "data", ev.GetData())
+				delete(sessions, id)
 			}
+			return
+		}
+
+		frame, err := frameFromPacket(loop, packet, h.cfg.MaxIncomingFrameBytes)
+		_ = loop.Do(func() error { packet.Destroy(); return nil })
+		if err != nil {
+			if errors.Is(err, domain.ErrIncomingFrameTooLarge) {
+				h.logger.Warn("enet frame too large", "enet_peer_id", id)
+			} else {
+				h.logger.Warn("enet invalid frame", "error", err, "enet_peer_id", id)
+			}
+			h.disconnectSession(ctx, sessions, id, sess)
+			return
+		}
+		if !sess.deliver(frame) {
+			h.logger.Warn("enet incoming queue full, dropping frame", "enet_peer_id", id)
+		}
+
+	case libenet.EventDisconnect:
+		id, _ := transportenet.Call(loop, func() uint16 { return ev.GetPeer().GetIncomingPeerId() })
+		sess, ok := sessions[id]
+		delete(sessions, id)
+		if ok {
+			if sess.admitted && sess.roomID.IsValid() && sess.peerID.IsValid() {
+				if err := h.leaveRoomUseCase.LeaveRoom(ctx, sess.roomID, sess.peerID); err != nil {
+					h.logger.Error("enet leave room failed", "error", err, "enet_peer_id", id, "roomID", sess.roomID, "peerID", sess.peerID)
+				}
+			}
+			_ = sess.close()
+			h.logger.Info("enet peer disconnected", "enet_peer_id", id, "data", ev.GetData())
 		}
 	}
 }
@@ -150,8 +178,9 @@ func (h *RoomsHandler) packetTooLarge(size int) bool {
 	return max > 0 && size > max
 }
 
-// disconnectSession — LeaveRoom (если admitted) + graceful close + удаление из map.
-// conn.Close кладёт graceful peer.Disconnect: queued outbound пакеты уходят до разрыва.
+// disconnectSession - LeaveRoom (если admitted) + graceful close + удаление из map.
+// conn.Close кладёт graceful peer.Disconnect в очередь loop'а: queued outbound
+// пакеты уходят до разрыва (FIFO сохраняет порядок reject → disconnect).
 func (h *RoomsHandler) disconnectSession(
 	ctx context.Context,
 	sessions map[uint16]*peerSession,
@@ -168,7 +197,7 @@ func (h *RoomsHandler) disconnectSession(
 }
 
 // disconnectExpiredAdmits отключает peers, занявших PeerLimit-слот на EventConnect,
-// но не прошедших admit за cfg.AdmitTimeout. Admitted сессии не трогает —
+// но не прошедших admit за cfg.AdmitTimeout. Admitted сессии не трогает -
 // их чистит idle peer sweep.
 func (h *RoomsHandler) disconnectExpiredAdmits(sessions map[uint16]*peerSession) {
 	deadline := time.Now().Add(-h.cfg.AdmitTimeout)
@@ -183,10 +212,11 @@ func (h *RoomsHandler) disconnectExpiredAdmits(sessions map[uint16]*peerSession)
 }
 
 // closeSessions закрывает все сессии при shutdown: conn.Close закрывает
-// closed-канал (будит Receive-горутины peer'ов) и шлёт graceful disconnect.
-// LeaveRoom/Revoke для admitted peers здесь не выполняется — их снимает
-// registry shutdown (DeleteForShutdown) до вызова Stop; EventDisconnect,
-// который drainHost проглатывает, leave-путь тоже не прогоняет.
+// closed-канал (будит Receive-горутины peer'ов) и кладёт graceful disconnect в
+// очередь loop'а - drainHost после него выгонит их на провод. LeaveRoom/Revoke
+// для admitted peers здесь не выполняется - их снимает registry shutdown
+// (DeleteForShutdown) до вызова Stop; EventDisconnect, который drainHost
+// проглатывает, leave-путь тоже не прогоняет.
 func (h *RoomsHandler) closeSessions(sessions map[uint16]*peerSession) {
 	for id, sess := range sessions {
 		_ = sess.close()
@@ -194,14 +224,15 @@ func (h *RoomsHandler) closeSessions(sessions map[uint16]*peerSession) {
 	}
 }
 
-// drainHost — best-effort: всего 2 service-итерации (~2×ServiceTimeoutMs) перед
-// host.Destroy. Peer с большим backlog может не успеть отправить очередь и
-// получит hard disconnect вместо graceful — приемлемо: shutdown-путь уже
-// сигналит о завершении процесса, и ждать произвольно долго нельзя.
-func (h *RoomsHandler) drainHost(host libenet.Host) {
+// drainHost - best-effort: всего 2 service-итерации (~2xServiceTimeoutMs) через
+// очередь loop'а перед Stop/Destroy. Peer с большим backlog может не успеть
+// отправить очередь и получит hard disconnect вместо graceful - приемлемо:
+// shutdown-путь уже сигналит о завершении процесса, и ждать произвольно долго
+// нельзя. Ошибки Call (loop уже остановлен) игнорируем - путь best-effort.
+func (h *RoomsHandler) drainHost(loop *transportenet.HostLoop) {
 	for range 2 {
-		transportenet.Call(func() libenet.Event {
-			return host.Service(h.cfg.ServiceTimeoutMs)
+		_, _ = transportenet.Call(loop, func() libenet.Event {
+			return loop.Host().Service(h.cfg.ServiceTimeoutMs)
 		})
 	}
 }
