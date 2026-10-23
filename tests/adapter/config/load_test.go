@@ -320,7 +320,7 @@ func TestLoadFromEnv_TransportWSWriteDeadline(t *testing.T) {
 func TestLoadFromEnv_EnetDefaults(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", validSecret())
 	setHTTPAuthDisabled(t)
-	for _, k := range []string{"ENET_LISTEN_PORT", "ENET_PEER_LIMIT", "ENET_ADMIT_TIMEOUT"} {
+	for _, k := range []string{"ENET_LISTEN_PORT", "ENET_LISTEN_PORTS", "ENET_PEER_LIMIT", "ENET_ADMIT_TIMEOUT"} {
 		t.Setenv(k, "")
 	}
 
@@ -329,8 +329,8 @@ func TestLoadFromEnv_EnetDefaults(t *testing.T) {
 		t.Fatalf("LoadFromEnv: %v", err)
 	}
 	def := enetadapter.DefaultEnetConfig()
-	if cfg.Enet.ListenPort != def.ListenPort {
-		t.Fatalf("enet listen port = %d, want %d", cfg.Enet.ListenPort, def.ListenPort)
+	if len(cfg.Enet.ListenPorts) != 1 || cfg.Enet.ListenPorts[0] != def.ListenPorts[0] {
+		t.Fatalf("enet listen ports = %v, want %v", cfg.Enet.ListenPorts, def.ListenPorts)
 	}
 	if cfg.Enet.PeerLimit != def.PeerLimit {
 		t.Fatalf("enet peer limit = %d, want %d", cfg.Enet.PeerLimit, def.PeerLimit)
@@ -351,14 +351,52 @@ func TestLoadFromEnv_EnetOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFromEnv: %v", err)
 	}
-	if cfg.Enet.ListenPort != 8899 {
-		t.Fatalf("enet listen port = %d, want 8899", cfg.Enet.ListenPort)
+	if len(cfg.Enet.ListenPorts) != 1 || cfg.Enet.ListenPorts[0] != 8899 {
+		t.Fatalf("enet listen ports = %v, want [8899]", cfg.Enet.ListenPorts)
 	}
 	if cfg.Enet.PeerLimit != 16 {
 		t.Fatalf("enet peer limit = %d, want 16", cfg.Enet.PeerLimit)
 	}
 	if cfg.Enet.AdmitTimeout != 3*time.Second {
 		t.Fatalf("enet admit timeout = %v, want 3s", cfg.Enet.AdmitTimeout)
+	}
+}
+
+// P18: ENET_LISTEN_PORTS CSV (несколько host'ов); ENET_LISTEN_PORT побеждает.
+func TestLoadFromEnv_EnetListenPorts(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	t.Setenv("ENET_LISTEN_PORT", "")
+	t.Setenv("ENET_LISTEN_PORTS", "7777, 7778,7779")
+
+	cfg, err := appconfig.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv: %v", err)
+	}
+	want := []uint16{7777, 7778, 7779}
+	if len(cfg.Enet.ListenPorts) != len(want) {
+		t.Fatalf("enet listen ports = %v, want %v", cfg.Enet.ListenPorts, want)
+	}
+	for i, p := range want {
+		if cfg.Enet.ListenPorts[i] != p {
+			t.Fatalf("enet listen ports = %v, want %v", cfg.Enet.ListenPorts, want)
+		}
+	}
+}
+
+// P18: single ENET_LISTEN_PORT - backward-compat alias, побеждает CSV.
+func TestLoadFromEnv_EnetListenPortWinsOverPorts(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	t.Setenv("ENET_LISTEN_PORT", "8899")
+	t.Setenv("ENET_LISTEN_PORTS", "7777,7778")
+
+	cfg, err := appconfig.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv: %v", err)
+	}
+	if len(cfg.Enet.ListenPorts) != 1 || cfg.Enet.ListenPorts[0] != 8899 {
+		t.Fatalf("enet listen ports = %v, want [8899]", cfg.Enet.ListenPorts)
 	}
 }
 
@@ -371,6 +409,11 @@ func TestLoadFromEnv_EnetInvalid(t *testing.T) {
 		{"port overflow", map[string]string{"ENET_LISTEN_PORT": "70000"}},
 		{"port negative", map[string]string{"ENET_LISTEN_PORT": "-1"}},
 		{"port not a number", map[string]string{"ENET_LISTEN_PORT": "abc"}},
+		{"ports zero element", map[string]string{"ENET_LISTEN_PORTS": "7777,0"}},
+		{"ports overflow element", map[string]string{"ENET_LISTEN_PORTS": "70000"}},
+		{"ports not a number", map[string]string{"ENET_LISTEN_PORTS": "7777,abc"}},
+		{"ports empty element", map[string]string{"ENET_LISTEN_PORTS": "7777,"}},
+		{"ports duplicate", map[string]string{"ENET_LISTEN_PORTS": "7777,7777"}},
 		{"peer limit zero", map[string]string{"ENET_PEER_LIMIT": "0"}},
 		{"peer limit negative", map[string]string{"ENET_PEER_LIMIT": "-5"}},
 		{"admit timeout zero", map[string]string{"ENET_ADMIT_TIMEOUT": "0s"}},

@@ -71,6 +71,7 @@ Reservation-ошибки на join мапятся в диапазон `0x70+` (�
 | `OpReservationExpired` | `0x74` | `ErrReservationExpired` |
 | `OpReservationAlreadyAdmitted` | `0x75` | `ErrReservationAlreadyAdmitted` |
 | `OpPeerAlreadyInRoom` | `0x76` | `ErrPeerAlreadyInRoom` |
+| `OpWrongHost` | `0x77` | `ErrWrongHost` - ticket привязан к другому ENet host'у (P18) |
 | `OpReservationInternal` | `0x7F` | `ErrReservationInternal` |
 
 ### Реакция Godot (reservation)
@@ -81,6 +82,7 @@ Reservation-ошибки на join мапятся в диапазон `0x70+` (�
 | `0x72`, `0x76` | Подождать TTL / другой nick / reconnect policy |
 | `0x74` | Новый ticket (истёк TTL) |
 | `0x75` | Уже admitted — возможно duplicate join |
+| `0x77` | Переподключиться на `enet_port` из ответа issue ticket (тот же ticket, слот не потрачен) |
 
 ---
 

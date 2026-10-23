@@ -11,8 +11,12 @@ import (
 // за это время, отключается (слот PeerLimit не занят бесконечно).
 const DefaultAdmitTimeout = 10 * time.Second
 
-// EnetConfig — параметры ENet host (отдельный UDP-слушатель, не Fiber).
+// EnetConfig - параметры ENet host'ов (отдельные UDP-слушатели, не Fiber).
 // Файл без build-тегов: конфиг нужен и stub-сборкам без cgo.
+//
+// ListenPorts - список портов, по одному host'у на порт (P18, шардирование):
+// delivery/enet поднимает HostLoop на каждый порт; hostID в claims - индекс+1
+// в этом списке. PeerLimit - per-host (лимит структуры libenet).
 //
 // ServiceTimeoutMs — бюджет одного вызова host.Service на HostLoop'е (P15):
 // это верхняя граница latency очереди команд (send/disconnect ждут возврата
@@ -20,7 +24,7 @@ const DefaultAdmitTimeout = 10 * time.Second
 // минимальна; поднять можно через ENET_SERVICE_TIMEOUT_MS, если цикл на
 // пустом хосте станет заметен.
 type EnetConfig struct {
-	ListenPort            uint16
+	ListenPorts           []uint16
 	PeerLimit             uint64
 	ChannelLimit          uint64
 	ServiceTimeoutMs      uint32
@@ -32,7 +36,7 @@ type EnetConfig struct {
 
 func DefaultEnetConfig() EnetConfig {
 	return EnetConfig{
-		ListenPort:            7777,
+		ListenPorts:           []uint16{7777},
 		PeerLimit:             64,
 		ChannelLimit:          2,
 		ServiceTimeoutMs:      1,
@@ -44,8 +48,18 @@ func DefaultEnetConfig() EnetConfig {
 
 // Validate проверяет допустимость значений (config.mdc: валидация у модуля).
 func (c EnetConfig) Validate() error {
-	if c.ListenPort == 0 {
-		return fmt.Errorf("enet config: listen port must be > 0")
+	if len(c.ListenPorts) == 0 {
+		return fmt.Errorf("enet config: at least one listen port required")
+	}
+	seen := make(map[uint16]bool, len(c.ListenPorts))
+	for _, port := range c.ListenPorts {
+		if port == 0 {
+			return fmt.Errorf("enet config: listen port must be > 0")
+		}
+		if seen[port] {
+			return fmt.Errorf("enet config: duplicate listen port %d", port)
+		}
+		seen[port] = true
 	}
 	if c.PeerLimit == 0 || c.PeerLimit > 4095 {
 		return fmt.Errorf("enet config: peer limit must be in range 1..4095")

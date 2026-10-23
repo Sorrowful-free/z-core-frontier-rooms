@@ -60,3 +60,62 @@ Strict-binding требует чтобы Claims нёс hostID — claims под�
 ## Верификация
 
 - Docker tagged прогон; latency-замер до/после на 2+ host'ах
+
+## Реализация (итог)
+
+- **Domain**: `HostID` (`u16`, `type_aliases.go`) - индекс+1 в
+  `EnetConfig.ListenPorts`; `HostIDAny = 0` - ticket без привязки.
+  `Claims.HostID`; `ErrWrongHost`; `OpWrongHost = 0x77` (band 0x70-0x7F).
+- **Port**: `port/admission.Issue(..., hostID)` + `Validate` → `Claims`
+  с `HostID`; новый `port/transport/enet.HostRegistry`
+  (`AssignHost(ctx) → {HostID, Port}`) - интерфейс на стороне
+  потребителя (usecase), реализация в delivery/enet.
+- **Admission**: ticket **v3** - `hostID u16` после `expiresAt`
+  (fixed 36 + MAC 32); `verify` принимает v2 и v3, у v2
+  `claims.HostID = HostIDAny` (backward compat).
+- **Config**: `EnetConfig.ListenPorts []uint16`; `ENET_LISTEN_PORTS`
+  CSV; `ENET_LISTEN_PORT` - alias, побеждает если задан; Validate:
+  ≥1 порт, 1-65535, без дублей. `PeerLimit` - per-host.
+- **delivery/enet**: `RoomsHandler` - mux над N `enetHost`
+  (`{id, port, peers atomic}`); `Listen()` - run-горутина на host,
+  `ListenHandle.Stop()` fan-out, `Done()` после выхода всех,
+  `Err()` - первая терминальная ошибка (fail-fast: первый упавший
+  run отменяет общий ctx). `libenet.Initialize/Deinitialize`
+  refcount - безопасно для N loop'ов. Фабрика на host через
+  `WithLoop` (peer→host привязка conn'ов). Admit: `Validate` ticket'а
+  до `JoinRoom` → `claims.HostID != HostIDAny && != host.id` →
+  `ErrWrongHost` → join-reject `0x77` + graceful disconnect; слот
+  reservation не тратится (проверка до `reservation.Admit`).
+  `AssignHost` - least-loaded по `host.peers` (инкремент на
+  EventConnect, декремент в `sess.close` once), round-robin сдвиг
+  стартовой позиции при равенстве.
+- **usecase**: `IssueTicketUseCase` принимает `HostRegistry`
+  (nil - ticket'ы без привязки, `EnetPort=0`); выбор host'а до
+  `Reserve` (ошибка registry не держит слот); `hostID` в `Issue`,
+  `Port` → `IssueTicketResult.EnetPort`.
+- **HTTP**: `issueTicketResponse.EnetPort uint16 json:"enet_port,omitempty"`
+  - и в create room, и в `POST /rooms/:id/tickets`.
+- **WS**: без изменений - ticket'ы по-прежнему валидны (claims с
+  hostID WS не проверяет; binding применяется только ENet admit'ом).
+- **testutil/env**: `WithEnet(ports ...uint16)`, `EnetPorts()`,
+  `EnetPort()` = первый; `IssueTicketPort`/`CreateRoomPort` отдают
+  назначенный порт.
+- **Mocks**: `tests/mocks/mock_enet_host_registry.go` (go generate).
+- **E2E** (`tests/integration/enet_shard_test.go`, tag enet):
+  2 host'а → ticket'ы на разные host'ы (least-loaded), комната
+  собирает peer'ов с двух host'ов, admit на чужом порту → `0x77`
+  + disconnect (слот не потрачен, тот же ticket на правильном →
+  admit), ticket `HostIDAny` → admit на любом.
+- **Верификация**: `go build ./...`, `go vet ./...`,
+  `golangci-lint run` (0 issues), `go test -race -short` зелёный;
+  `./scripts/enet-verify.sh` build/vet/test зелёный
+  (`TestE2E_ENetHostSharding` PASS).
+
+### Отклонения/нюансы
+
+- Admit делает отдельный `admission.Validate` для hostID до
+  `JoinRoom` (который валидирует повторно) - цена за reject до
+  `reservation.Admit`; HMAC дёшев, race отсутствует (проверка
+  read-only).
+- `HostAssignment` в порте несёт `Port`, а не только `HostID`:
+  usecase'у нужен порт для ответа без обратного lookup.

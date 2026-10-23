@@ -39,6 +39,7 @@ import (
 	portpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/policy"
 	portregistry "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/registry"
 	portreservation "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/reservation"
+	portenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/enet"
 	useroom "github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
 	fwebsocket "github.com/fasthttp/websocket"
 	"github.com/gofiber/fiber/v3"
@@ -57,7 +58,7 @@ type Env struct {
 	wsListener net.Listener
 	wsAddr     string
 
-	enetPort   uint16
+	enetPorts  []uint16
 	enetHandle *deliveryenet.ListenHandle
 }
 
@@ -66,7 +67,8 @@ type options struct {
 	httpLimits        httplimitsadapter.HTTPLimitsConfig
 	transport         adaptertransport.TransportConfig
 	idleSweepInterval time.Duration
-	enet              bool // выставляется tagged-опцией WithEnet (env_enet.go)
+	enet              bool     // выставляется tagged-опцией WithEnet (env_enet.go)
+	enetPorts         []uint16 // 0-элемент = auto (свободный порт)
 }
 
 // Option переопределяет дефолтный конфиг env (auth Disabled, limits zero, transport zero).
@@ -141,12 +143,40 @@ func New(t *testing.T, opts ...Option) *Env {
 	allocator := identityadapter.NewCounter()
 	connectionFactory := transportws.NewWsConnectionFactory(logger, cfg.transport)
 
-	issueUC := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
-	createUC := useroom.NewCreateUseCase(registry, allocator, reservation, limits, issueUC, logger)
 	leaveUC := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
 	deleteUC := useroom.NewDeleteUseCase(registry, reservation, leaveUC, logger)
 	getListUC := useroom.NewGetListUseCase(registry, logger)
 	joinUC := useroom.NewJoinRoomUseCase(admission, peerFactory, registry, reservation, logger)
+
+	var enetHandler *deliveryenet.RoomsHandler
+	var enetPorts []uint16
+	if cfg.enet {
+		// Продовый ENet mux listener (P18): по host'у на порт; 0-элементы
+		// enetPorts - auto-свободные порты. Символы stub-safe (без тега enet
+		// Listen - no-op), но cfg.enet ставит только tagged WithEnet → в
+		// untagged-сборке блок мёртв.
+		enetCfg := adapterenet.DefaultEnetConfig()
+		enetCfg.ListenPorts = resolveEnetPorts(t, cfg.enetPorts)
+		enetCfg.MaxIncomingFrameBytes = cfg.transport.MaxIncomingFrameBytes
+		enetCfg.EnetIncomingQueueSize = cfg.transport.EnetIncomingQueueSize
+		// ServiceTimeoutMs = 1: короткие service-итерации, чтобы серверный
+		// HostLoop чаще разгребал очередь команд - шаг poll'ов тестов ~10ms,
+		// лишний latency send-пути не нужен. Глобального apiMu-конвоя P12
+		// больше нет: у каждого host'а своя очередь (P15).
+		enetCfg.ServiceTimeoutMs = 1
+		enetPorts = enetCfg.ListenPorts
+		enetHandler = deliveryenet.NewRoomsHandler(context.Background(), joinUC, leaveUC,
+			adapterenet.NewEnetConnectionFactory(nil, logger), admission, enetCfg, logger)
+	}
+
+	// Handler (когда ENet включён) - HostRegistry: strict binding ticket'ов
+	// к назначенному host'у; nil - ticket'ы без привязки.
+	var hostRegistry portenet.HostRegistry
+	if enetHandler != nil {
+		hostRegistry = enetHandler
+	}
+	issueUC := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, hostRegistry, logger)
+	createUC := useroom.NewCreateUseCase(registry, allocator, reservation, limits, issueUC, logger)
 
 	var idleSweep *useroom.SweepHandle
 	if cfg.idleSweepInterval > 0 {
@@ -166,25 +196,11 @@ func New(t *testing.T, opts ...Option) *Env {
 		Reservation: reservation,
 		Admission:   admission,
 		Allocator:   allocator,
+		enetPorts:   enetPorts,
 	}
 
-	if cfg.enet {
-		// Продовый ENet listener на свободном UDP-порту; admit по ticket в
-		// первом пакете, дальше те же use cases, что у WS. Символы stub-safe
-		// (без тега enet Listen — no-op), но cfg.enet ставит только tagged
-		// WithEnet → в untagged-сборке блок мёртв.
-		enetCfg := adapterenet.DefaultEnetConfig()
-		enetCfg.ListenPort = freeUDPPort(t)
-		enetCfg.MaxIncomingFrameBytes = cfg.transport.MaxIncomingFrameBytes
-		enetCfg.EnetIncomingQueueSize = cfg.transport.EnetIncomingQueueSize
-		// ServiceTimeoutMs = 1: короткие service-итерации, чтобы серверный
-		// HostLoop чаще разгребал очередь команд - шаг poll'ов тестов ~10ms,
-		// лишний latency send-пути не нужен. Глобального apiMu-конвоя P12
-		// больше нет: у каждого host'а своя очередь (P15).
-		enetCfg.ServiceTimeoutMs = 1
-		e.enetPort = enetCfg.ListenPort
-		e.enetHandle = deliveryenet.NewRoomsHandler(context.Background(), joinUC, leaveUC,
-			adapterenet.NewEnetConnectionFactory(nil, logger), enetCfg, logger).Listen()
+	if enetHandler != nil {
+		e.enetHandle = enetHandler.Listen()
 		// Fail-fast на bind error: run() выходит сразу при ошибке NewHost.
 		select {
 		case <-e.enetHandle.Done():
@@ -335,9 +351,42 @@ func freeUDPPort(t *testing.T) uint16 {
 	return uint16(conn.LocalAddr().(*net.UDPAddr).Port)
 }
 
+// resolveEnetPorts разрешает 0-элементы списка в свободные порты и проверяет
+// дубликаты (явных и полученных auto-портов). Пустой список → один free порт.
+func resolveEnetPorts(t *testing.T, ports []uint16) []uint16 {
+	t.Helper()
+	if len(ports) == 0 {
+		ports = []uint16{0}
+	}
+	resolved := make([]uint16, len(ports))
+	seen := make(map[uint16]bool, len(ports))
+	for i, p := range ports {
+		if p == 0 {
+			for seen[p] || p == 0 {
+				p = freeUDPPort(t)
+			}
+		}
+		if seen[p] {
+			t.Fatalf("duplicate enet listen port %d", p)
+		}
+		seen[p] = true
+		resolved[i] = p
+	}
+	return resolved
+}
+
 // CreateRoom делает POST /rooms {"capacity":4,"nick_name":nick} и возвращает
 // roomID и host ticket (token уже base64url — в WS query идёт как есть).
 func (e *Env) CreateRoom(t *testing.T, nick string) (domain.RoomID, string) {
+	t.Helper()
+
+	roomID, token, _ := e.CreateRoomPort(t, nick)
+	return roomID, token
+}
+
+// CreateRoomPort - то же, что CreateRoom, плюс назначенный ENet-порт тикета
+// (P18: ответ issue несёт enet_port; 0 - env без ENet listener'а).
+func (e *Env) CreateRoomPort(t *testing.T, nick string) (domain.RoomID, string, uint16) {
 	t.Helper()
 
 	resp, body := e.Do(t, http.MethodPost, "/rooms", map[string]any{
@@ -348,8 +397,9 @@ func (e *Env) CreateRoom(t *testing.T, nick string) (domain.RoomID, string) {
 		t.Fatalf("create room status = %d, body = %s", resp.StatusCode, body)
 	}
 	var created struct {
-		Token string `json:"token"`
-		Room  struct {
+		Token    string `json:"token"`
+		EnetPort uint16 `json:"enet_port"`
+		Room     struct {
 			ID int64 `json:"id"`
 		} `json:"room"`
 	}
@@ -359,12 +409,21 @@ func (e *Env) CreateRoom(t *testing.T, nick string) (domain.RoomID, string) {
 	if created.Token == "" {
 		t.Fatal("create room: empty token")
 	}
-	return domain.RoomID(created.Room.ID), created.Token
+	return domain.RoomID(created.Room.ID), created.Token, created.EnetPort
 }
 
 // IssueTicket делает POST /rooms/:id/tickets {"nick_name":nick} и возвращает
 // joiner ticket. Комната без пароля — VerifyRoomPassword пропускает пустой.
 func (e *Env) IssueTicket(t *testing.T, roomID domain.RoomID, nick string) string {
+	t.Helper()
+
+	token, _ := e.IssueTicketPort(t, roomID, nick)
+	return token
+}
+
+// IssueTicketPort - то же, что IssueTicket, плюс назначенный ENet-порт тикета
+// (0 - env без ENet listener'а).
+func (e *Env) IssueTicketPort(t *testing.T, roomID domain.RoomID, nick string) (string, uint16) {
 	t.Helper()
 
 	resp, body := e.Do(t, http.MethodPost, fmt.Sprintf("/rooms/%d/tickets", roomID), map[string]any{
@@ -374,7 +433,8 @@ func (e *Env) IssueTicket(t *testing.T, roomID domain.RoomID, nick string) strin
 		t.Fatalf("issue ticket status = %d, body = %s", resp.StatusCode, body)
 	}
 	var ticket struct {
-		Token string `json:"token"`
+		Token    string `json:"token"`
+		EnetPort uint16 `json:"enet_port"`
 	}
 	if err := json.Unmarshal(body, &ticket); err != nil {
 		t.Fatalf("unmarshal ticket: %v", err)
@@ -382,7 +442,7 @@ func (e *Env) IssueTicket(t *testing.T, roomID domain.RoomID, nick string) strin
 	if ticket.Token == "" {
 		t.Fatal("issue ticket: empty token")
 	}
-	return ticket.Token
+	return ticket.Token, ticket.EnetPort
 }
 
 // WaitPeerNick ждёт присутствия (want=true) или отсутствия (want=false) peer'а

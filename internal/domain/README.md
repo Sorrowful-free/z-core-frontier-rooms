@@ -8,7 +8,8 @@
 - `RoomAttributes` — произвольный JSON-словарь аргументов комнаты (`room_attributes.go`)
 - `MaxRoomCapacity` (127) — верхняя граница вместимости комнаты (wire/state: `int8`)
 - `DecodeIncomingFrame` — разбор data plane кадра (`frame_wire.go`)
-- `Claims` — `RoomID`, `PeerID`, `NickName`, `IssuedAt`, `ExpiresAt`
+- `Claims` - `RoomID`, `PeerID`, `NickName`, `HostID`, `IssuedAt`, `ExpiresAt`
+- `HostID` (`u16`) - идентификатор ENet host'а/shard'а процесса (индекс+1 в `EnetConfig.ListenPorts`); `HostIDAny` (`0`) - ticket без привязки к host'у (P18)
 - `events` — `RoomEvent`, `PeerEvent`
 
 ## NickName
@@ -20,7 +21,7 @@
 
 | Файл | Назначение |
 |------|------------|
-| `join_errors.go` | Join/admit (`ErrJoinDenied`, `ErrTicketSlotHeld`, …) |
+| `join_errors.go` | Join/admit (`ErrJoinDenied`, `ErrTicketSlotHeld`, `ErrWrongHost`, …) |
 | `frame_wire.go` | Data plane (`ErrIncomingFrameTooLarge`) |
 | `room_errors.go` | In-room (`ErrNotMaster`, …), control (`ErrRoomsLimitReached`, …), `ErrQueueFull` |
 | `reservation_error.go` | Слоты (`ErrReservationFull`, …) |

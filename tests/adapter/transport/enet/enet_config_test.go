@@ -28,7 +28,10 @@ func TestEnetConfig_Validate(t *testing.T) {
 		wantErr bool
 	}{
 		{"valid", func(*enetadapter.EnetConfig) {}, false},
-		{"listen port zero", func(c *enetadapter.EnetConfig) { c.ListenPort = 0 }, true},
+		{"no listen ports", func(c *enetadapter.EnetConfig) { c.ListenPorts = nil }, true},
+		{"listen port zero", func(c *enetadapter.EnetConfig) { c.ListenPorts = []uint16{0} }, true},
+		{"multi ports valid", func(c *enetadapter.EnetConfig) { c.ListenPorts = []uint16{7777, 7778} }, false},
+		{"duplicate ports", func(c *enetadapter.EnetConfig) { c.ListenPorts = []uint16{7777, 7778, 7777} }, true},
 		{"peer limit zero", func(c *enetadapter.EnetConfig) { c.PeerLimit = 0 }, true},
 		{"channel limit zero", func(c *enetadapter.EnetConfig) { c.ChannelLimit = 0 }, true},
 		{"frame bytes zero ok", func(c *enetadapter.EnetConfig) { c.MaxIncomingFrameBytes = 0 }, false},

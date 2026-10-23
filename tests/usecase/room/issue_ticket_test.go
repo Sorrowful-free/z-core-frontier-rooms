@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
+	portenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/enet"
 	useroom "github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/mocks"
 	"go.uber.org/mock/gomock"
@@ -48,12 +49,12 @@ func TestIssueTicket_Success(t *testing.T) {
 		Reserve(gomock.Any(), roomID, peerID, testNickName, gomock.Any()).
 		Return(nil)
 	admission.EXPECT().
-		Issue(gomock.Any(), roomID, peerID, testNickName).
+		Issue(gomock.Any(), roomID, peerID, testNickName, domain.HostIDAny).
 		Return(wantToken, nil)
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 	expectIssueTicketRoomSummary(room, roomID)
 
-	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
+	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, nil, logger)
 	result, err := uc.IssueTicket(context.Background(), roomID, testNickName, password)
 	if err != nil {
 		t.Fatalf("IssueTicket: %v", err)
@@ -76,7 +77,7 @@ func TestIssueTicket_InvalidNickName(t *testing.T) {
 	reservation := mocks.NewMockReservation(ctrl)
 	logger := mocks.NewMockLogger(ctrl)
 
-	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
+	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, nil, logger)
 	_, err := uc.IssueTicket(context.Background(), domain.RoomID(1), "", "secret")
 	if !errors.Is(err, domain.ErrInvalidNickName) {
 		t.Fatalf("err = %v, want ErrInvalidNickName", err)
@@ -98,7 +99,7 @@ func TestIssueTicket_RoomNotFound(t *testing.T) {
 		Return(nil, domain.ErrRoomNotFound)
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 
-	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
+	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, nil, logger)
 	_, err := uc.IssueTicket(context.Background(), domain.RoomID(1), testNickName, "")
 	if !errors.Is(err, domain.ErrRoomNotFound) {
 		t.Fatalf("err = %v, want ErrRoomNotFound", err)
@@ -125,7 +126,7 @@ func TestIssueTicket_AllocatorError(t *testing.T) {
 		Return(domain.PeerIDInvalid, allocateErr)
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 
-	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
+	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, nil, logger)
 	_, err := uc.IssueTicket(context.Background(), roomID, testNickName, "")
 	if !errors.Is(err, allocateErr) {
 		t.Fatalf("err = %v, want allocate error", err)
@@ -153,7 +154,7 @@ func TestIssueTicket_PeerAlreadyInRoom(t *testing.T) {
 	room.EXPECT().HasPeer(peerID).Return(true)
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 
-	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
+	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, nil, logger)
 	_, err := uc.IssueTicket(context.Background(), roomID, testNickName, "")
 	if !errors.Is(err, domain.ErrPeerAlreadyInRoom) {
 		t.Fatalf("err = %v, want ErrPeerAlreadyInRoom", err)
@@ -186,7 +187,7 @@ func TestIssueTicket_ReservationFull(t *testing.T) {
 		Return(domain.ErrReservationFull)
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 
-	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
+	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, nil, logger)
 	_, err := uc.IssueTicket(context.Background(), roomID, testNickName, "")
 	if !errors.Is(err, domain.ErrReservationFull) {
 		t.Fatalf("err = %v, want ErrReservationFull", err)
@@ -222,7 +223,7 @@ func TestIssueTicket_SlotHeld(t *testing.T) {
 		Return(domain.ReservationSlotReserved, nil)
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 
-	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
+	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, nil, logger)
 	_, err := uc.IssueTicket(context.Background(), roomID, testNickName, "")
 	if !errors.Is(err, domain.ErrTicketSlotHeld) {
 		t.Fatalf("err = %v, want ErrTicketSlotHeld", err)
@@ -268,13 +269,13 @@ func TestIssueTicket_OrphanAdmittedCleanup(t *testing.T) {
 			Return(nil),
 	)
 	admission.EXPECT().
-		Issue(gomock.Any(), roomID, peerID, testNickName).
+		Issue(gomock.Any(), roomID, peerID, testNickName, domain.HostIDAny).
 		Return(wantToken, nil)
 	logger.EXPECT().Warn(gomock.Any(), gomock.Any()).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 	expectIssueTicketRoomSummary(room, roomID)
 
-	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
+	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, nil, logger)
 	result, err := uc.IssueTicket(context.Background(), roomID, testNickName, password)
 	if err != nil {
 		t.Fatalf("IssueTicket: %v", err)
@@ -306,11 +307,11 @@ func TestIssueTicket_AdmissionErrorJoinsRevokeError(t *testing.T) {
 	reservation.EXPECT().VerifyRoomPassword(gomock.Any(), roomID, "").Return(nil)
 	admission.EXPECT().TTL().Return(time.Hour)
 	reservation.EXPECT().Reserve(gomock.Any(), roomID, peerID, testNickName, gomock.Any()).Return(nil)
-	admission.EXPECT().Issue(gomock.Any(), roomID, peerID, gomock.Any()).Return(nil, domain.ErrInvalidCredentials)
+	admission.EXPECT().Issue(gomock.Any(), roomID, peerID, gomock.Any(), gomock.Any()).Return(nil, domain.ErrInvalidCredentials)
 	reservation.EXPECT().Revoke(gomock.Any(), roomID, peerID).Return(domain.ErrReservationNotFound)
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).MinTimes(1)
 
-	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
+	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, nil, logger)
 	_, err := uc.IssueTicket(context.Background(), roomID, testNickName, "")
 	if !errors.Is(err, domain.ErrInvalidCredentials) {
 		t.Fatalf("err = %v, want ErrInvalidCredentials", err)
@@ -342,11 +343,11 @@ func TestIssueTicket_AdmissionErrorRevokesReserve(t *testing.T) {
 	reservation.EXPECT().VerifyRoomPassword(gomock.Any(), roomID, "").Return(nil)
 	admission.EXPECT().TTL().Return(time.Hour)
 	reservation.EXPECT().Reserve(gomock.Any(), roomID, peerID, testNickName, gomock.Any()).Return(nil)
-	admission.EXPECT().Issue(gomock.Any(), roomID, peerID, gomock.Any()).Return(nil, domain.ErrInvalidCredentials)
+	admission.EXPECT().Issue(gomock.Any(), roomID, peerID, gomock.Any(), gomock.Any()).Return(nil, domain.ErrInvalidCredentials)
 	reservation.EXPECT().Revoke(gomock.Any(), roomID, peerID).Return(nil)
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).MinTimes(1)
 
-	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
+	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, nil, logger)
 	_, err := uc.IssueTicket(context.Background(), roomID, testNickName, "")
 	if !errors.Is(err, domain.ErrInvalidCredentials) {
 		t.Fatalf("err = %v, want ErrInvalidCredentials", err)
@@ -377,10 +378,89 @@ func TestIssueTicket_InvalidRoomPassword(t *testing.T) {
 		Return(domain.ErrInvalidCredentials)
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 
-	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
+	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, nil, logger)
 	_, err := uc.IssueTicket(context.Background(), roomID, testNickName, "wrong")
 	if !errors.Is(err, domain.ErrInvalidCredentials) {
 		t.Fatalf("err = %v, want ErrInvalidCredentials", err)
+	}
+}
+
+// P18: назначенный host из HostRegistry уходит в claims (hostID) и в результат (EnetPort).
+func TestIssueTicket_AssignsEnetHost(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	registry := mocks.NewMockRoomRegistry(ctrl)
+	allocator := mocks.NewMockAllocator(ctrl)
+	admission := mocks.NewMockAdmission(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
+	hostRegistry := mocks.NewMockHostRegistry(ctrl)
+	logger := mocks.NewMockLogger(ctrl)
+	room := mocks.NewMockRoom(ctrl)
+
+	const (
+		roomID   = domain.RoomID(1)
+		peerID   = domain.PeerID(2)
+		hostID   = domain.HostID(2)
+		enetPort = uint16(7778)
+	)
+	wantToken := []byte("ticket-bytes")
+
+	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
+	allocator.EXPECT().AllocatePeerID(gomock.Any()).Return(peerID, nil)
+	room.EXPECT().HasPeer(peerID).Return(false)
+	reservation.EXPECT().VerifyRoomPassword(gomock.Any(), roomID, "").Return(nil)
+	hostRegistry.EXPECT().AssignHost(gomock.Any()).Return(portenet.HostAssignment{HostID: hostID, Port: enetPort}, nil)
+	admission.EXPECT().TTL().Return(time.Hour)
+	reservation.EXPECT().
+		Reserve(gomock.Any(), roomID, peerID, testNickName, gomock.Any()).
+		Return(nil)
+	admission.EXPECT().
+		Issue(gomock.Any(), roomID, peerID, testNickName, hostID).
+		Return(wantToken, nil)
+	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
+	expectIssueTicketRoomSummary(room, roomID)
+
+	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, hostRegistry, logger)
+	result, err := uc.IssueTicket(context.Background(), roomID, testNickName, "")
+	if err != nil {
+		t.Fatalf("IssueTicket: %v", err)
+	}
+	if result.EnetPort != enetPort {
+		t.Fatalf("EnetPort = %d, want %d", result.EnetPort, enetPort)
+	}
+}
+
+// P18: ошибка балансировщика пробрасывается до Reserve - слот не занимается.
+func TestIssueTicket_AssignHostError(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	registry := mocks.NewMockRoomRegistry(ctrl)
+	allocator := mocks.NewMockAllocator(ctrl)
+	admission := mocks.NewMockAdmission(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
+	hostRegistry := mocks.NewMockHostRegistry(ctrl)
+	logger := mocks.NewMockLogger(ctrl)
+	room := mocks.NewMockRoom(ctrl)
+
+	const (
+		roomID = domain.RoomID(1)
+		peerID = domain.PeerID(2)
+	)
+	assignErr := errors.New("no enet hosts")
+
+	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
+	allocator.EXPECT().AllocatePeerID(gomock.Any()).Return(peerID, nil)
+	room.EXPECT().HasPeer(peerID).Return(false)
+	reservation.EXPECT().VerifyRoomPassword(gomock.Any(), roomID, "").Return(nil)
+	hostRegistry.EXPECT().AssignHost(gomock.Any()).Return(portenet.HostAssignment{}, assignErr)
+	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
+
+	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, hostRegistry, logger)
+	_, err := uc.IssueTicket(context.Background(), roomID, testNickName, "")
+	if !errors.Is(err, assignErr) {
+		t.Fatalf("err = %v, want assign error", err)
 	}
 }
 
@@ -397,7 +477,7 @@ func TestIssueTicket_CancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, logger)
+	uc := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, nil, logger)
 	_, err := uc.IssueTicket(ctx, domain.RoomID(1), testNickName, "")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)

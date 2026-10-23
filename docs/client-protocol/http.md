@@ -55,7 +55,8 @@ ID комнаты выдаёт сервер — в запросе поля `id` 
 
 ```json
 {
-  "token": "AgAAAA...base64url...",
+  "token": "AwAAAA...base64url...",
+  "enet_port": 7777,
   "room": {
     "id": 42,
     "attributes": {
@@ -67,7 +68,9 @@ ID комнаты выдаёт сервер — в запросе поля `id` 
 }
 ```
 
-`token` — **base64.RawURLEncoding** (без padding `=`). Декодировать в сырые байты ticket v2 → первый UDP-пакет ([enet.md](enet.md)) или query `?token=` для WS.
+`token` - **base64.RawURLEncoding** (без padding `=`). Декодировать в сырые байты ticket v3 → первый UDP-пакет ([enet.md](enet.md)) или query `?token=` для WS.
+
+`enet_port` - назначенный UDP-порт ENet host'а (P18, привязка тикета к host'у/shard'у). Поле присутствует, только если на сервере поднят ENet listener.
 
 **Ошибки:** `400` `invalid_capacity`, `400` `invalid_nick_name`, `503` `rooms_limit_reached`, `429` `rate_limited`, а также ошибки issue ticket (`401` `invalid_credentials`, `409` `reservation_full` и т.д.) — при сбое issue созданная комната откатывается.
 
@@ -133,7 +136,8 @@ ID комнаты выдаёт сервер — в запросе поля `id` 
 
 ```json
 {
-  "token": "AgAAAA...base64url...",
+  "token": "AwAAAA...base64url...",
+  "enet_port": 7778,
   "room": {
     "id": 42,
     "attributes": {
@@ -148,7 +152,7 @@ ID комнаты выдаёт сервер — в запросе поля `id` 
 
 `token` — **base64.RawURLEncoding** (без padding `=`).
 
-- **ENet (основной):** декодировать в сырые байты ticket v2 → первый UDP-пакет ([enet.md](enet.md)).
+- **ENet (основной):** декодировать в сырые байты ticket v3 → первый UDP-пакет на порт `enet_port` ([enet.md](enet.md)). Ticket привязан к назначенному host'у: admit на другом порту → reject `0x77`.
 - **WebSocket (отладка):** строка как есть в query `?token=` ([realtime.md](realtime.md#websocket-отладка)).
 
 **Ошибки:**

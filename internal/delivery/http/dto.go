@@ -19,8 +19,11 @@ type issueTicketRequest struct {
 }
 
 type issueTicketResponse struct {
-	Token string       `json:"token"`
-	Room  roomResponse `json:"room"`
+	Token string `json:"token"`
+	// EnetPort - UDP-порт назначенного ENet host'а (strict binding, P18);
+	// отсутствует, когда привязки нет (ENet listener не поднят).
+	EnetPort uint16       `json:"enet_port,omitempty"`
+	Room     roomResponse `json:"room"`
 }
 
 type roomResponse struct {

@@ -37,5 +37,7 @@ const (
 	OpReservationExpired         OpCode = 0x74
 	OpReservationAlreadyAdmitted OpCode = 0x75
 	OpPeerAlreadyInRoom          OpCode = 0x76
-	OpReservationInternal        OpCode = 0x7F
+	// OpWrongHost - admit на ENet host'е, не назначенном ticket'ом (claims.hostID, P18).
+	OpWrongHost           OpCode = 0x77
+	OpReservationInternal OpCode = 0x7F
 )

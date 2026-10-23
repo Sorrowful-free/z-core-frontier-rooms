@@ -22,6 +22,12 @@ func NewEnetConnectionFactory(_ *HostLoop, logger logging.Logger) *EnetConnectio
 	}
 }
 
+// WithLoop - stub-аналог cgo-ветки: возвращает фабрику без изменений
+// (HostLoop в stub-сборке не существует, привязки нет).
+func (f *EnetConnectionFactory) WithLoop(_ *HostLoop) *EnetConnectionFactory {
+	return f
+}
+
 // CreateConnection — та же сигнатура, что и в cgo-ветке (Peer = any под stub-тегами);
 // аргументы игнорируются: реальный peer существует только в enet+cgo сборке.
 func (f *EnetConnectionFactory) CreateConnection(_ portenet.Peer, _ chan domain.Frame) transport.Connection {

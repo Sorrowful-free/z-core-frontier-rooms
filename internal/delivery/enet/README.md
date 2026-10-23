@@ -10,8 +10,8 @@ UDP host (отдельный порт от Fiber). Build tag `enet` + CGO.
 
 | Параметр | Значение | Env |
 |----------|----------|-----|
-| Порт | `7777` | `ENET_LISTEN_PORT` |
-| Peer limit | `64` | `ENET_PEER_LIMIT` |
+| Порты | `[7777]` (CSV - N host'ов/shard'ов) | `ENET_LISTEN_PORTS` (alias `ENET_LISTEN_PORT`, побеждает) |
+| Peer limit | `64` **на host** | `ENET_PEER_LIMIT` |
 | Channel limit | `2` | — |
 | Service timeout | `10ms` | — |
 | Admit deadline (EventConnect → ticket) | `10s` | `ENET_ADMIT_TIMEOUT` |
@@ -22,11 +22,20 @@ UDP host (отдельный порт от Fiber). Build tag `enet` + CGO.
 | Ошибка admit | OpCode `0x40`–`0x5F` и `0x70`–`0x7F` (1 байт) → **доставляется**, затем disconnect | — |
 | Admit timeout | peer не прислал ticket за `AdmitTimeout` → disconnect без wire-кадра | — |
 
-`EnetConfig.Validate()` — порт/лимиты/очереди/`AdmitTimeout`; env `ENET_*` — `adapter/config.LoadFromEnv()` → `cfg.Enet` (`MaxIncomingFrameBytes`/`EnetIncomingQueueSize` cmd/rooms копирует из `cfg.Transport`).
+`EnetConfig.Validate()` - порты (1–65535, без дублей, ≥1)/лимиты/очереди/`AdmitTimeout`; env `ENET_*` - `adapter/config.LoadFromEnv()` → `cfg.Enet` (`MaxIncomingFrameBytes`/`EnetIncomingQueueSize` cmd/rooms копирует из `cfg.Transport`).
+
+## Host sharding (P18)
+
+На каждый порт из `cfg.ListenPorts` - отдельный `enetHost` (`id` = `domain.HostID` = индекс+1) со своим `HostLoop` и run-горутиной. Комната транспорт-агностична: её peer'ы могут сидеть на разных host'ах.
+
+- **Балансировка:** `RoomsHandler` реализует `port/transport/enet.HostRegistry` - `AssignHost` выбирает least-loaded host по живым peer'ам (`enetHost.peers` инкрементится на `EventConnect`, декрементится в `sess.close`), round-robin tie-break. `IssueTicketUseCase` кладёт `HostID` в claims и `enet_port` в HTTP-ответ.
+- **Strict binding:** admit сравнивает `claims.HostID` с `host.id` до `JoinRoom` - на чужом host'е join-reject `ErrWrongHost` → `OpWrongHost` (`0x77`) + disconnect, слот reservation не тратится; `HostIDAny` (ticket v2 / выписан без registry) admit'ится на любом host'е.
+- **Peer→host привязка:** у каждого host'а своя `EnetConnectionFactory` (`WithLoop` на его `HostLoop` - `EnetConnection.Ping`/операции peer'а диспатчатся в правильный executor).
+- **Fail-fast:** первый упавший run (bind failure) отменяет общий ctx mux'а; `Err()` = первая ошибка.
 
 ## Жизненный цикл listener'а
 
-`RoomsHandler.Listen() *ListenHandle`: `Done()` — выход host loop, `Err()` — терминальная ошибка (bind failure), `Stop()` — отмена ctx + ожидание реального выхода. `main.go` фейлит процесс при ошибке bind.
+`RoomsHandler.Listen() *ListenHandle`: `Done()` - выход **всех** host loop'ов, `Err()` - терминальная ошибка (bind failure), `Stop()` - отмена ctx + ожидание реального выхода каждого loop'а. `main.go` фейлит процесс при ошибке bind.
 
 Graceful shutdown: по ctx/Stop host loop закрывает все сессии (`conn.Close` → `peer.DisconnectLater` → `closed` chan будит Receive-горутины peer'ов), делает drain service-итерациями и `host.Destroy()`.
 

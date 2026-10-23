@@ -70,10 +70,13 @@
 
 | Переменная | Обязательна | Default | Описание |
 |------------|-------------|---------|----------|
-| `ENET_LISTEN_PORT` | нет | `7777` | UDP-порт ENet host; 1–65535 |
-| `ENET_PEER_LIMIT` | нет | `64` | Макс. одновременных ENet peers |
+| `ENET_LISTEN_PORTS` | нет | `7777` | CSV UDP-портов ENet host'ов (shard'ов, P18): `7777,7778,...`; один HostLoop на порт; 1–65535, без дублей |
+| `ENET_LISTEN_PORT` | нет | - | Single-port alias: если задан, побеждает `ENET_LISTEN_PORTS` (backward compat) |
+| `ENET_PEER_LIMIT` | нет | `64` | Макс. одновременных ENet peers **на host** |
 | `ENET_ADMIT_TIMEOUT` | нет | `10s` | Deadline connect→admit; просроченный peer отключается |
 | `ENET_SERVICE_TIMEOUT_MS` | нет | `1` | Бюджет host.Service итерации = потолок latency очереди команд HostLoop; >0 |
+
+`HostID` host'а (shard) - индекс+1 в `ListenPorts`; попадает в claims ticket'а для strict binding admit. Балансировка issue ticket'ов - `port/transport/enet.HostRegistry` (least-loaded по живым peer'ам, round-robin tie-break), реализована `delivery/enet.RoomsHandler`.
 
 Валидация — `transport/enet.EnetConfig.Validate()` (вызывается в `loadEnetFromEnv` и повторно в `cmd/rooms` после копирования transport-лимитов).
 

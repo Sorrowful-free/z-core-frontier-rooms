@@ -51,6 +51,7 @@
 | `OpReservationExpired` | `0x74` | `ErrReservationExpired` |
 | `OpReservationAlreadyAdmitted` | `0x75` | `ErrReservationAlreadyAdmitted` |
 | `OpPeerAlreadyInRoom` | `0x76` | `ErrPeerAlreadyInRoom` |
+| `OpWrongHost` | `0x77` | `ErrWrongHost` (strict binding admit, P18) |
 | `OpReservationInternal` | `0x7F` | `ErrReservationInternal` |
 
 ## State traffic (`0x01–0x07`)

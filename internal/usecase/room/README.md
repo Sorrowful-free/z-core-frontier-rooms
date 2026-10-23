@@ -9,7 +9,7 @@
 | `create.go` | Control | `limits.AllowCreateRoom` → `RegisterRoom` → registry → `IssueTicket` (хост); откат комнаты при ошибке issue |
 | `delete.go` | Control | kick peers (`LeaveRoom`) → `DeleteRoom` → `UnregisterRoom` |
 | `get_list.go` | Control | Список комнат |
-| `issue_ticket.go` | Control | `ValidateNickName` → Reserve → Issue → snapshot комнаты (`RoomSummary`) |
+| `issue_ticket.go` | Control | `ValidateNickName` → AssignHost (ENet sharding) → Reserve → Issue → snapshot комнаты (`RoomSummary`) + `EnetPort` |
 | `join_room.go` | Data | Validate → Admit → CreatePeer(nick) → Join/Replace → Start |
 | `leave_room.go` | Data | Leave → Stop → Revoke |
 | `sweep_orphan_admitted.go` | Background | admitted без peer в room → Revoke (шаг 4A) |
@@ -28,10 +28,13 @@ ValidateNickName (HTTP) → limits → RegisterRoom → CreateRoom
 
 ```text
 ValidateNickName → GetRoom → HasPeer? → VerifyRoomPassword
-→ Reserve(nickName, TTL) [orphan admitted cleanup] → Issue(nickName) → token + RoomSummary
+→ AssignHost (HostRegistry, least-loaded) → Reserve(nickName, TTL) [orphan admitted cleanup]
+→ Issue(nickName, hostID) → token + RoomSummary + EnetPort
 ```
 
 Политика A: peer в room → `ErrPeerAlreadyInRoom`; слот held → `ErrTicketSlotHeld`.
+
+**Host sharding (P18):** если сконфигурирован `port/transport/enet.HostRegistry` (реализация - `delivery/enet.RoomsHandler`), use case выбирает host для ticket'а: least-loaded по живым peer'ам, round-robin tie-break. Выбранный `HostID` идёт в claims (strict binding admit), `Port` - в `IssueTicketResult.EnetPort` → HTTP `enet_port`. Без registry (`nil`) - `AssignHost` пропускается, ticket без привязки (`HostIDAny`), `EnetPort = 0` (поле в ответе опускается).
 
 ## JoinRoom
 

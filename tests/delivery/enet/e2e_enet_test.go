@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	admissionadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/admission"
 	adapterenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"
 	deliveryenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/enet"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
@@ -81,6 +82,7 @@ func newTestHandler(cfg adapterenet.EnetConfig) *deliveryenet.RoomsHandler {
 		nil, // joinRoomUseCase — e2e покрывает только пути до JoinRoom
 		nil, // leaveRoomUseCase
 		adapterenet.NewEnetConnectionFactory(nil, discardLogger{}),
+		admissionadapter.NewAdmission(admissionadapter.AdmissionConfig{Secret: []byte("test-secret"), TTL: time.Hour}),
 		cfg,
 		discardLogger{},
 	)
@@ -97,7 +99,7 @@ func TestListenBindFailurePropagates(t *testing.T) {
 	port := uint16(blocker.LocalAddr().(*net.UDPAddr).Port)
 
 	cfg := adapterenet.DefaultEnetConfig()
-	cfg.ListenPort = port
+	cfg.ListenPorts = []uint16{port}
 	handle := newTestHandler(cfg).Listen()
 
 	select {
@@ -113,7 +115,7 @@ func TestListenBindFailurePropagates(t *testing.T) {
 // P7-5: Stop отменяет loop и ждёт реального выхода; результат — context.Canceled.
 func TestListenStopWaitsLoopExit(t *testing.T) {
 	cfg := adapterenet.DefaultEnetConfig()
-	cfg.ListenPort = freeUDPPort(t)
+	cfg.ListenPorts = []uint16{freeUDPPort(t)}
 	handle := newTestHandler(cfg).Listen()
 
 	stopped := make(chan struct{})
@@ -134,13 +136,13 @@ func TestListenStopWaitsLoopExit(t *testing.T) {
 // P7-3: peer, не прошедший admit за AdmitTimeout, отключается сервером.
 func TestAdmitTimeoutDisconnectsPeer(t *testing.T) {
 	cfg := adapterenet.DefaultEnetConfig()
-	cfg.ListenPort = freeUDPPort(t)
+	cfg.ListenPorts = []uint16{freeUDPPort(t)}
 	cfg.AdmitTimeout = 200 * time.Millisecond
 	cfg.ServiceTimeoutMs = 5
 	handle := newTestHandler(cfg).Listen()
 	defer handle.Stop()
 
-	client := newEnetTestClient(t, cfg.ListenPort)
+	client := newEnetTestClient(t, cfg.ListenPorts[0])
 	client.waitEvent(t, libenet.EventConnect, 3*time.Second)
 
 	// Ничего не шлём — сервер должен сам разорвать соединение.
@@ -151,12 +153,12 @@ func TestAdmitTimeoutDisconnectsPeer(t *testing.T) {
 // до disconnect — graceful peer.Disconnect флешит queued reliable-пакет.
 func TestJoinRejectFrameDelivered(t *testing.T) {
 	cfg := adapterenet.DefaultEnetConfig()
-	cfg.ListenPort = freeUDPPort(t)
+	cfg.ListenPorts = []uint16{freeUDPPort(t)}
 	cfg.AdmitTimeout = 30 * time.Second // не должен сработать раньше reject-пути
 	handle := newTestHandler(cfg).Listen()
 	defer handle.Stop()
 
-	client := newEnetTestClient(t, cfg.ListenPort)
+	client := newEnetTestClient(t, cfg.ListenPorts[0])
 	client.waitEvent(t, libenet.EventConnect, 3*time.Second)
 
 	err := client.loop.Do(func() error {

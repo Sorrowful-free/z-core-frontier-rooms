@@ -32,7 +32,8 @@ func roomsToResponse(summaries []useroom.RoomSummary) roomListResponse {
 
 func issueTicketToResponse(result useroom.IssueTicketResult) issueTicketResponse {
 	return issueTicketResponse{
-		Token: base64.RawURLEncoding.EncodeToString(result.Token),
-		Room:  roomToResponse(result.Room),
+		Token:    base64.RawURLEncoding.EncodeToString(result.Token),
+		EnetPort: result.EnetPort,
+		Room:     roomToResponse(result.Room),
 	}
 }

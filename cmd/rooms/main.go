@@ -83,11 +83,31 @@ func run() error {
 		return fmt.Errorf("http limits: %w", err)
 	}
 
-	issueTicketUseCase := room.NewIssueTicketUseCase(roomRegistry, allocator, admission, reservation, zaplog.NewFrom(z, "issue ticket use case"))
-	createUseCase := room.NewCreateUseCase(roomRegistry, allocator, reservation, httpLimits, issueTicketUseCase, zaplog.NewFrom(z, "create use case"))
 	leaveRoomUseCase := room.NewLeaveRoomUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "leave room use case"))
-	deleteUseCase := room.NewDeleteUseCase(roomRegistry, reservation, leaveRoomUseCase, zaplog.NewFrom(z, "delete use case"))
 	joinRoomUseCase := room.NewJoinRoomUseCase(admission, peerFactory, roomRegistry, reservation, zaplog.NewFrom(z, "join room use case"))
+
+	// cfg.Enet уже провалидирован в LoadFromEnv; после копирования transport-лимитов - повторная Validate.
+	enetCfg := cfg.Enet
+	enetCfg.MaxIncomingFrameBytes = cfg.Transport.MaxIncomingFrameBytes
+	enetCfg.EnetIncomingQueueSize = cfg.Transport.EnetIncomingQueueSize
+	if err := enetCfg.Validate(); err != nil {
+		return fmt.Errorf("enet config: %w", err)
+	}
+	// Handler до IssueTicket: он же HostRegistry (P18) - балансировка
+	// ticket'ов по живым peer'ам host'ов (least-loaded) живёт внутри него.
+	enetHandler := deliveryenet.NewRoomsHandler(
+		appCtx,
+		joinRoomUseCase,
+		leaveRoomUseCase,
+		enetConnectionFactory,
+		admission,
+		enetCfg,
+		zaplog.NewFrom(z, "enet rooms handler"),
+	)
+
+	issueTicketUseCase := room.NewIssueTicketUseCase(roomRegistry, allocator, admission, reservation, enetHandler, zaplog.NewFrom(z, "issue ticket use case"))
+	createUseCase := room.NewCreateUseCase(roomRegistry, allocator, reservation, httpLimits, issueTicketUseCase, zaplog.NewFrom(z, "create use case"))
+	deleteUseCase := room.NewDeleteUseCase(roomRegistry, reservation, leaveRoomUseCase, zaplog.NewFrom(z, "delete use case"))
 	getListUseCase := room.NewGetListUseCase(roomRegistry, zaplog.NewFrom(z, "get list use case"))
 	sweepOrphanAdmittedUseCase := room.NewSweepOrphanAdmittedUseCase(
 		roomRegistry,
@@ -113,21 +133,6 @@ func run() error {
 	wsHandler := deliveryws.NewRoomsHandler(appCtx, joinRoomUseCase, leaveRoomUseCase, wsConnectionFactory, cfg.Transport, zaplog.NewFrom(z, "ws rooms handler"))
 	wsHandler.RegisterRoutes(fiberApp)
 
-	// cfg.Enet уже провалидирован в LoadFromEnv; после копирования transport-лимитов — повторная Validate.
-	enetCfg := cfg.Enet
-	enetCfg.MaxIncomingFrameBytes = cfg.Transport.MaxIncomingFrameBytes
-	enetCfg.EnetIncomingQueueSize = cfg.Transport.EnetIncomingQueueSize
-	if err := enetCfg.Validate(); err != nil {
-		return fmt.Errorf("enet config: %w", err)
-	}
-	enetHandler := deliveryenet.NewRoomsHandler(
-		appCtx,
-		joinRoomUseCase,
-		leaveRoomUseCase,
-		enetConnectionFactory,
-		enetCfg,
-		zaplog.NewFrom(z, "enet rooms handler"),
-	)
 	enetHandle := enetHandler.Listen()
 
 	listenErr := make(chan error, 1)

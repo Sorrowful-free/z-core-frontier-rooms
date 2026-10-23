@@ -45,7 +45,9 @@ type enetClient struct {
 	pumpStop  atomic.Bool // stop(): pump выходит без ожидания EventDisconnect
 }
 
-func newEnetClient(t *testing.T, e *env.Env, nick, token string) *enetClient {
+// port - назначенный ENet-порт тикета (P18 strict binding: ticket привязан к
+// конкретному host'у; клиент обязан подключаться именно туда).
+func newEnetClient(t *testing.T, e *env.Env, nick, token string, port uint16) *enetClient {
 	t.Helper()
 
 	// Admit-пакет несёт сырой ticket: JoinRoom ждёт бинарный токен
@@ -70,7 +72,7 @@ func newEnetClient(t *testing.T, e *env.Env, nick, token string) *enetClient {
 
 	err = loop.Do(func() error {
 		var err error
-		c.enetPeer, err = loop.Host().Connect(libenet.NewAddress("127.0.0.1", e.EnetPort()), 2, 0)
+		c.enetPeer, err = loop.Host().Connect(libenet.NewAddress("127.0.0.1", port), 2, 0)
 		return err
 	})
 	if err != nil {
@@ -213,11 +215,14 @@ func TestE2E_LiveMatch_ENet(t *testing.T) {
 
 	e := env.New(t, env.WithEnet())
 
-	roomID, hostToken := e.CreateRoom(t, "host")
-	host := newEnetClient(t, e, "host", hostToken)
-	s1 := newEnetClient(t, e, "e1", e.IssueTicket(t, roomID, "e1"))
-	s2 := newEnetClient(t, e, "e2", e.IssueTicket(t, roomID, "e2"))
-	s3 := newEnetClient(t, e, "e3", e.IssueTicket(t, roomID, "e3"))
+	roomID, hostToken, hostPort := e.CreateRoomPort(t, "host")
+	host := newEnetClient(t, e, "host", hostToken, hostPort)
+	token1, port1 := e.IssueTicketPort(t, roomID, "e1")
+	s1 := newEnetClient(t, e, "e1", token1, port1)
+	token2, port2 := e.IssueTicketPort(t, roomID, "e2")
+	s2 := newEnetClient(t, e, "e2", token2, port2)
+	token3, port3 := e.IssueTicketPort(t, roomID, "e3")
+	s3 := newEnetClient(t, e, "e3", token3, port3)
 	clients := []*enetClient{host, s1, s2, s3}
 	defer func() {
 		for _, c := range clients {
@@ -244,10 +249,11 @@ func TestE2E_LiveMatch_Mixed(t *testing.T) {
 
 	e := env.New(t, env.WithEnet())
 
-	roomID, hostToken := e.CreateRoom(t, "host")
+	roomID, hostToken, hostPort := e.CreateRoomPort(t, "host")
 	// Host — первый joiner на ENet → начальный master; dropout — enet timeout.
-	host := newEnetClient(t, e, "host", hostToken)
-	e1 := newEnetClient(t, e, "e1", e.IssueTicket(t, roomID, "e1"))
+	host := newEnetClient(t, e, "host", hostToken, hostPort)
+	token1, port1 := e.IssueTicketPort(t, roomID, "e1")
+	e1 := newEnetClient(t, e, "e1", token1, port1)
 	w1 := newWSClient(t, e, "w1", e.IssueTicket(t, roomID, "w1"))
 	w2 := newWSClient(t, e, "w2", e.IssueTicket(t, roomID, "w2"))
 	slaves := []matchClient{e1, w1, w2}

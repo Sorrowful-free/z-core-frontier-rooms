@@ -42,6 +42,8 @@ func mapReservationRejectOpCode(err error) (domain.OpCode, bool) {
 		return domain.OpReservationAlreadyAdmitted, true
 	case stderrors.Is(err, domain.ErrPeerAlreadyInRoom):
 		return domain.OpPeerAlreadyInRoom, true
+	case stderrors.Is(err, domain.ErrWrongHost):
+		return domain.OpWrongHost, true
 	case stderrors.Is(err, domain.ErrReservationInternal):
 		return domain.OpReservationInternal, true
 	default:

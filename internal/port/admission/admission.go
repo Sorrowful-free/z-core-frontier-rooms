@@ -9,6 +9,8 @@ import (
 
 type Admission interface {
 	TTL() time.Duration
-	Issue(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, nickName string) ([]byte, error)
+	// Issue подписывает ticket; hostID - strict binding к ENet host'у
+	// (domain.HostIDAny - ticket без привязки, admit на любом host'е).
+	Issue(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, nickName string, hostID domain.HostID) ([]byte, error)
 	Validate(ctx context.Context, token []byte) (domain.Claims, error)
 }

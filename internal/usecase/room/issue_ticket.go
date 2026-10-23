@@ -13,6 +13,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/registry"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/reservation"
+	portenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/enet"
 )
 
 // Политика IssueTicket (A — строгая):
@@ -26,6 +27,9 @@ import (
 type IssueTicketResult struct {
 	Token []byte
 	Room  RoomSummary
+	// EnetPort - порт назначенного ENet host'а (P18): клиент коннектится на него.
+	// 0 - привязки нет (hostRegistry не подключён, например WS-only окружение).
+	EnetPort uint16
 }
 
 type IssueTicketUseCase struct {
@@ -33,15 +37,19 @@ type IssueTicketUseCase struct {
 	allocator    identity.Allocator
 	admission    admission.Admission
 	reservation  reservation.Reservation
+	// hostRegistry - балансировщик ENet host'ов (P18); nil - ticket'ы без
+	// привязки (claims.HostID = HostIDAny, admit на любом host'е).
+	hostRegistry portenet.HostRegistry
 	logger       logging.Logger
 }
 
-func NewIssueTicketUseCase(roomRegistry registry.RoomRegistry, allocator identity.Allocator, admission admission.Admission, reservation reservation.Reservation, logger logging.Logger) *IssueTicketUseCase {
+func NewIssueTicketUseCase(roomRegistry registry.RoomRegistry, allocator identity.Allocator, admission admission.Admission, reservation reservation.Reservation, hostRegistry portenet.HostRegistry, logger logging.Logger) *IssueTicketUseCase {
 	return &IssueTicketUseCase{
 		roomRegistry: roomRegistry,
 		allocator:    allocator,
 		admission:    admission,
 		reservation:  reservation,
+		hostRegistry: hostRegistry,
 		logger:       logger,
 	}
 }
@@ -76,22 +84,33 @@ func (uc *IssueTicketUseCase) IssueTicket(ctx context.Context, roomID domain.Roo
 		return IssueTicketResult{}, err
 	}
 
+	// Назначение host'а до Reserve: ошибка балансировщика не оставляет слота.
+	var assignment portenet.HostAssignment
+	if uc.hostRegistry != nil {
+		assignment, err = uc.hostRegistry.AssignHost(ctx)
+		if err != nil {
+			uc.logger.Error("issue ticket: assign enet host failed", "error", err, "roomID", roomID, "peerID", peerID)
+			return IssueTicketResult{}, err
+		}
+	}
+
 	expiresAt := time.Now().Add(uc.admission.TTL())
 	if err := uc.reserveForIssue(ctx, room, roomID, peerID, nickName, expiresAt); err != nil {
 		uc.logger.Error("issue ticket: reserve failed", "error", err, "roomID", roomID, "peerID", peerID)
 		return IssueTicketResult{}, err
 	}
 
-	token, err := uc.admission.Issue(ctx, roomID, peerID, nickName)
+	token, err := uc.admission.Issue(ctx, roomID, peerID, nickName, assignment.HostID)
 	if err != nil {
 		uc.logger.Error("issue ticket: issue failed", "error", err, "roomID", roomID, "peerID", peerID)
 		return IssueTicketResult{}, uc.revokeIssueReservation(ctx, roomID, peerID, err)
 	}
 
-	uc.logger.Info("issue ticket: success", "roomID", roomID, "peerID", peerID)
+	uc.logger.Info("issue ticket: success", "roomID", roomID, "peerID", peerID, "hostID", assignment.HostID)
 	return IssueTicketResult{
-		Token: token,
-		Room:  *NewRoomSummaryFromRoom(room),
+		Token:    token,
+		Room:     *NewRoomSummaryFromRoom(room),
+		EnetPort: assignment.Port,
 	}, nil
 }
 

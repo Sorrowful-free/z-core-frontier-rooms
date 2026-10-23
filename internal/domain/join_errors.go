@@ -17,4 +17,6 @@ var (
 	ErrPeerAlreadyInRoom  = errors.New("peer already in room")
 	// ErrTicketSlotHeld — слот peer уже занят в reservation (reserved или admitted); повторный Issue запрещён (политика A).
 	ErrTicketSlotHeld = errors.New("ticket slot held")
+	// ErrWrongHost - ticket привязан к другому ENet host'у (claims.hostID != host admit'а); admit отклоняется (P18).
+	ErrWrongHost = errors.New("ticket bound to another enet host")
 )

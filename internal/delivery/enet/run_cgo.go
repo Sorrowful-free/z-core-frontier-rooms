@@ -11,6 +11,7 @@ import (
 	transportenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"
 	deliveryerrors "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/errors"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/enet"
 	libenet "github.com/codecat/go-enet"
 )
 
@@ -24,29 +25,37 @@ import (
 // executor↔room; на run-горутине блокировка безобидна, executor при этом
 // свободен и обслуживает Ping/conn-операции.
 // sessions и поля peerSession трогает только run-горутина - mutex не нужен.
-func (h *RoomsHandler) run(ctx context.Context) error {
-	// Initialize без лока: вызов до старта любых host-loop'ов процесса,
-	// гонки нет по построению (P15, Q3).
+//
+// P18: run исполняется по одной горутине на host (порт), все host'ы делят
+// общий ctx mux'а (Listen). Потолок одного host'а - PeerLimit и pps его
+// HostLoop'а; capacity комнаты к host'у не привязана (room - транспорт-агностик).
+func (h *RoomsHandler) run(ctx context.Context, host *enetHost) error {
+	// Initialize идемпотентен (refcount в libenet): N run-горутин mux'а зовут
+	// его без лока; Deinitialize снимает только свой refcount, реальный
+	// teardown - после выхода всех loop'ов.
 	libenet.Initialize()
 	defer libenet.Deinitialize()
 
 	loop, err := transportenet.NewHostLoop(
-		libenet.NewListenAddress(h.cfg.ListenPort),
+		libenet.NewListenAddress(host.port),
 		h.cfg.PeerLimit,
 		h.cfg.ChannelLimit,
 	)
 	if err != nil {
-		return fmt.Errorf("enet host create port %d: %w", h.cfg.ListenPort, err)
+		return fmt.Errorf("enet host create port %d: %w", host.port, err)
 	}
 	// Stop идемпотентен и ждёт выхода executor'а (drain + host.Destroy);
 	// до Deinitialize - обратный порядок.
 	defer loop.Stop()
-	// Peer→host привязка: фабрика конструируется в main/env раньше loop'а.
+	// Peer→host привязка: у каждого host'а СВОЯ фабрика (WithLoop клонирует
+	// инжектированную - shared factory c BindLoop на N host'ах гоняла бы
+	// conn'ы чужого loop'а).
+	connFactory := h.connectionFactory
 	if f, ok := h.connectionFactory.(*transportenet.EnetConnectionFactory); ok {
-		f.BindLoop(loop)
+		connFactory = f.WithLoop(loop)
 	}
 
-	h.logger.Info("enet host listening", "port", h.cfg.ListenPort)
+	h.logger.Info("enet host listening", "port", host.port, "hostID", host.id)
 
 	sessions := make(map[uint16]*peerSession)
 
@@ -71,7 +80,7 @@ func (h *RoomsHandler) run(ctx context.Context) error {
 			h.closeSessions(sessions)
 			return transportenet.ErrHostLoopStopped
 		}
-		h.dispatchEvent(ctx, loop, sessions, ev)
+		h.dispatchEvent(ctx, host, loop, connFactory, sessions, ev)
 	}
 }
 
@@ -80,7 +89,9 @@ func (h *RoomsHandler) run(ctx context.Context) error {
 // GetPacket/GetData читают Go-копию события и диспатча не требуют).
 func (h *RoomsHandler) dispatchEvent(
 	ctx context.Context,
+	host *enetHost,
 	loop *transportenet.HostLoop,
+	connFactory enet.EnetConnectionFactory,
 	sessions map[uint16]*peerSession,
 	ev libenet.Event,
 ) {
@@ -89,9 +100,9 @@ func (h *RoomsHandler) dispatchEvent(
 		return
 
 	case libenet.EventConnect:
-		sess := newPeerSession(loop, ev.GetPeer(), h.connectionFactory, h.cfg.EnetIncomingQueueSize)
+		sess := newPeerSession(host, loop, ev.GetPeer(), connFactory, h.cfg.EnetIncomingQueueSize)
 		sessions[sess.id] = sess
-		h.logger.Info("enet peer connected", "enet_peer_id", sess.id)
+		h.logger.Info("enet peer connected", "enet_peer_id", sess.id, "hostID", host.id)
 
 	case libenet.EventReceive:
 		id, _ := transportenet.Call(loop, func() uint16 { return ev.GetPeer().GetIncomingPeerId() })
@@ -112,7 +123,7 @@ func (h *RoomsHandler) dispatchEvent(
 				h.disconnectSession(ctx, sessions, id, sess)
 				return
 			}
-			if err := h.admit(ctx, sess, data); err != nil {
+			if err := h.admit(ctx, host, sess, data); err != nil {
 				deliveryerrors.SendJoinReject(sess.conn, err)
 				// Graceful close: conn.Close кладёт DisconnectLater в очередь
 				// loop'а - сначала на провод уходит queued reliable reject
@@ -154,10 +165,26 @@ func (h *RoomsHandler) dispatchEvent(
 	}
 }
 
-func (h *RoomsHandler) admit(ctx context.Context, sess *peerSession, token []byte) error {
+// admit - первый пакет peer'а. Strict binding (P18): claims.HostID ticket'а
+// обязан совпасть с host'ом, принявшим соединение, иначе join-reject
+// (ErrWrongHost → OpWrongHost 0x77). Ticket без hostID (старый v2 или
+// выписанный без registry) проходит на любом host'е - backward compat.
+// Проверка до JoinRoom: на чужом host'е ticket не должен тратить слот
+// reservation и тем более join'ить peer'а.
+func (h *RoomsHandler) admit(ctx context.Context, host *enetHost, sess *peerSession, token []byte) error {
 	if len(token) == 0 {
 		h.logger.Warn("enet connect: empty token", "enet_peer_id", sess.id)
 		return domain.ErrEmptyToken
+	}
+
+	claims, err := h.admission.Validate(ctx, token)
+	if err != nil {
+		h.logger.Warn("enet admit: invalid ticket", "error", err, "enet_peer_id", sess.id)
+		return err
+	}
+	if claims.HostID != domain.HostIDAny && claims.HostID != host.id {
+		h.logger.Warn("enet admit: ticket bound to another host", "enet_peer_id", sess.id, "wantHostID", claims.HostID, "hostID", host.id)
+		return domain.ErrWrongHost
 	}
 
 	summary, peerID, err := h.joinRoomUseCase.JoinRoom(ctx, sess.conn, token)
@@ -169,7 +196,7 @@ func (h *RoomsHandler) admit(ctx context.Context, sess *peerSession, token []byt
 	sess.admitted = true
 	sess.roomID = summary.ID
 	sess.peerID = peerID
-	h.logger.Info("enet peer admitted", "enet_peer_id", sess.id)
+	h.logger.Info("enet peer admitted", "enet_peer_id", sess.id, "hostID", host.id)
 	return nil
 }
 

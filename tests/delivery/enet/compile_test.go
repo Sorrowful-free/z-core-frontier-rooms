@@ -21,8 +21,8 @@ func TestEnetPackagesCompile(t *testing.T) {
 	t.Parallel()
 
 	cfg := adapterenet.DefaultEnetConfig()
-	if cfg.ListenPort != 7777 {
-		t.Fatalf("ListenPort = %d, want 7777", cfg.ListenPort)
+	if len(cfg.ListenPorts) != 1 || cfg.ListenPorts[0] != 7777 {
+		t.Fatalf("ListenPorts = %v, want [7777]", cfg.ListenPorts)
 	}
 
 	factory := adapterenet.NewEnetConnectionFactory(nil, discardLogger{})

@@ -20,7 +20,7 @@
 
 **Переполнение:** `room.incoming`, `peer.outbound` и ENet session — **drop** кадра + warn (room loop / host loop / peer read не блокируются).
 
-Отдельный конфиг ENet listener'а — `enet.EnetConfig` (`enet/enet_config.go`, без build-тегов — нужен и stub-сборкам): `ListenPort`, `PeerLimit`, `ChannelLimit`, `ServiceTimeoutMs`, `AdmitTimeout` + копии `MaxIncomingFrameBytes`/`EnetIncomingQueueSize` из `TransportConfig` (в cmd/rooms). Env `ENET_*` — `adapter/config.LoadFromEnv()` → `cfg.Enet`.
+Отдельный конфиг ENet listener'а - `enet.EnetConfig` (`enet/enet_config.go`, без build-тегов - нужен и stub-сборкам): `ListenPorts` (1..N UDP-портов host-shard'ов, P18), `PeerLimit` (per-host), `ChannelLimit`, `ServiceTimeoutMs`, `AdmitTimeout` + копии `MaxIncomingFrameBytes`/`EnetIncomingQueueSize` из `TransportConfig` (в cmd/rooms). Env `ENET_*` - `adapter/config.LoadFromEnv()` → `cfg.Enet`.
 
 ## Idle eviction (ADR 0001)
 

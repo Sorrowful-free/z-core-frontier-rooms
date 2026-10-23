@@ -156,10 +156,10 @@ go test -fuzz=FuzzRoomStateDecode -fuzztime=30s ./tests/adapter/realtime/codec/
 | Пакет | Сценарии |
 |-------|----------|
 | `tests/delivery/errors` | `JoinRejectOpCode`, `ReservationRejectOpCode`, делегирование reservation в join, `InRoomErrorOpCode`, диапазоны `Is*OpCode` |
-| `tests/adapter/config` | `LoadFromEnv`: admission + HTTP API key / disabled; transport idle envs (`TRANSPORT_PEER_IDLE_TIMEOUT`, `TRANSPORT_PEER_IDLE_SWEEP_INTERVAL`) и enet envs (`ENET_LISTEN_PORT`, `ENET_PEER_LIMIT`, `ENET_ADMIT_TIMEOUT`) — defaults, custom, invalid, negative |
+| `tests/adapter/config` | `LoadFromEnv`: admission + HTTP API key / disabled; transport idle envs (`TRANSPORT_PEER_IDLE_TIMEOUT`, `TRANSPORT_PEER_IDLE_SWEEP_INTERVAL`) и enet envs (`ENET_LISTEN_PORTS` CSV / `ENET_LISTEN_PORT` alias + precedence, `ENET_PEER_LIMIT`, `ENET_ADMIT_TIMEOUT`) - defaults, custom, invalid, negative, дубли портов |
 | `tests/adapter/httpauth` | `HTTPAuthConfig.Validate` |
 | `tests/adapter/httplimits` | `HTTPLimitsConfig.Validate`, `Limits` rate + max rooms |
-| `tests/adapter/admission` | `AdmissionConfig.Validate`; round-trip ticket + NickName, invalid nick, invalid/expired token, invalid credentials |
+| `tests/adapter/admission` | `AdmissionConfig.Validate`; round-trip ticket v3 (+ hostID в claims) + NickName, legacy v2 → `HostIDAny`, invalid nick, invalid/expired token, invalid credentials |
 | `tests/adapter/realtime` | `OnJoin` → `room.Send` без deadlock; откат map при `ErrJoinDenied`; Replace rollback policy; `PeerFactory` nick; concurrent `Deliver`/`Join`/`Leave` + `Stop` без паники; `Deliver` → `ErrQueueFull` / stopped; `Send` с `ExcludePeerID` не доставляет отправителю; `Peer.Stop` разблокирует `Receive` через `Close` |
 | `tests/adapter/realtime/policy/state` | join/full/patch/master; `NewStateRoomPolicy` zero intervals → defaults; `PatchEntities` add/update/reject non-master; malformed payload → `ErrInRoomInvalidPayload` + wire mapping (все 5 in-room opcodes + вложенный patch-input); send-failure проброс из `OnJoin`/tick/broadcast (`testutil/peer` SetDeliverErr); nil-master recovery (tick-перевыбор + ленивый на RPC→master) |
 | `tests/domain` | `ValidateNickName` |

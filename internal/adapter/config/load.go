@@ -46,6 +46,7 @@ const (
 	envTransportWSWriteDeadline       = "TRANSPORT_WS_WRITE_DEADLINE"
 
 	envEnetListenPort       = "ENET_LISTEN_PORT"
+	envEnetListenPorts      = "ENET_LISTEN_PORTS"
 	envEnetPeerLimit        = "ENET_PEER_LIMIT"
 	envEnetAdmitTimeout     = "ENET_ADMIT_TIMEOUT"
 	envEnetServiceTimeoutMs = "ENET_SERVICE_TIMEOUT_MS"
@@ -251,18 +252,36 @@ func loadReservationFromEnv() (reservationadapter.ReservationConfig, error) {
 }
 
 // loadEnetFromEnv собирает transport/enet.EnetConfig: env ENET_* поверх DefaultEnetConfig.
+// ENET_LISTEN_PORT (single) - backward-compat alias: если задан, побеждает CSV
+// ENET_LISTEN_PORTS; ни одного - default [7777]. Дубликаты ловит Validate().
 // Лимиты кадров/очередей cmd/rooms копирует из cfg.Transport и затем вызывает Validate() повторно.
 func loadEnetFromEnv() (enetadapter.EnetConfig, error) {
 	cfg := enetadapter.DefaultEnetConfig()
 
-	port, err := intFromEnv(envEnetListenPort, int(cfg.ListenPort))
-	if err != nil {
-		return enetadapter.EnetConfig{}, err
+	if raw := os.Getenv(envEnetListenPort); raw != "" {
+		port, err := strconv.Atoi(raw)
+		if err != nil {
+			return enetadapter.EnetConfig{}, fmt.Errorf("%s: %w", envEnetListenPort, err)
+		}
+		if port <= 0 || port > math.MaxUint16 {
+			return enetadapter.EnetConfig{}, fmt.Errorf("%s: port %d out of range 1..%d", envEnetListenPort, port, math.MaxUint16)
+		}
+		cfg.ListenPorts = []uint16{uint16(port)}
+	} else if raw := os.Getenv(envEnetListenPorts); raw != "" {
+		parts := strings.Split(raw, ",")
+		ports := make([]uint16, 0, len(parts))
+		for _, part := range parts {
+			port, err := strconv.Atoi(strings.TrimSpace(part))
+			if err != nil {
+				return enetadapter.EnetConfig{}, fmt.Errorf("%s: %q: %w", envEnetListenPorts, part, err)
+			}
+			if port <= 0 || port > math.MaxUint16 {
+				return enetadapter.EnetConfig{}, fmt.Errorf("%s: port %d out of range 1..%d", envEnetListenPorts, port, math.MaxUint16)
+			}
+			ports = append(ports, uint16(port))
+		}
+		cfg.ListenPorts = ports
 	}
-	if port <= 0 || port > math.MaxUint16 {
-		return enetadapter.EnetConfig{}, fmt.Errorf("%s: port %d out of range 1..%d", envEnetListenPort, port, math.MaxUint16)
-	}
-	cfg.ListenPort = uint16(port)
 
 	peerLimit, err := intFromEnv(envEnetPeerLimit, int(cfg.PeerLimit))
 	if err != nil {

@@ -31,6 +31,7 @@ alwaysApply: false
 - [x] `reservation_error.go` + `opcodes.go`
 - [x] `reservation_reject.go` + `tests/delivery/errors/reservation_reject_test.go`
 - [x] [internal/delivery/errors/README.md](../../internal/delivery/errors/README.md) + [internal/adapter/reservation/README.md](../../internal/adapter/reservation/README.md)
+- [x] `OpWrongHost` (`0x77`) - `ErrWrongHost`, strict binding admit (P18): claims.hostID ticket'а != host'а admit'а; reject до `JoinRoom` (слот не тратится)
 
 ## Чеклист in-room (`0x60–0x6F`)
 

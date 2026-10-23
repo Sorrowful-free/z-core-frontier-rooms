@@ -4,7 +4,7 @@ package enet
 
 import "context"
 
-func (h *RoomsHandler) run(ctx context.Context) error {
+func (h *RoomsHandler) run(ctx context.Context, _ *enetHost) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}

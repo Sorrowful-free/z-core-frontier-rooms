@@ -24,7 +24,7 @@ func (discardLogger) Fatal(string, ...any) {}
 func TestListenStubExitsClean(t *testing.T) {
 	t.Parallel()
 
-	h := deliveryenet.NewRoomsHandler(context.Background(), nil, nil, nil, adapterenet.DefaultEnetConfig(), discardLogger{})
+	h := deliveryenet.NewRoomsHandler(context.Background(), nil, nil, nil, nil, adapterenet.DefaultEnetConfig(), discardLogger{})
 	handle := h.Listen()
 
 	select {

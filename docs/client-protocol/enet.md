@@ -10,10 +10,12 @@
 | Параметр | Default | Примечание |
 |----------|---------|------------|
 | HTTP (ticket) | `:3000` | `HTTP_ADDR` |
-| ENet UDP | `7777` | `ENET_LISTEN_PORT`; отдельный слушатель, не Fiber |
-| Peer limit | `64` | `ENET_PEER_LIMIT` |
+| ENet UDP | `7777` | `ENET_LISTEN_PORTS` (CSV: `7777,7778,...` = N host'ов/shard'ов); `ENET_LISTEN_PORT` - single-port alias, побеждает если задан |
+| Peer limit | `64` | `ENET_PEER_LIMIT` - **на host** |
 | Admit deadline | `10s` | `ENET_ADMIT_TIMEOUT` — connect→первый пакет |
 | Build сервера | `-tags enet` + `CGO_ENABLED=1` | Без тега ENet host не поднимается |
+
+**Host sharding (P18):** на каждый порт из `ENET_LISTEN_PORTS` поднимается отдельный ENet host со своим service loop. Ticket привязывается к конкретному host'у: сервер выбирает наименее загруженный (least-loaded по живым peer'ам) и возвращает его порт в поле `enet_port` ответа issue ticket - клиент **обязан** подключаться именно на этот порт. Комната транспорт-агностична: её peer'ы могут сидеть на разных host'ах.
 
 ```bash
 CGO_ENABLED=1 go build -tags enet -o bin/rooms ./cmd/rooms
@@ -35,9 +37,9 @@ sequenceDiagram
   participant Room
 
   Client->>HTTP: POST /rooms/:id/tickets
-  HTTP-->>Client: token base64url
+  HTTP-->>Client: token base64url + enet_port
   Note over Client: base64 decode → ticket bytes
-  Client->>UDP: ENet connect host:7777
+  Client->>UDP: ENet connect host:enet_port
   UDP-->>Client: EVENT_CONNECT
   Client->>UDP: packet 0 = raw ticket bytes
   UDP->>Room: JoinRoom(admit)
@@ -59,24 +61,26 @@ sequenceDiagram
 
 ## Ticket: HTTP → первый UDP-пакет
 
-1. `POST /rooms/:id/tickets` → JSON `{"token":"<base64url>"}`.
-2. Клиент **декодирует** base64url (`RawURLEncoding`, без padding) → `PackedByteArray` / `[]byte` ticket v2.
-3. **Первый** исходящий ENet-пакет после `EVENT_CONNECT` = **только** эти байты, **без** префикса OpCode.
+1. `POST /rooms/:id/tickets` → JSON `{"token":"<base64url>","enet_port":7777}`.
+2. Клиент **декодирует** base64url (`RawURLEncoding`, без padding) → `PackedByteArray` / `[]byte` ticket v3.
+3. Подключается на UDP-порт **`enet_port`** из ответа (если поле есть; без него - дефолтный порт сервера).
+4. **Первый** исходящий ENet-пакет после `EVENT_CONNECT` = **только** эти байты, **без** префикса OpCode.
 
-Формат ticket v2:
+Формат ticket v3 (P18: `host_id` для strict binding):
 
 ```text
-version     u8   = 2
+version     u8   = 3
 room_id     u64 BE
 peer_id     u64 BE
 issued_at   u64 BE
 expires_at  u64 BE
+host_id     u16 BE  (0 = без привязки, admit на любом host'е)
 nick_len    u8
 nick        UTF-8 (1…64 bytes)
 hmac        32 bytes
 ```
 
-Размер: `66 + len(nick)` … `130` байт. Подробнее: [internal/adapter/admission/README.md](../../internal/adapter/admission/README.md).
+Размер: `68 + len(nick)` … `132` байт. Ticket v2 (version `2`, без `host_id`, `66 + len(nick)` … `130` байт) тоже принимается - такие тикеты не привязаны к host'у. Подробнее: [internal/adapter/admission/README.md](../../internal/adapter/admission/README.md).
 
 ### Отличие от WebSocket
 
@@ -96,6 +100,7 @@ hmac        32 bytes
 | Нет первого пакета за `ENET_ADMIT_TIMEOUT` (default 10s) | Disconnect **без** wire-кадра |
 | Пакет пустой | Join reject `0x40` → disconnect |
 | Размер > `MaxIncomingFrameBytes` | Disconnect **без** wire-кадра |
+| `host_id` тикета ≠ этот host | Reject `0x77` `OpWrongHost` → disconnect (слот reservation не тратится) |
 | `JoinRoom` ошибка | 1 байт OpCode `0x40+` / `0x70+` → disconnect |
 | Успех | `admitted=true`; дальше только кадры `OpCode+payload` |
 
@@ -178,16 +183,16 @@ Godot 4 встроенно использует ENet для `ENetMultiplayerPeer
 
 Декодируйте `token` из JSON так же, как сервер кодирует в `tokenToResponse`: **base64.RawURLEncoding** (без `=` padding). В GDScript — своя функция или готовая URL-safe base64 decode; результат — `PackedByteArray`.
 
-Проверка: `ticket_bytes[0] == 2` (version byte).
+Проверка: `ticket_bytes[0] == 3` (version byte; старые тикеты v2 тоже принимаются сервером).
 
 ### 2. ENet host + connect
 
 ```text
 host = enet_host_create(NULL, 1, 2, 0, 0)   # 1 peer, 2 channels — как на сервере
-peer = enet_host_connect(host, address, 7777, 0)
+peer = enet_host_connect(host, address, enet_port, 0)
 ```
 
-В Godot-обёртке: создать client host, `connect_to_host("127.0.0.1", 7777)`.
+В Godot-обёртке: создать client host, `connect_to_host("127.0.0.1", enet_port)` - порт **из ответа issue ticket** (`enet_port`), не захардкоженный `7777`: при нескольких host'ах ticket привязан к назначенному, admit на другом → reject `0x77`.
 
 ### 3. После EVENT_CONNECT — admit
 
@@ -249,8 +254,8 @@ send_frame(0x07, encoded_rpc, true)
 
 ## Чеклист ENet-клиента
 
-1. HTTP: create room → issue ticket → decode base64url → `ticket_bytes`.
-2. ENet client host, connect `host:7777`.
+1. HTTP: create room → issue ticket → decode base64url → `ticket_bytes`; запомнить `enet_port`.
+2. ENet client host, connect `host:enet_port` (назначенный host, strict binding).
 3. На connect: send `ticket_bytes` reliable ch0.
 4. Парсер кадра `opcode + payload` на каждый `EVENT_RECEIVE`.
 5. Wire codec: [wire-state-codec.md](../wire-state-codec.md).

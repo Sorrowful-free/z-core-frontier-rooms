@@ -20,3 +20,4 @@ package mocks
 //go:generate go tool mockgen -typed -destination=mock_room_policy_factory.go -package=mocks github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/policy RoomPolicyFactory
 //go:generate go tool mockgen -typed -destination=mock_ws_connection_factory.go -package=mocks github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/ws WsConnectionFactory
 //go:generate go tool mockgen -typed -destination=mock_enet_connection_factory.go -package=mocks github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/enet EnetConnectionFactory
+//go:generate go tool mockgen -typed -destination=mock_enet_host_registry.go -package=mocks github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/enet HostRegistry

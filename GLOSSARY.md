@@ -20,6 +20,10 @@ _Avoid_: Connected, Active, Online
 Внутренний момент последней подтверждённой живости клиента. Для WS — успешный входящий кадр или pong; исходящие кадры живость не подтверждают. Не путать с RTT (`Ping()`): RTT — устаревающее значение, а не метка времени.
 _Avoid_: LastActivity, heartbeat timestamp
 
+**ENet host / HostID** (shard):
+Один ENet host процесса: свой UDP-порт из `EnetConfig.ListenPorts` и свой `HostLoop`. `domain.HostID` - индекс+1 в списке портов; попадает в claims ticket'а для strict binding admit (P18). Комната транспорт-агностична: её peer'ы могут сидеть на разных host'ах.
+_Avoid_: shard index, node, listener id
+
 **Orphan admitted**:
 Слот reservation в состоянии `admitted`, для которого в комнате нет живого peer'а (клиент получил ticket и зашёл, но peer ушёл/умер без revoke). Вычищается фоновым `SweepOrphanAdmittedUseCase` после `OrphanAdmittedTTL` или точечным revoke+reserve в `IssueTicket` при повторном issue того же peer'а.
 _Avoid_: stale slot, dangling slot, orphan reservation
