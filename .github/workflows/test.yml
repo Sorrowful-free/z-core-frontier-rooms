@@ -63,8 +63,8 @@ jobs:
         with:
           version: v2.15.0
 
-  e2e:
-    name: E2E live match
+  e2e-ws:
+    name: E2E live match (WS)
     runs-on: ubuntu-latest
 
     steps:
@@ -76,8 +76,50 @@ jobs:
           go-version: "1.25"
           cache: true
 
-      - name: Run e2e scenarios
-        run: go test -race -v -run 'TestE2E' -count=1 -timeout 300s ./tests/integration/...
+      - name: Run e2e scenario
+        run: go test -race -v -run '^TestE2E_LiveMatch_HostMigration$' -count=1 -timeout 300s ./tests/integration/
+
+  e2e-enet:
+    name: E2E live match (ENet)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Install ENet dependencies
+        run: sudo apt-get update && sudo apt-get install -y gcc pkg-config libenet-dev
+
+      - name: Run e2e scenario
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race -v -tags enet -run '^TestE2E_LiveMatch_ENet$' -count=1 -timeout 300s ./tests/integration/
+
+  e2e-mixed:
+    name: E2E live match (mixed WS+ENet)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Install ENet dependencies
+        run: sudo apt-get update && sudo apt-get install -y gcc pkg-config libenet-dev
+
+      - name: Run e2e scenario
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race -v -tags enet -run '^TestE2E_LiveMatch_Mixed$' -count=1 -timeout 300s ./tests/integration/
 
   enet:
     name: ENet smoke (cgo)

@@ -24,11 +24,17 @@ mode="${1:-all}"
 case "$mode" in
   build) run go build -tags enet ./... ;;
   vet)   run go vet -tags enet ./internal/... ./cmd/... ./tests/... ;;
-  test)  run go test -race -count=1 -tags enet ./tests/delivery/enet/... ;;
+  test)
+    run go test -race -count=1 -tags enet ./tests/delivery/enet/...
+    # E2E live match (ENet + mixed + WS через общий драйвер), ~120s wall clock
+    # (ENet peer timeout после dropout — ~10s измерено; timeline до 115s на тест).
+    run go test -race -count=1 -tags enet -run 'TestE2E' -timeout 300s ./tests/integration/
+    ;;
   all)
     run go build -tags enet ./...
     run go vet -tags enet ./internal/... ./cmd/... ./tests/...
     run go test -race -count=1 -tags enet ./tests/delivery/enet/...
+    run go test -race -count=1 -tags enet -run 'TestE2E' -timeout 300s ./tests/integration/
     ;;
   *) echo "usage: $0 [build|test|vet|all]" >&2; exit 2 ;;
 esac

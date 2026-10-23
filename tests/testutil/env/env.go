@@ -21,17 +21,22 @@ import (
 	identityadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/identity"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/stdlib"
 	adapterrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/codec"
 	statepolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy/state"
 	adapterregistry "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/registry"
 	adapterreservation "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
 	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
+	adapterenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"
 	transportws "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/ws"
+	deliveryenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/enet"
 	deliveryhttp "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/http"
 	deliveryws "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/ws"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	portadmission "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/admission"
 	portidentity "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/identity"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 	portrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
+	portpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/policy"
 	portregistry "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/registry"
 	portreservation "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/reservation"
 	useroom "github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
@@ -51,13 +56,18 @@ type Env struct {
 	wsMu       sync.Mutex
 	wsListener net.Listener
 	wsAddr     string
+
+	enetPort   uint16
+	enetHandle *deliveryenet.ListenHandle
 }
 
 type options struct {
-	httpAuth          httpauthadapter.HTTPAuthConfig
-	httpLimits        httplimitsadapter.HTTPLimitsConfig
-	transport         adaptertransport.TransportConfig
-	idleSweepInterval time.Duration
+	httpAuth           httpauthadapter.HTTPAuthConfig
+	httpLimits         httplimitsadapter.HTTPLimitsConfig
+	transport          adaptertransport.TransportConfig
+	idleSweepInterval  time.Duration
+	patchStateInterval time.Duration
+	enet               bool // выставляется tagged-опцией WithEnet (env_enet.go)
 }
 
 // Option переопределяет дефолтный конфиг env (auth Disabled, limits zero, transport zero).
@@ -94,6 +104,17 @@ func WithIdleSweep(interval time.Duration) Option {
 	}
 }
 
+// WithRoomPatchInterval задаёт период patch-state тика комнаты
+// (refreshPeerPings + broadcast накопленного diff'а). Событийные патчи
+// (join/leave/input/entities) рассылаются мгновенно и от тика не зависят —
+// медленный тик влияет только на ping-resync и периодический full/patch.
+// <=0 нормализуется в дефолт внутри NewStateRoomPolicy.
+func WithRoomPatchInterval(interval time.Duration) Option {
+	return func(o *options) {
+		o.patchStateInterval = interval
+	}
+}
+
 // New собирает полное окружение и регистрирует cleanup
 // (закрытие listener'а, shutdown app, shutdown registry — чтобы не висели горутины комнат/peer'ов).
 func New(t *testing.T, opts ...Option) *Env {
@@ -119,7 +140,7 @@ func New(t *testing.T, opts ...Option) *Env {
 	}
 
 	logger := stdlib.New("test-env")
-	roomPolicyFactory := statepolicy.NewStateRoomPolicyFactory(logger)
+	roomPolicyFactory := newRoomPolicyFactory(logger, cfg.patchStateInterval)
 	roomFactory := adapterrealtime.NewRoomFactory(logger, roomPolicyFactory, cfg.transport.RoomIncomingQueueSize)
 	peerFactory := adapterrealtime.NewPeerFactory(logger, cfg.transport.PeerOutboundQueueSize)
 
@@ -159,10 +180,39 @@ func New(t *testing.T, opts ...Option) *Env {
 		Allocator:   allocator,
 	}
 
+	if cfg.enet {
+		// Продовый ENet listener на свободном UDP-порту; admit по ticket в
+		// первом пакете, дальше те же use cases, что у WS. Символы stub-safe
+		// (без тега enet Listen — no-op), но cfg.enet ставит только tagged
+		// WithEnet → в untagged-сборке блок мёртв.
+		enetCfg := adapterenet.DefaultEnetConfig()
+		enetCfg.ListenPort = freeUDPPort(t)
+		enetCfg.MaxIncomingFrameBytes = cfg.transport.MaxIncomingFrameBytes
+		enetCfg.EnetIncomingQueueSize = cfg.transport.EnetIncomingQueueSize
+		// ServiceTimeoutMs — время удержания apiMu на итерацию host.Service;
+		// в тесте сервер и клиентские host'ы в одном процессе и делят apiMu:
+		// 10ms-итерации создают конвой и starve client/peers (см. P12 e2e).
+		enetCfg.ServiceTimeoutMs = 1
+		e.enetPort = enetCfg.ListenPort
+		e.enetHandle = deliveryenet.NewRoomsHandler(context.Background(), joinUC, leaveUC,
+			adapterenet.NewEnetConnectionFactory(logger), enetCfg, logger).Listen()
+		// Fail-fast на bind error: run() выходит сразу при ошибке NewHost.
+		select {
+		case <-e.enetHandle.Done():
+			t.Fatalf("enet listener exited: %v", e.enetHandle.Err())
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
 	t.Cleanup(func() {
 		// Sweep стопаем первым: RunOnce ходит в registry/leave-поток и не должен
 		// гоняться за shutdown'ом. Handle nil-safe (interval <= 0 → nil).
 		idleSweep.Stop()
+		// ENet до shutdown app/registry: Stop ждёт выхода host loop'а —
+		// EventDisconnect'ы при разрушении комнат не должны гнаться за ним.
+		if e.enetHandle != nil {
+			e.enetHandle.Stop()
+		}
 		e.closeWSListener()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -261,6 +311,41 @@ func (e *Env) closeWSListener() {
 		_ = e.wsListener.Close()
 		e.wsListener = nil
 	}
+}
+
+// roomPolicyFactory — фабрика policy с настраиваемым patch-тиком
+// (см. WithRoomPatchInterval); интервал <=0 нормализуется в дефолт
+// внутри NewStateRoomPolicy — поведение идентично штатной фабрике.
+type roomPolicyFactory struct {
+	logger             logging.Logger
+	patchStateInterval time.Duration
+}
+
+func newRoomPolicyFactory(logger logging.Logger, patchStateInterval time.Duration) *roomPolicyFactory {
+	return &roomPolicyFactory{logger: logger, patchStateInterval: patchStateInterval}
+}
+
+func (f *roomPolicyFactory) CreateRoomPolicy() portpolicy.RoomPolicy {
+	return statepolicy.NewStateRoomPolicy(
+		f.logger,
+		codec.NewRoomStateCodec(),
+		codec.NewEntitiesStateCodec(),
+		codec.NewInputStateCodec(),
+		codec.NewRpcStateCodec(),
+		0, // full — дефолт 4s
+		f.patchStateInterval,
+	)
+}
+
+// freeUDPPort резервирует свободный UDP-порт (bind :0 → close) для ENet listener'а.
+func freeUDPPort(t *testing.T) uint16 {
+	t.Helper()
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+	if err != nil {
+		t.Fatalf("reserve udp port: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	return uint16(conn.LocalAddr().(*net.UDPAddr).Port)
 }
 
 // CreateRoom делает POST /rooms {"capacity":4,"nick_name":nick} и возвращает

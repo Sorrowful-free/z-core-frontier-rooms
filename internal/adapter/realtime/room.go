@@ -129,15 +129,15 @@ func (r *Room) Stop() error {
 }
 
 func (r *Room) Join(peer realtime.Peer) error {
-	peerID := peer.GetID()
-
 	r.mutex.RLock()
-	if len(r.peers) >= r.capacity {
-		r.mutex.RUnlock()
+	full := len(r.peers) >= r.capacity
+	r.mutex.RUnlock()
+	if full {
 		return fmt.Errorf("%w: %d", domain.ErrRoomFull, r.id)
 	}
-	r.mutex.RUnlock()
 
+	// Авторитетная capacity-проверка и вставка в r.peers — внутри
+	// runLifecycle на room-loop'е, атомарно с OnJoin относительно тиков.
 	if err := r.dispatchLifecycle(lifecycleRequest{
 		op:   lifecycleJoin,
 		peer: peer,
@@ -145,21 +145,6 @@ func (r *Room) Join(peer realtime.Peer) error {
 	}); err != nil {
 		return fmt.Errorf("%w: %w", domain.ErrJoinDenied, err)
 	}
-
-	r.mutex.Lock()
-	if len(r.peers) >= r.capacity {
-		r.mutex.Unlock()
-		if leaveErr := r.dispatchLifecycle(lifecycleRequest{
-			op:   lifecycleLeave,
-			peer: peer,
-			done: make(chan error, 1),
-		}); leaveErr != nil {
-			r.logger.Error("join room: rollback leave after capacity re-check failed", "error", leaveErr, "roomID", r.id, "peerID", peerID)
-		}
-		return fmt.Errorf("%w: %d", domain.ErrRoomFull, r.id)
-	}
-	r.peers[peerID] = peer
-	r.mutex.Unlock()
 	return nil
 }
 
@@ -173,17 +158,11 @@ func (r *Room) Leave(peer realtime.Peer) error {
 	}
 	r.mutex.RUnlock()
 
-	err := r.dispatchLifecycle(lifecycleRequest{
+	if err := r.dispatchLifecycle(lifecycleRequest{
 		op:   lifecycleLeave,
 		peer: peer,
 		done: make(chan error, 1),
-	})
-
-	r.mutex.Lock()
-	delete(r.peers, peerID)
-	r.mutex.Unlock()
-
-	if err != nil {
+	}); err != nil {
 		r.logger.Error("room leave: policy on leave failed", "error", err, "roomID", r.id, "peerID", peerID)
 		return err
 	}
@@ -193,13 +172,12 @@ func (r *Room) Leave(peer realtime.Peer) error {
 func (r *Room) Replace(peer realtime.Peer) error {
 	peerID := peer.GetID()
 
-	r.mutex.Lock()
+	r.mutex.RLock()
 	old, ok := r.peers[peerID]
+	r.mutex.RUnlock()
 	if !ok {
-		r.mutex.Unlock()
 		return fmt.Errorf("%w: %d", domain.ErrPeerNotFound, peerID)
 	}
-	r.mutex.Unlock()
 
 	if err := r.dispatchLifecycle(lifecycleRequest{
 		op:   lifecycleLeave,
@@ -209,19 +187,11 @@ func (r *Room) Replace(peer realtime.Peer) error {
 		return fmt.Errorf("%w: %w", domain.ErrReplaceFailed, err)
 	}
 
-	r.mutex.Lock()
-	r.peers[peerID] = peer
-	r.mutex.Unlock()
-
 	if err := r.dispatchLifecycle(lifecycleRequest{
 		op:   lifecycleJoin,
 		peer: peer,
 		done: make(chan error, 1),
 	}); err != nil {
-		r.mutex.Lock()
-		r.peers[peerID] = old
-		r.mutex.Unlock()
-
 		rollbackErr := r.dispatchLifecycle(lifecycleRequest{
 			op:   lifecycleJoin,
 			peer: old,

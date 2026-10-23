@@ -68,6 +68,76 @@ func TestJoinRollbackOnHandlerError(t *testing.T) {
 	}
 }
 
+// TestLifecyclePeerRegistryOrdering — регрессия P13: мутация r.peers и
+// OnJoin/OnLeave атомарны на room-loop'е. До фикса peer попадал в policy
+// state до записи в r.peers — patch-тик успевал прочитать state и выкинуть
+// нового peer'а как stale (pruning stale peer). Spy-policy проверяет
+// видимость изнутри колбэков: это та же точка наблюдения, что у тиков.
+func TestLifecyclePeerRegistryOrdering(t *testing.T) {
+	t.Parallel()
+
+	logger := stdlib.New("test")
+	policy := &orderingProbePolicy{t: t}
+	room := adapterrealtime.NewRoom(context.Background(), domain.RoomID(1), policy, 8, nil, 0, logger)
+	policy.room = room
+
+	if err := room.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { _ = room.Stop() })
+
+	peer := &stubPeer{id: domain.PeerID(20)}
+	if err := room.Join(peer); err != nil {
+		t.Fatalf("Join: %v", err)
+	}
+	if err := room.Leave(peer); err != nil {
+		t.Fatalf("Leave: %v", err)
+	}
+	if policy.onJoinErr != nil {
+		t.Fatalf("OnJoin observed: %v", policy.onJoinErr)
+	}
+	if policy.onLeaveErr != nil {
+		t.Fatalf("OnLeave observed: %v", policy.onLeaveErr)
+	}
+}
+
+// orderingProbePolicy — внутри OnJoin peer уже обязан быть в r.peers
+// (иначе refreshPeerPings выкинул бы его как stale до следующего тика);
+// внутри OnLeave — уже удалён.
+type orderingProbePolicy struct {
+	t    *testing.T
+	room realtime.Room
+
+	onJoinErr  error
+	onLeaveErr error
+}
+
+func (p *orderingProbePolicy) OnStart(room realtime.Room) error {
+	p.room = room
+	return nil
+}
+func (p *orderingProbePolicy) OnStop(realtime.Room) error { return nil }
+func (p *orderingProbePolicy) OnMessage(events.RoomEvent) error {
+	return nil
+}
+
+func (p *orderingProbePolicy) OnJoin(peer realtime.Peer) error {
+	_, p.onJoinErr = p.room.GetPeer(peer.GetID())
+	return nil
+}
+
+func (p *orderingProbePolicy) OnLeave(peer realtime.Peer) error {
+	_, err := p.room.GetPeer(peer.GetID())
+	if !errors.Is(err, domain.ErrPeerNotFound) {
+		p.onLeaveErr = err
+	}
+	return nil
+}
+
+func (p *orderingProbePolicy) TickIntervals() (time.Duration, time.Duration) { return 0, 0 }
+func (p *orderingProbePolicy) OnTickFullState() error                        { return nil }
+func (p *orderingProbePolicy) OnTickPatchState() error                       { return nil }
+
 type sendOnJoinPolicy struct {
 	room realtime.Room
 }

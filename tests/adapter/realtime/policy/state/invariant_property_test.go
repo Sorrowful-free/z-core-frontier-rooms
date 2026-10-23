@@ -140,6 +140,19 @@ func runInvariantProperty(t *testing.T, seed int64) {
 		}
 		return joined[ids[rnd.Intn(len(ids))]]
 	}
+	randomJoinedExcept := func(except domain.PeerID) *mortalPeer {
+		ids := joinedIDs()
+		var rest []domain.PeerID
+		for _, id := range ids {
+			if id != except {
+				rest = append(rest, id)
+			}
+		}
+		if len(rest) == 0 {
+			return nil
+		}
+		return joined[rest[rnd.Intn(len(rest))]]
+	}
 
 	// --- словарь операций (clean + fault-инъекции); ошибки операций —
 	// легальный исход, логируются в trace, инварианты не ломают ---
@@ -266,18 +279,24 @@ func runInvariantProperty(t *testing.T, seed int64) {
 		return fmt.Sprintf("entities %d err=%v", p.id, err)
 	}
 
-	// Fault: Deliver падает во время leave-broadcast — OnLeave откатывается,
-	// запись остаётся stale в state.Peers.
+	// Fault: у случайного выжившего падает Deliver во время leave-broadcast —
+	// OnLeave откатывается, запись об ушедшем остаётся stale в state.Peers.
+	// (P13: сам уходящий удалён из r.peers до OnLeave, его Deliver в
+	// leave-broadcast больше не участвует — ломать надо выжившего.)
 	flakyLeaveOp := func() string {
 		p := randomJoined()
 		if p == nil {
 			return "flaky leave skipped (empty room)"
 		}
-		p.setErr(errDeliverFailed)
+		bystander := randomJoinedExcept(p.id)
+		if bystander == nil {
+			return fmt.Sprintf("flaky leave %d skipped (no bystander)", p.id)
+		}
+		bystander.setErr(errDeliverFailed)
 		err := h.room.Leave(p)
-		p.setErr(nil)
+		bystander.setErr(nil)
 		delete(joined, p.id)
-		return fmt.Sprintf("flaky leave %d err=%v", p.id, err)
+		return fmt.Sprintf("flaky leave %d via bystander %d err=%v", p.id, bystander.id, err)
 	}
 
 	// Fault: транспорт умер без leave — peer остаётся в room и в state,

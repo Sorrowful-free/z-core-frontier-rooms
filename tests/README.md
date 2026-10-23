@@ -26,8 +26,10 @@ tests/
   delivery/http/        — REST JSON (app.Test поверх testutil/env)
   delivery/ws/          — WS join lifecycle (реальный listener + fasthttp/websocket)
   integration/          — сквозные сценарии: room lifecycle create→issue→2×WS join→disconnect→leave;
-                          e2e live match (~60s, -short skip): 4 WS-клиента, host dropout → idle evict →
-                          2 миграции master, entities/input на wire
+                          e2e live match (-short skip): общий драйвер + клиенты WS и ENet —
+                          WS (~60s): 4 клиента, host dropout → idle evict → 2 миграции master;
+                          ENet (~115s, tag enet): то же, dropout = молчание libenet → peer timeout;
+                          mixed (~115s, tag enet): host на ENet, slaves WS+ENet, кросс-транспорт
 ```
 
 Пакеты — **внешние** (`package *_test`), импорт модуля `github.com/Sorrowful-free/z-core-frontier-rooms/...`.
@@ -170,7 +172,7 @@ go test -fuzz=FuzzRoomStateDecode -fuzztime=30s ./tests/adapter/realtime/codec/
 | `tests/delivery/ws` | невалидный token → `OpInvalidToken` frame + close; missing token → `OpEmptyToken`; malformed base64 → `OpInvalidToken`; issue ticket → join → peer в `Registry` → disconnect → leave |
 | `tests/adapter/transport/enet` | `EnetConfig.Validate` (defaults + граничные значения) |
 | `tests/delivery/enet` | stub-Listen чистый выход (без тега); e2e под `-tags enet` + cgo: bind-failure → `Err`, `Stop` ждёт loop, admit-timeout disconnect, join-reject доезжает (`DisconnectLater`) |
-| `tests/integration` | room lifecycle: create (host) → issue (joiner) → оба join по WS → 2 peers → joiner disconnect → 1 peer (host); e2e live match: 4 клиента ~60s, silent host → idle evict → master→slave, clean leave master-2 → master-3, slaves видят entities от 2+ мастеров и input друг друга |
+| `tests/integration` | room lifecycle: create (host) → issue (joiner) → оба join по WS → 2 peers → joiner disconnect → 1 peer (host); e2e live match (`runLiveMatch` поверх `matchClient`): silent host → evict → master→slave, clean leave master-2 → master-3, slaves видят entities от 2+ мастеров и input друг друга; транспорты: WS (`TestE2E_LiveMatch_HostMigration`, ~60s, idle sweep evict), 4×ENet (`TestE2E_LiveMatch_ENet`, ~115s, libenet peer timeout ~10s, bound 70s), mixed ENet host + WS/ENet slaves (`TestE2E_LiveMatch_Mixed`, ~115s) — оба под `-tags enet` |
 
 После изменения `internal/port/*` интерфейсов:
 
@@ -182,13 +184,23 @@ go generate ./tests/mocks/...
 
 ## E2E live match
 
-`tests/integration/match_e2e_test.go` (`TestE2E_LiveMatch_HostMigration`, план `docs/plans/P11-e2e-match.md`) — ~60s реального времени, пропускается под `-short`. Запуск:
+Общий клиентский слой и сценарный драйвер — `match_e2e_client_test.go` (`matchClientBase` + `matchClient` + `runLiveMatch`); транспорты: `wsClient` (`match_e2e_test.go`) и `enetClient` (`match_e2e_enet_test.go`, tag `enet && cgo`). Все сценарии пропускаются под `-short`.
+
+`TestE2E_LiveMatch_HostMigration` (план `docs/plans/P11-e2e-match.md`) — 4 WS-клиента, ~60s:
 
 ```bash
-go test -v -race -run TestE2E_LiveMatch -count=1 -timeout 120s ./tests/integration/
+go test -v -race -run '^TestE2E_LiveMatch_HostMigration$' -count=1 -timeout 120s ./tests/integration/
 ```
 
-Каждый из 4 WS-клиентов (`host`, `s1`..`s3`) — goroutine'ы read-pump + send-loop; логи `t.Logf` с префиксом ника образуют единую хронологическую ленту при `-v` и при падении: `joined as peer N`, `master is now ...`, `became/lost master`, `first entity snapshot from owner ...`, `observed input of ...`, `my input observed`, `in-room error frame`, `disconnected`. Маркеры сценария — `[scenario] ...` (host goes silent, master leaves, шаги `waitFor` — ok).
+`TestE2E_LiveMatch_ENet` — 4 ENet-клиента, ~115s: dropout host'а — честное молчание libenet (клиент перестаёт вызывать `host.Service`, UDP-сокет жив) → серверский peer timeout (измерено ~10s на localhost, bound 70s) → `EventDisconnect` → `LeaveRoom` → миграция. `TestE2E_LiveMatch_Mixed` — host на ENet, slaves 1×ENet + 2×WS: кросс-транспорт entities/input/миграции. Локально без libenet-dev — через Docker:
+
+```bash
+./scripts/enet-verify.sh test   # delivery/enet + tagged e2e в образе zcore-rooms-dev
+# или при установленном libenet-dev:
+CGO_ENABLED=1 go test -v -race -tags enet -run 'TestE2E' -count=1 -timeout 300s ./tests/integration/
+```
+
+Каждый клиент (`host`, `s1..s3`/`e1..e3`/`w1..w2`) — goroutine'ы pump + send-loop + stats-loop; логи `t.Logf` с префиксом ника образуют единую хронологическую ленту при `-v` и при падении: `joined as peer N`, `master is now ...`, `became/lost master`, `first entity snapshot from owner ...`, `observed input of ...`, `my input observed`, `in-room error frame`, `disconnected`. Маркеры сценария — `[scenario] ...` (host goes silent, master leaves, шаги `waitFor` — ok).
 
 ## Следующий приоритет
 

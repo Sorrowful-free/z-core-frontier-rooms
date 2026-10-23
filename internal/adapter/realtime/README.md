@@ -12,9 +12,9 @@ Runtime комнаты: `Room`, `Peer`, фабрики.
 
 Публичные операции:
 
-- `Join` — `OnJoin` → повторная проверка capacity → вставка в peers map (peer невидим до commit; гонка capacity → компенсирующий `lifecycleLeave` + `ErrRoomFull`)
-- `Leave` — `OnLeave`, затем удаление из peers map **всегда**, даже при ошибке политики (ошибка возвращается; peer не остаётся в реестре — ADR-0004)
-- `Replace` — `OnLeave(old)` → swap peer → `OnJoin(new)`; при ошибке join — rollback map + `OnJoin(old)`
+- `Join` — capacity-check + вставка в peers map + `OnJoin` выполняются **атомарно на room-loop'е** (P13): peer виден в `r.peers` до того, как policy вставляет его в state — tick'и (`refreshPeerPings`) не могут принять новоприсоединившегося за stale. При ошибке `OnJoin` peers-вставка откатывается. Pre-check capacity на caller'е — ранний ответ, авторитетная проверка в loop'е.
+- `Leave` — удаление из peers map + `OnLeave` атомарно на room-loop'е: peer вне реестра **до** отработки политики; ошибка `OnLeave` возвращается, state-запись при откате вычищается следующим prune-тиком (`GetPeer` → `ErrPeerNotFound` → stale).
+- `Replace` — `lifecycleLeave(old)` → `lifecycleJoin(new)`; при ошибке join — rollback `lifecycleJoin(old)`
 - `Start`/`Stop` — `sync.Once`-guards; повторные вызовы идемпотентны
 - `Send` / `Deliver` — исходящие `PeerEvent` / входящие `RoomEvent`
 

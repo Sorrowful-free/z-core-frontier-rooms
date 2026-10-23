@@ -244,12 +244,15 @@ func TestOnLeave_ElectionSkipsStaleCandidate_ElectsLivePeer(t *testing.T) {
 	}
 	shadow := mustJoinShadow(t, h)
 
-	// stale уходит из room с упавшим broadcast — запись остаётся в state.Peers.
-	stale.setErr(errDeliverFailed)
+	// Stale-запись через откат state: уходящий stale удалён из r.peers до
+	// OnLeave (P13), поэтому broadcast ломаем упавшим Deliver выжившего —
+	// sendPatchStateExclude вернёт ошибку, state откатится, запись о
+	// stale останется в state.Peers, а из room он уже удалён.
+	survivor.setErr(errDeliverFailed)
 	if err := h.room.Leave(stale); err == nil {
 		t.Fatal("Leave stale: want error from failed broadcast")
 	}
-	stale.setErr(nil)
+	survivor.setErr(nil)
 	survivor.clear()
 	assertWeakInvariants(t, shadow.view)
 
@@ -280,11 +283,13 @@ func TestOnLeave_ElectionAllStale_ResetsMasterWithoutFlags(t *testing.T) {
 		t.Fatalf("Join stale: %v", err)
 	}
 
-	stale.setErr(errDeliverFailed)
+	// Stale-запись через откат state (P13: уходящий уже вне r.peers на
+	// момент OnLeave) — broadcast ломаем упавшим Deliver master'а.
+	master.setErr(errDeliverFailed)
 	if err := h.room.Leave(stale); err == nil {
 		t.Fatal("Leave stale: want error from failed broadcast")
 	}
-	stale.setErr(nil)
+	master.setErr(nil)
 
 	// Единственный оставшийся кандидат stale → пустые выборы (не ошибка).
 	if err := h.room.Leave(master); err != nil {

@@ -3,6 +3,7 @@ package realtime
 import (
 	"fmt"
 
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 )
 
@@ -19,17 +20,51 @@ type lifecycleRequest struct {
 	done chan error
 }
 
+// runLifecycle применяет join/leave атомарно относительно тиков комнаты:
+// мутация r.peers и вызов policy происходят в одном goroutine'е room-loop'а.
+// Иначе между OnJoin (peer уже в policy state) и записью в r.peers успевал
+// patch-тик, refreshPeerPings считал нового peer'а stale и выкидывал его
+// из state (см. docs/plans/P13-lifecycle-peers-atomicity.md).
 func (r *Room) runLifecycle(req lifecycleRequest) {
 	var err error
 	switch req.op {
 	case lifecycleJoin:
-		err = r.policy.OnJoin(req.peer)
+		err = r.runJoinLocked(req.peer)
 	case lifecycleLeave:
-		err = r.policy.OnLeave(req.peer)
+		err = r.runLeaveLocked(req.peer)
 	default:
 		err = fmt.Errorf("unknown lifecycle op: %d", req.op)
 	}
 	req.done <- err
+}
+
+func (r *Room) runJoinLocked(peer realtime.Peer) error {
+	peerID := peer.GetID()
+	r.mutex.Lock()
+	if len(r.peers) >= r.capacity {
+		r.mutex.Unlock()
+		return fmt.Errorf("%w: %d", domain.ErrRoomFull, r.id)
+	}
+	r.peers[peerID] = peer
+	r.mutex.Unlock()
+
+	if err := r.policy.OnJoin(peer); err != nil {
+		r.mutex.Lock()
+		delete(r.peers, peerID)
+		r.mutex.Unlock()
+		return err
+	}
+	return nil
+}
+
+func (r *Room) runLeaveLocked(peer realtime.Peer) error {
+	peerID := peer.GetID()
+	r.mutex.Lock()
+	delete(r.peers, peerID)
+	r.mutex.Unlock()
+	// При ошибке OnLeave state-запись peer'а само-вычищается следующим
+	// prune-тиком refreshPeerPings (GetPeer → ErrPeerNotFound → stale).
+	return r.policy.OnLeave(peer)
 }
 
 func (r *Room) dispatchLifecycle(req lifecycleRequest) error {
