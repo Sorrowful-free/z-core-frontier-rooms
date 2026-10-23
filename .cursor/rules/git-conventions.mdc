@@ -1,0 +1,12 @@
+---
+description: Conventional commit subject style, no attribution trailers, ask before committing
+alwaysApply: true
+---
+
+# Git — конвенции
+
+- Commit message — на **английском**, subject в стиле лога: `- <plan|что>: <почему>` (см. `git log` — одна строка, без лишних секций).
+- **Текст коммита согласовывать с пользователем до `git commit`** — предложить subject, дождаться ок.
+- Без attribution-трейлеров (`Generated with`, `Co-Authored-By` и т.п.) — авторство из git config.
+- Раздельные коммиты по планам: P-изменения прод-кода и тестовой гигиены не смешиваются в одном коммите.
+- Не пушить без явной просьбы; не править git config.

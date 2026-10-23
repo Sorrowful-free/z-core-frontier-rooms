@@ -22,7 +22,7 @@ alwaysApply: true
 - Encapsulation / ownership объектов чужих библиотек: не удерживать ссылку на объект, чей lifetime принадлежит чужому скоупу (request-scoped обёртки, `sync.Pool`, handler-callback), за пределы этого скоупа. Для session-scoped работы брать внутренний объект или копию на входе (пример: `WsConnection` хранит `*fasthttp/websocket.Conn`, а не пулинговый contrib `*websocket.Conn`, который `releaseConn` ресетит после return handler'а).
 - Бинарный/буферный I/O: чтение ровно N байт — `io.ReadFull`; `buf.Read` может вернуть короче без ошибки → тихая коррупция.
 - Зависимости: только нужные; версии — через `go.mod` / `go get`, без копирования в `vendor/` без причины.
-- Линтеры и формат: `go fmt`, `go vet`; при наличии в репо — `staticcheck` / `golangci-lint`.
+- Линтеры и формат: `go fmt`, `go vet`; при наличии в репо — `staticcheck` / `golangci-lint`. Форматировать только затронутые файлы — репо-wide `goimports`/`gofmt -l` sweep (перегруппировка импортов в чужих файлах) отдельным коммитом по запросу, не частью задачи.
 
 ## HTTP — Fiber
 
