@@ -21,12 +21,10 @@ const (
 )
 
 type StateRoomPolicy struct {
-	room   realtime.Room
-	master realtime.Peer
-	// masterlessLogged — дедуп логов masterless-эпизода: Error логируется
-	// один раз на эпизод (а не на каждый падающий re-elect тик), Info — при
-	// восстановлении master.
-	masterlessLogged bool
+	room realtime.Room
+	// master - машина master-эпизодов: election, IsMaster-флаги и дедуп
+	// masterless-лога сведены в один диспетчер переходов (master_machine.go).
+	master masterMachine
 
 	prevState state.RoomState
 	state     state.RoomState
@@ -51,6 +49,7 @@ func normalizeTickInterval(interval, defaultInterval time.Duration) time.Duratio
 
 func NewStateRoomPolicy(logger logging.Logger, stateCodec codec.RoomStateCodec, entitiesCodec codec.EntitiesStateCodec, inputCodec codec.InputStateCodec, rpcCodec codec.RpcStateCodec, fullStateInterval time.Duration, patchStateInterval time.Duration) *StateRoomPolicy {
 	return &StateRoomPolicy{
+		master:    masterMachine{logger: logger},
 		prevState: *state.NewRoomState(domain.RoomIDInvalid, 0),
 		state:     *state.NewRoomState(domain.RoomIDInvalid, 0),
 
@@ -99,14 +98,9 @@ func (p *StateRoomPolicy) OnLeave(peer realtime.Peer) error {
 		}
 		delete(roomState.Peers, peerID)
 		delete(roomState.Inputs, peerID)
-		if !peerState.IsMaster {
-			return nil
-		}
-		if len(roomState.Peers) == 0 {
-			p.master = nil
-			return nil
-		}
-		return p.electAndAssignMaster(roomState)
+		// Последствия ухода для master решает машина: ушёл не-master -
+		// перехода нет; master в пустой комнате - masterless; иначе перевыборы.
+		return p.master.dispatch(masterEvent{kind: evPeerLeft, leftIsMaster: peerState.IsMaster}, p.room, roomState)
 	})
 }
 

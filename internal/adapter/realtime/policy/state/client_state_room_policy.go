@@ -9,7 +9,7 @@ import (
 )
 
 func (p *StateRoomPolicy) onClientFullEntities(roomEvent events.RoomEvent) error {
-	if p.master == nil || roomEvent.PeerID != p.master.GetID() {
+	if !p.master.isMaster(roomEvent.PeerID) {
 		return fmt.Errorf("%w: peer %d", domain.ErrNotMaster, roomEvent.PeerID)
 	}
 
@@ -19,11 +19,11 @@ func (p *StateRoomPolicy) onClientFullEntities(roomEvent events.RoomEvent) error
 		return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
 	}
 	p.state.Entities = full
-	return p.publishRoomStateChange(oldRoomState, p.masterPeerID())
+	return p.publishRoomStateChange(oldRoomState, p.master.peerID())
 }
 
 func (p *StateRoomPolicy) onClientPatchEntities(roomEvent events.RoomEvent) error {
-	if p.master == nil || roomEvent.PeerID != p.master.GetID() {
+	if !p.master.isMaster(roomEvent.PeerID) {
 		return fmt.Errorf("%w: peer %d", domain.ErrNotMaster, roomEvent.PeerID)
 	}
 
@@ -47,7 +47,7 @@ func (p *StateRoomPolicy) onClientPatchEntities(roomEvent events.RoomEvent) erro
 		return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
 	}
 	p.state.Entities = nextEntities
-	return p.publishRoomStateChange(oldRoomState, p.masterPeerID())
+	return p.publishRoomStateChange(oldRoomState, p.master.peerID())
 }
 
 func (p *StateRoomPolicy) onClientFullInput(roomEvent events.RoomEvent) error {
@@ -98,7 +98,7 @@ func (p *StateRoomPolicy) onClientRpc(roomEvent events.RoomEvent) error {
 	}
 
 	senderPeerID := roomEvent.PeerID
-	masterID := p.masterPeerID()
+	masterID := p.master.peerID()
 
 	peerEvent := events.PeerEvent{
 		ExcludePeerID: senderPeerID,
@@ -119,15 +119,11 @@ func (p *StateRoomPolicy) onClientRpc(roomEvent events.RoomEvent) error {
 		peerEvent.PeerID = rpc.PeerID
 	case state.RpcTargetMaster:
 		if !masterID.IsValid() {
-			// master мог остаться nil после упавшего election — ленивое
-			// переизбрание по живому state, затем одна повторная проверка.
-			if err := p.electAndAssignMaster(&p.state); err == nil {
-				masterID = p.masterPeerID()
-				if masterID.IsValid() {
-					p.masterAssigned(masterID)
-				}
-			} else {
-				p.logMasterless(err)
+			// master мог остаться nil после упавшего election - машина
+			// делает lazy election по живому state (фейл логируется в
+			// masterless-эпизод), затем одна повторная проверка.
+			if err := p.master.dispatch(masterEvent{kind: evRpcMaster}, p.room, &p.state); err == nil {
+				masterID = p.master.peerID()
 			}
 		}
 		if !masterID.IsValid() {

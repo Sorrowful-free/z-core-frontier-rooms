@@ -36,7 +36,7 @@ func (p *StateRoomPolicy) refreshPeerPings() error {
 	for peerID, peerState := range p.state.Peers {
 		peer, err := p.room.GetPeer(peerID)
 		if err != nil {
-			// stale — только когда peer реально отсутствует в room;
+			// stale - только когда peer реально отсутствует в room;
 			// прочие ошибки GetPeer не повод выкидывать peer из state.
 			if errors.Is(err, domain.ErrPeerNotFound) {
 				stale = append(stale, peerID)
@@ -48,52 +48,40 @@ func (p *StateRoomPolicy) refreshPeerPings() error {
 		p.state.Peers[peerID] = peerState
 	}
 
-	// Сначала вычищаем все stale-записи, потом один раз переизбираем master —
+	// Сначала вычищаем все stale-записи, потом один раз перевыборы master -
 	// иначе выборы могли бы попасть на ещё не вычищенный stale peer.
 	masterPruned := false
 	for _, peerID := range stale {
 		p.logger.Warn("pruning stale peer from room state", "peerID", peerID)
 		delete(p.state.Peers, peerID)
 		delete(p.state.Inputs, peerID)
-		if p.master != nil && p.master.GetID() == peerID {
+		if p.master.isMaster(peerID) {
 			masterPruned = true
 		}
 	}
-	// Переизбираем master, если он вычищен вместе со stale-записями или его нет
-	// вовсе (прошлая попытка election упала) — пока в комнате есть живые peers.
-	if masterPruned || (p.master == nil && len(p.state.Peers) > 0) {
-		if err := p.electAndAssignMaster(&p.state); err != nil {
-			// master не должен висеть на удалённом peer — сбрасываем.
-			p.master = nil
-			p.logMasterless(err)
-		} else if p.master != nil {
-			p.masterAssigned(p.master.GetID())
-		}
-	}
-	return nil
-}
-
-func (p *StateRoomPolicy) masterPeerID() domain.PeerID {
-	if p.master == nil {
-		return domain.PeerIDInvalid
-	}
-	return p.master.GetID()
+	// Событие tick-prune: машина решает, нужен ли переход master (вычищен
+	// или отсутствует при живых peers) и ведёт лог masterless-эпизода.
+	return p.master.dispatch(masterEvent{kind: evTickPrune, masterPruned: masterPruned}, p.room, &p.state)
 }
 
 func (p *StateRoomPolicy) joinPeerAndSyncState(peer realtime.Peer) error {
 	peerID := peer.GetID()
 	newState := p.state.Clone()
-	newMaster := p.master
 
-	if _, ok := newState.Peers[peerID]; !ok {
-		if len(newState.Peers) == 0 {
-			newMaster = peer
+	oldMaster := p.master.current()
+	committed := false
+	// Событие join может перебрать master до commit-точки (первый peer
+	// пустой комнаты) - на всех ветках ошибок откатываем, как в
+	// prepareAndSendRoomStatePatch.
+	defer func() {
+		if !committed {
+			p.master.restore(oldMaster)
 		}
-		newState.Peers[peerID] = state.PeerState{
-			NickName: peer.GetNickName(),
-			IsMaster: len(newState.Peers) == 0,
-			Ping:     peer.Ping(),
-		}
+	}()
+
+	// Машина пишет запись peer в staged-state и решает его IsMaster-флаг.
+	if err := p.master.dispatch(masterEvent{kind: evPeerJoined, peer: peer}, p.room, newState); err != nil {
+		return err
 	}
 
 	if err := p.deliverFullStateToPeer(peer, newState); err != nil {
@@ -111,10 +99,9 @@ func (p *StateRoomPolicy) joinPeerAndSyncState(peer realtime.Peer) error {
 	}
 
 	p.state = *newState
-	p.master = newMaster
-	if newMaster != nil {
-		p.masterAssigned(newMaster.GetID())
-	}
+	committed = true
+	// Post-commit: join мог перевести masterless -> masterSet и закрыть эпизод.
+	p.master.assigned()
 	p.commitPrevState()
 	return nil
 }
@@ -205,12 +192,12 @@ func (p *StateRoomPolicy) commitPrevState() {
 }
 
 func (p *StateRoomPolicy) prepareAndSendRoomStatePatch(applyChanges func(roomState *state.RoomState) error) error {
-	oldMaster := p.master
+	oldMaster := p.master.current()
 	committed := false
-	// applyChanges может переназначить p.master — откатываем на всех ветках ошибок.
+	// applyChanges может переназначить master - откатываем на всех ветках ошибок.
 	defer func() {
 		if !committed {
-			p.master = oldMaster
+			p.master.restore(oldMaster)
 		}
 	}()
 
@@ -231,10 +218,8 @@ func (p *StateRoomPolicy) prepareAndSendRoomStatePatch(applyChanges func(roomSta
 	p.state = *newRoomState
 	p.commitPrevState()
 	committed = true
-	if p.master != nil {
-		// Post-commit: assignMaster внутри applyChanges мог перебрать master —
-		// masterless-эпизод закрываем только после успешной рассылки патча.
-		p.masterAssigned(p.master.GetID())
-	}
+	// Post-commit: переходы машины внутри applyChanges могли перебрать master -
+	// masterless-эпизод закрываем только после успешной рассылки патча.
+	p.master.assigned()
 	return nil
 }
