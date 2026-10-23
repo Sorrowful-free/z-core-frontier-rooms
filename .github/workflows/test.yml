@@ -140,7 +140,7 @@ jobs:
       - name: Run ENet tests
         env:
           CGO_ENABLED: "1"
-        run: go test -race -count=1 -tags enet ./tests/delivery/enet/...
+        run: go test -race -count=1 -tags enet ./tests/delivery/enet/... ./tests/adapter/transport/enet/...
 
   fuzz:
     name: Fuzz (codec)
