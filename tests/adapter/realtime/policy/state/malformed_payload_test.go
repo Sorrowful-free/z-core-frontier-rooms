@@ -7,6 +7,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
+	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
 // Каждый in-room opcode × garbage payload → ErrInRoomInvalidPayload,
@@ -15,8 +16,8 @@ func TestOnMessage_GarbagePayload_ReturnsErrInRoomInvalidPayload(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(70), 4)
-	master := newCapturePeer(1, "master")
-	member := newCapturePeer(2, "member")
+	master := testpeer.New(1, "master")
+	member := testpeer.New(2, "member")
 	mustJoin(t, h.room, master, member)
 
 	garbage := []byte{0xAB, 0xCD, 0xEF}
@@ -26,11 +27,11 @@ func TestOnMessage_GarbagePayload_ReturnsErrInRoomInvalidPayload(t *testing.T) {
 		sender domain.PeerID
 	}{
 		// entities-опкоды — master-gated, отправитель обязан быть master.
-		{"full entities", state.OpCodeFullEntities, master.id},
-		{"patch entities", state.OpCodePatchEntities, master.id},
-		{"full input", state.OpCodeFullInput, member.id},
-		{"patch input", state.OpCodePatchInput, member.id},
-		{"rpc", state.OpCodeRpc, member.id},
+		{"full entities", state.OpCodeFullEntities, master.GetID()},
+		{"patch entities", state.OpCodePatchEntities, master.GetID()},
+		{"full input", state.OpCodeFullInput, member.GetID()},
+		{"patch input", state.OpCodePatchInput, member.GetID()},
+		{"rpc", state.OpCodeRpc, member.GetID()},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -92,8 +93,8 @@ func TestOnMessage_PatchInput_BrokenInnerPatch_ReturnsErrInRoomInvalidPayload(t 
 			t.Parallel()
 
 			h := newHarness(t, domain.RoomID(71), 4)
-			master := newCapturePeer(1, "master")
-			member := newCapturePeer(2, "member")
+			master := testpeer.New(1, "master")
+			member := testpeer.New(2, "member")
 			mustJoin(t, h.room, master, member)
 
 			if tc.seedInput {
@@ -104,7 +105,7 @@ func TestOnMessage_PatchInput_BrokenInnerPatch_ReturnsErrInRoomInvalidPayload(t 
 					t.Fatalf("Encode seed input: %v", err)
 				}
 				if err := h.policy.OnMessage(events.RoomEvent{
-					PeerID: member.id,
+					PeerID: member.GetID(),
 					Frame:  domain.Frame{OpCode: state.OpCodeFullInput, Payload: payload},
 				}); err != nil {
 					t.Fatalf("OnMessage seed input: %v", err)
@@ -116,7 +117,7 @@ func TestOnMessage_PatchInput_BrokenInnerPatch_ReturnsErrInRoomInvalidPayload(t 
 				t.Fatalf("EncodePatch input: %v", err)
 			}
 			err = h.policy.OnMessage(events.RoomEvent{
-				PeerID: member.id,
+				PeerID: member.GetID(),
 				Frame:  domain.Frame{OpCode: state.OpCodePatchInput, Payload: payload},
 			})
 			if !errors.Is(err, domain.ErrInRoomInvalidPayload) {

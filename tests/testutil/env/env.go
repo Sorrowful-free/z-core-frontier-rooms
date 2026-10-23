@@ -62,12 +62,11 @@ type Env struct {
 }
 
 type options struct {
-	httpAuth           httpauthadapter.HTTPAuthConfig
-	httpLimits         httplimitsadapter.HTTPLimitsConfig
-	transport          adaptertransport.TransportConfig
-	idleSweepInterval  time.Duration
-	patchStateInterval time.Duration
-	enet               bool // выставляется tagged-опцией WithEnet (env_enet.go)
+	httpAuth          httpauthadapter.HTTPAuthConfig
+	httpLimits        httplimitsadapter.HTTPLimitsConfig
+	transport         adaptertransport.TransportConfig
+	idleSweepInterval time.Duration
+	enet              bool // выставляется tagged-опцией WithEnet (env_enet.go)
 }
 
 // Option переопределяет дефолтный конфиг env (auth Disabled, limits zero, transport zero).
@@ -104,17 +103,6 @@ func WithIdleSweep(interval time.Duration) Option {
 	}
 }
 
-// WithRoomPatchInterval задаёт период patch-state тика комнаты
-// (refreshPeerPings + broadcast накопленного diff'а). Событийные патчи
-// (join/leave/input/entities) рассылаются мгновенно и от тика не зависят —
-// медленный тик влияет только на ping-resync и периодический full/patch.
-// <=0 нормализуется в дефолт внутри NewStateRoomPolicy.
-func WithRoomPatchInterval(interval time.Duration) Option {
-	return func(o *options) {
-		o.patchStateInterval = interval
-	}
-}
-
 // New собирает полное окружение и регистрирует cleanup
 // (закрытие listener'а, shutdown app, shutdown registry — чтобы не висели горутины комнат/peer'ов).
 func New(t *testing.T, opts ...Option) *Env {
@@ -140,7 +128,7 @@ func New(t *testing.T, opts ...Option) *Env {
 	}
 
 	logger := stdlib.New("test-env")
-	roomPolicyFactory := newRoomPolicyFactory(logger, cfg.patchStateInterval)
+	roomPolicyFactory := newRoomPolicyFactory(logger)
 	roomFactory := adapterrealtime.NewRoomFactory(logger, roomPolicyFactory, cfg.transport.RoomIncomingQueueSize)
 	peerFactory := adapterrealtime.NewPeerFactory(logger, cfg.transport.PeerOutboundQueueSize)
 
@@ -313,16 +301,14 @@ func (e *Env) closeWSListener() {
 	}
 }
 
-// roomPolicyFactory — фабрика policy с настраиваемым patch-тиком
-// (см. WithRoomPatchInterval); интервал <=0 нормализуется в дефолт
-// внутри NewStateRoomPolicy — поведение идентично штатной фабрике.
+// roomPolicyFactory — фабрика policy с продовыми дефолтами тиков
+// (интервалы <=0 нормализуются внутри NewStateRoomPolicy).
 type roomPolicyFactory struct {
-	logger             logging.Logger
-	patchStateInterval time.Duration
+	logger logging.Logger
 }
 
-func newRoomPolicyFactory(logger logging.Logger, patchStateInterval time.Duration) *roomPolicyFactory {
-	return &roomPolicyFactory{logger: logger, patchStateInterval: patchStateInterval}
+func newRoomPolicyFactory(logger logging.Logger) *roomPolicyFactory {
+	return &roomPolicyFactory{logger: logger}
 }
 
 func (f *roomPolicyFactory) CreateRoomPolicy() portpolicy.RoomPolicy {
@@ -333,7 +319,7 @@ func (f *roomPolicyFactory) CreateRoomPolicy() portpolicy.RoomPolicy {
 		codec.NewInputStateCodec(),
 		codec.NewRpcStateCodec(),
 		0, // full — дефолт 4s
-		f.patchStateInterval,
+		0, // patch — дефолт
 	)
 }
 

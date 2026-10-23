@@ -7,19 +7,20 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
+	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
 func TestOnLeave_MasterFailover_PicksLowestInitializedPing(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(20), 8)
-	master := newCapturePeerWithPing(1, "master", 10)
-	mid := newCapturePeerWithPing(2, "mid", 50)
-	best := newCapturePeerWithPing(3, "best", 20)
+	master := testpeer.New(1, "master", testpeer.WithPing(10))
+	mid := testpeer.New(2, "mid", testpeer.WithPing(50))
+	best := testpeer.New(3, "best", testpeer.WithPing(20))
 	mustJoin(t, h.room, master, mid, best)
 	shadow := mustJoinShadow(t, h)
-	mid.clear()
-	best.clear()
+	mid.Clear()
+	best.Clear()
 
 	if err := h.room.Leave(master); err != nil {
 		t.Fatalf("Leave master: %v", err)
@@ -38,13 +39,13 @@ func TestOnLeave_MasterFailover_EqualPingPicksMinPeerID(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(21), 8)
-	master := newCapturePeerWithPing(1, "master", 5)
-	peerA := newCapturePeerWithPing(4, "a", 30)
-	peerB := newCapturePeerWithPing(2, "b", 30)
+	master := testpeer.New(1, "master", testpeer.WithPing(5))
+	peerA := testpeer.New(4, "a", testpeer.WithPing(30))
+	peerB := testpeer.New(2, "b", testpeer.WithPing(30))
 	mustJoin(t, h.room, master, peerA, peerB)
 	shadow := mustJoinShadow(t, h)
-	peerA.clear()
-	peerB.clear()
+	peerA.Clear()
+	peerB.Clear()
 
 	if err := h.room.Leave(master); err != nil {
 		t.Fatalf("Leave master: %v", err)
@@ -63,13 +64,13 @@ func TestOnLeave_MasterFailover_AllPingsUnknown_FallsBackToMinPeerID(t *testing.
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(22), 8)
-	master := newCapturePeerWithPing(1, "master", pingUnknown)
-	peerHigh := newCapturePeerWithPing(5, "high", pingUnknown)
-	peerLow := newCapturePeerWithPing(2, "low", pingUnknown)
+	master := testpeer.New(1, "master", testpeer.WithPing(pingUnknown))
+	peerHigh := testpeer.New(5, "high", testpeer.WithPing(pingUnknown))
+	peerLow := testpeer.New(2, "low", testpeer.WithPing(pingUnknown))
 	mustJoin(t, h.room, master, peerHigh, peerLow)
 	shadow := mustJoinShadow(t, h)
-	peerHigh.clear()
-	peerLow.clear()
+	peerHigh.Clear()
+	peerLow.Clear()
 
 	if err := h.room.Leave(master); err != nil {
 		t.Fatalf("Leave master: %v", err)
@@ -88,13 +89,13 @@ func TestOnLeave_MasterFailover_MixedPingsIgnoresUnknown(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(23), 8)
-	master := newCapturePeerWithPing(1, "master", 1)
-	unknown := newCapturePeerWithPing(2, "unknown", pingUnknown)
-	initialized := newCapturePeerWithPing(3, "init", 100)
+	master := testpeer.New(1, "master", testpeer.WithPing(1))
+	unknown := testpeer.New(2, "unknown", testpeer.WithPing(pingUnknown))
+	initialized := testpeer.New(3, "init", testpeer.WithPing(100))
 	mustJoin(t, h.room, master, unknown, initialized)
 	shadow := mustJoinShadow(t, h)
-	unknown.clear()
-	initialized.clear()
+	unknown.Clear()
+	initialized.Clear()
 
 	if err := h.room.Leave(master); err != nil {
 		t.Fatalf("Leave master: %v", err)
@@ -114,19 +115,19 @@ func TestOnLeave_NonMaster_KeepsCurrentMaster(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(24), 8)
-	master := newCapturePeerWithPing(1, "master", 10)
-	client := newCapturePeerWithPing(2, "client", 5)
+	master := testpeer.New(1, "master", testpeer.WithPing(10))
+	client := testpeer.New(2, "client", testpeer.WithPing(5))
 	mustJoin(t, h.room, master, client)
 	shadow := mustJoinShadow(t, h)
-	master.clear()
-	client.clear()
+	master.Clear()
+	client.Clear()
 
 	if err := h.room.Leave(client); err != nil {
 		t.Fatalf("Leave client: %v", err)
 	}
 	assertWeakInvariants(t, shadow.view)
 
-	patches := filterOpcode(master.snapshot(), state.OpCodePatchState)
+	patches := master.EventsByOpcode(state.OpCodePatchState)
 	if len(patches) != 1 {
 		t.Fatalf("master patches = %d, want 1", len(patches))
 	}
@@ -152,12 +153,12 @@ func TestOnLeave_RemovesPeerInputFromRoomState(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(25), 4)
-	master := newCapturePeer(1, "master")
-	client := newCapturePeer(2, "client")
+	master := testpeer.New(1, "master")
+	client := testpeer.New(2, "client")
 	mustJoin(t, h.room, master, client)
 	shadow := mustJoinShadow(t, h)
-	master.clear()
-	client.clear()
+	master.Clear()
+	client.Clear()
 
 	inputPatch := &state.InputStatePatch{
 		Values: *state.NewMapStatePatch[state.ValueId, state.ValueState, state.ValueState](),
@@ -173,13 +174,13 @@ func TestOnLeave_RemovesPeerInputFromRoomState(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("OnMessage patch input: %v", err)
 	}
-	master.clear()
+	master.Clear()
 
 	if err := h.room.Leave(client); err != nil {
 		t.Fatalf("Leave client: %v", err)
 	}
 
-	patches := filterOpcode(master.snapshot(), state.OpCodePatchState)
+	patches := master.EventsByOpcode(state.OpCodePatchState)
 	if len(patches) != 1 {
 		t.Fatalf("master patches = %d, want 1", len(patches))
 	}
@@ -200,12 +201,12 @@ func TestOnLeave_RemovesPeerInputFromRoomState(t *testing.T) {
 	assertStrongInvariants(t, shadow.view, h.room)
 }
 
-func assertPeerIsMasterInPatch(t *testing.T, h *harness, peer *capturePeer, wantMaster domain.PeerID) {
+func assertPeerIsMasterInPatch(t *testing.T, h *harness, peer *testpeer.Peer, wantMaster domain.PeerID) {
 	t.Helper()
 
-	patches := filterOpcode(peer.snapshot(), state.OpCodePatchState)
+	patches := peer.EventsByOpcode(state.OpCodePatchState)
 	if len(patches) != 1 {
-		t.Fatalf("peer %d patches = %d, want 1", peer.id, len(patches))
+		t.Fatalf("peer %d patches = %d, want 1", peer.GetID(), len(patches))
 	}
 	patch, err := h.roomCodec.DecodePatch(patches[0].Frame.Payload)
 	if err != nil {
@@ -214,5 +215,5 @@ func assertPeerIsMasterInPatch(t *testing.T, h *harness, peer *capturePeer, want
 	if updated, ok := patch.Peers.Updated[wantMaster]; ok && updated.IsMaster != nil && *updated.IsMaster {
 		return
 	}
-	t.Fatalf("peer %d patch peers.updated = %#v, want master %d", peer.id, patch.Peers.Updated, wantMaster)
+	t.Fatalf("peer %d patch peers.updated = %#v, want master %d", peer.GetID(), patch.Peers.Updated, wantMaster)
 }

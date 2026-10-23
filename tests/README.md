@@ -21,6 +21,7 @@ tests/
   domain/state/         — atomic apply patch (entity/component)
   adapter/registry/     — RoomRegistry, Shutdown
   usecase/room/         — Create, Delete, GetList, IssueTicket, JoinRoom, LeaveRoom (gomock)
+  testutil/peer/        — параметризуемый realtime.Peer: ping/alive/deliverErr + захват PeerEvent
   testutil/env/         — общий composition root: adapters + use cases + HTTP/WS routes на fiber.App
                           (defaults обязаны зеркалить prod transport config: zero-значения маскируют ошибки доставки — см. кейс ErrQueueFull)
   delivery/http/        — REST JSON (app.Test поверх testutil/env)
@@ -160,7 +161,7 @@ go test -fuzz=FuzzRoomStateDecode -fuzztime=30s ./tests/adapter/realtime/codec/
 | `tests/adapter/httplimits` | `HTTPLimitsConfig.Validate`, `Limits` rate + max rooms |
 | `tests/adapter/admission` | `AdmissionConfig.Validate`; round-trip ticket + NickName, invalid nick, invalid/expired token, invalid credentials |
 | `tests/adapter/realtime` | `OnJoin` → `room.Send` без deadlock; откат map при `ErrJoinDenied`; Replace rollback policy; `PeerFactory` nick; concurrent `Deliver`/`Join`/`Leave` + `Stop` без паники; `Deliver` → `ErrQueueFull` / stopped; `Send` с `ExcludePeerID` не доставляет отправителю; `Peer.Stop` разблокирует `Receive` через `Close` |
-| `tests/adapter/realtime/policy/state` | join/full/patch/master; `NewStateRoomPolicy` zero intervals → defaults; `PatchEntities` add/update/reject non-master; malformed payload → `ErrInRoomInvalidPayload` + wire mapping (все 5 in-room opcodes + вложенный patch-input); send-failure проброс из `OnJoin`/tick/broadcast (`flakyPeer`); nil-master recovery (tick-перевыбор + ленивый на RPC→master) |
+| `tests/adapter/realtime/policy/state` | join/full/patch/master; `NewStateRoomPolicy` zero intervals → defaults; `PatchEntities` add/update/reject non-master; malformed payload → `ErrInRoomInvalidPayload` + wire mapping (все 5 in-room opcodes + вложенный patch-input); send-failure проброс из `OnJoin`/tick/broadcast (`testutil/peer` SetDeliverErr); nil-master recovery (tick-перевыбор + ленивый на RPC→master) |
 | `tests/domain` | `ValidateNickName` |
 | `tests/domain/state` | atomic `ApplyPatch` rollback на entity/component |
 | `tests/adapter/realtime/codec` | Round-trip `InputStateCodec`, `RpcStateCodec`, `RoomStateCodec` (full + patch); fuzz всех Decode/DecodePatch |

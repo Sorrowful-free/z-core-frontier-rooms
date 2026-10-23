@@ -14,6 +14,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	portpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/policy"
+	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
 func TestRoom_Leave_PolicyError_StillRemovesPeer(t *testing.T) {
@@ -28,7 +29,7 @@ func TestRoom_Leave_PolicyError_StillRemovesPeer(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = room.Stop() })
 
-	peer := &stubPeer{id: domain.PeerID(11)}
+	peer := testpeer.New(domain.PeerID(11), "")
 	if err := room.Join(peer); err != nil {
 		t.Fatalf("Join: %v", err)
 	}
@@ -36,7 +37,7 @@ func TestRoom_Leave_PolicyError_StillRemovesPeer(t *testing.T) {
 	if err := room.Leave(peer); err == nil {
 		t.Fatal("Leave: want error from failed OnLeave")
 	}
-	if room.HasPeer(peer.id) {
+	if room.HasPeer(peer.GetID()) {
 		t.Fatal("peer must be removed from room even when OnLeave fails")
 	}
 
@@ -64,7 +65,7 @@ func TestRoom_Join_ConcurrentJoins_ExactlyOneFillsLastSlot(t *testing.T) {
 		wg.Add(1)
 		go func(id domain.PeerID) {
 			defer wg.Done()
-			results <- joinResult{id: id, err: room.Join(&stubPeer{id: id})}
+			results <- joinResult{id: id, err: room.Join(testpeer.New(id, ""))}
 		}(domain.PeerID(i + 1))
 	}
 	wg.Wait()

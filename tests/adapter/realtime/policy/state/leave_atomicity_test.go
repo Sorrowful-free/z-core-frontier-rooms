@@ -8,7 +8,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
+	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
 // (shadow-наблюдатель не подключается: тест ассертит точный состав
@@ -17,32 +17,32 @@ func TestOnLeave_FailedPatchSend_StateAndMasterUntouched(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(50), 4)
-	master := newCapturePeer(1, "master")
-	member := newFlakyCapturePeer(2, "member")
+	master := testpeer.New(1, "master")
+	member := testpeer.New(2, "member")
 	if err := h.room.Join(master); err != nil {
 		t.Fatalf("Join master: %v", err)
 	}
 	if err := h.room.Join(member); err != nil {
 		t.Fatalf("Join member: %v", err)
 	}
-	master.clear()
-	member.clear()
+	master.Clear()
+	member.Clear()
 
-	member.setErr(errDeliverFailed)
+	member.SetDeliverErr(errDeliverFailed)
 
 	if err := h.room.Leave(master); err == nil {
 		t.Fatal("Leave: want error from failed leave patch broadcast")
 	}
-	if h.room.HasPeer(master.id) {
+	if h.room.HasPeer(master.GetID()) {
 		t.Fatal("master must be removed from room peers even when OnLeave fails")
 	}
 
-	member.setErr(nil)
+	member.SetDeliverErr(nil)
 	if err := h.policy.OnTickFullState(); err != nil {
 		t.Fatalf("OnTickFullState: %v", err)
 	}
 
-	full := filterOpcode(member.snapshot(), state.OpCodeFullState)
+	full := member.EventsByOpcode(state.OpCodeFullState)
 	if len(full) != 1 {
 		t.Fatalf("member full states = %d, want 1", len(full))
 	}
@@ -62,10 +62,10 @@ func TestOnMessage_InputFromUnknownPeer_ReturnsErrPeerNotFound(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(51), 4)
-	master := newCapturePeer(1, "master")
+	master := testpeer.New(1, "master")
 	mustJoin(t, h.room, master)
 	shadow := mustJoinShadow(t, h)
-	master.clear()
+	master.Clear()
 
 	fullPayload, err := h.inputCodec.Encode(&state.InputState{
 		Values: state.NewMapState[state.ValueId, state.ValueState](),
@@ -98,7 +98,7 @@ func TestOnMessage_InputFromUnknownPeer_ReturnsErrPeerNotFound(t *testing.T) {
 	if err := h.policy.OnTickFullState(); err != nil {
 		t.Fatalf("OnTickFullState: %v", err)
 	}
-	full := filterOpcode(master.snapshot(), state.OpCodeFullState)
+	full := master.EventsByOpcode(state.OpCodeFullState)
 	if len(full) != 1 {
 		t.Fatalf("master full states = %d, want 1", len(full))
 	}
@@ -122,18 +122,18 @@ func TestJoin_ConcurrentLastSlot_LoserRolledBackFromState(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(52), 1)
-	p1 := newCapturePeer(1, "a")
-	p2 := newCapturePeer(2, "b")
+	p1 := testpeer.New(1, "a")
+	p2 := testpeer.New(2, "b")
 
 	type joinResult struct {
-		peer *capturePeer
+		peer *testpeer.Peer
 		err  error
 	}
 	results := make(chan joinResult, 2)
 	var wg sync.WaitGroup
-	for _, p := range []*capturePeer{p1, p2} {
+	for _, p := range []*testpeer.Peer{p1, p2} {
 		wg.Add(1)
-		go func(p *capturePeer) {
+		go func(p *testpeer.Peer) {
 			defer wg.Done()
 			results <- joinResult{peer: p, err: h.room.Join(p)}
 		}(p)
@@ -141,7 +141,7 @@ func TestJoin_ConcurrentLastSlot_LoserRolledBackFromState(t *testing.T) {
 	wg.Wait()
 	close(results)
 
-	var winner *capturePeer
+	var winner *testpeer.Peer
 	for res := range results {
 		switch {
 		case res.err == nil:
@@ -150,21 +150,21 @@ func TestJoin_ConcurrentLastSlot_LoserRolledBackFromState(t *testing.T) {
 			}
 			winner = res.peer
 		case !errors.Is(res.err, domain.ErrRoomFull):
-			t.Fatalf("Join peer %d: unexpected err %v", res.peer.id, res.err)
+			t.Fatalf("Join peer %d: unexpected err %v", res.peer.GetID(), res.err)
 		}
 	}
 	if winner == nil {
 		t.Fatal("no join succeeded, want exactly one winner")
 	}
-	if !h.room.HasPeer(winner.id) {
-		t.Fatalf("winner peer %d not in room", winner.id)
+	if !h.room.HasPeer(winner.GetID()) {
+		t.Fatalf("winner peer %d not in room", winner.GetID())
 	}
 
-	winner.clear()
+	winner.Clear()
 	if err := h.policy.OnTickFullState(); err != nil {
 		t.Fatalf("OnTickFullState: %v", err)
 	}
-	full := filterOpcode(winner.snapshot(), state.OpCodeFullState)
+	full := winner.EventsByOpcode(state.OpCodeFullState)
 	if len(full) != 1 {
 		t.Fatalf("winner full states = %d, want 1", len(full))
 	}
@@ -173,60 +173,9 @@ func TestJoin_ConcurrentLastSlot_LoserRolledBackFromState(t *testing.T) {
 		t.Fatalf("Decode full state: %v", err)
 	}
 	if len(got.Peers) != 1 {
-		t.Fatalf("state peers = %#v, want only winner %d (loser not rolled back)", got.Peers, winner.id)
+		t.Fatalf("state peers = %#v, want only winner %d (loser not rolled back)", got.Peers, winner.GetID())
 	}
-	if !got.Peers[winner.id].IsMaster {
-		t.Fatalf("winner %d must be sole master after loser rollback", winner.id)
+	if !got.Peers[winner.GetID()].IsMaster {
+		t.Fatalf("winner %d must be sole master after loser rollback", winner.GetID())
 	}
 }
-
-type flakyCapturePeer struct {
-	id   domain.PeerID
-	nick string
-
-	mu         sync.Mutex
-	deliverErr error
-	delivered  []events.PeerEvent
-}
-
-func newFlakyCapturePeer(id domain.PeerID, nick string) *flakyCapturePeer {
-	return &flakyCapturePeer{id: id, nick: nick}
-}
-
-func (p *flakyCapturePeer) setErr(err error) {
-	p.mu.Lock()
-	p.deliverErr = err
-	p.mu.Unlock()
-}
-
-func (p *flakyCapturePeer) GetID() domain.PeerID { return p.id }
-func (p *flakyCapturePeer) GetNickName() string  { return p.nick }
-func (p *flakyCapturePeer) Ping() int64          { return 0 }
-func (p *flakyCapturePeer) IsAlive() bool        { return true }
-func (p *flakyCapturePeer) Start() error         { return nil }
-func (p *flakyCapturePeer) Stop() error          { return nil }
-func (p *flakyCapturePeer) Deliver(ev events.PeerEvent) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.deliverErr != nil {
-		return p.deliverErr
-	}
-	p.delivered = append(p.delivered, ev)
-	return nil
-}
-
-func (p *flakyCapturePeer) snapshot() []events.PeerEvent {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	out := make([]events.PeerEvent, len(p.delivered))
-	copy(out, p.delivered)
-	return out
-}
-
-func (p *flakyCapturePeer) clear() {
-	p.mu.Lock()
-	p.delivered = nil
-	p.mu.Unlock()
-}
-
-var _ realtime.Peer = (*flakyCapturePeer)(nil)

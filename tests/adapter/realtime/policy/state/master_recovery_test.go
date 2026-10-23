@@ -14,6 +14,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
 	portrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/mocks"
+	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 	"go.uber.org/mock/gomock"
 )
 
@@ -50,7 +51,7 @@ func failGetPeerAfter(okCalls int) memberGetPeerFails {
 type nilMasterFixture struct {
 	policy *statepolicy.StateRoomPolicy
 	room   *mocks.MockRoom
-	member *capturePeer
+	member *testpeer.Peer
 	sent   *[]events.PeerEvent
 	shadow *shadowView
 }
@@ -79,8 +80,8 @@ func setupNilMasterRoom(t *testing.T, failMember memberGetPeerFails) *nilMasterF
 		return nil
 	}).AnyTimes()
 
-	master := newCapturePeer(1, "master")
-	member := newCapturePeer(2, "member")
+	master := testpeer.New(1, "master")
+	member := testpeer.New(2, "member")
 
 	policy := statepolicy.NewStateRoomPolicy(
 		stdlib.New("state-policy-test"),
@@ -102,14 +103,14 @@ func setupNilMasterRoom(t *testing.T, failMember memberGetPeerFails) *nilMasterF
 	}
 	// state: {1: master, 2}; p.master = master.
 
-	room.EXPECT().GetPeer(master.id).
-		Return(nil, fmt.Errorf("%w: %d", domain.ErrPeerNotFound, master.id)).
+	room.EXPECT().GetPeer(master.GetID()).
+		Return(nil, fmt.Errorf("%w: %d", domain.ErrPeerNotFound, master.GetID())).
 		AnyTimes()
 	room.EXPECT().HasPeer(gomock.Any()).DoAndReturn(func(id domain.PeerID) bool {
-		return id == member.id
+		return id == member.GetID()
 	}).AnyTimes()
 	memberCalls := 0
-	room.EXPECT().GetPeer(member.id).DoAndReturn(func(domain.PeerID) (portrealtime.Peer, error) {
+	room.EXPECT().GetPeer(member.GetID()).DoAndReturn(func(domain.PeerID) (portrealtime.Peer, error) {
 		memberCalls++
 		if failMember(memberCalls) {
 			return nil, errElectionFailed
@@ -124,7 +125,7 @@ func setupNilMasterRoom(t *testing.T, failMember memberGetPeerFails) *nilMasterF
 	}
 
 	seed := state.NewRoomState(domain.RoomID(90), 4)
-	seed.Peers[member.id] = state.PeerState{NickName: member.nick, Ping: member.ping}
+	seed.Peers[member.GetID()] = state.PeerState{NickName: member.GetNickName(), Ping: member.Ping()}
 	shadow.seed(seed)
 	feedShadow = true
 
@@ -143,7 +144,7 @@ func TestOnTickPatchState_NilMasterRoom_ReelectsOnNextTick(t *testing.T) {
 		t.Fatalf("OnTickPatchState recovery: %v", err)
 	}
 
-	patches := filterOpcode(*nm.sent, state.OpCodePatchState)
+	patches := testpeer.FilterByOpcode(*nm.sent, state.OpCodePatchState)
 	if len(patches) == 0 {
 		t.Fatal("recovery tick must broadcast master reassignment patch")
 	}
@@ -151,9 +152,9 @@ func TestOnTickPatchState_NilMasterRoom_ReelectsOnNextTick(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodePatch: %v", err)
 	}
-	updated, ok := patch.Peers.Updated[nm.member.id]
+	updated, ok := patch.Peers.Updated[nm.member.GetID()]
 	if !ok || updated.IsMaster == nil || !*updated.IsMaster {
-		t.Fatalf("peers.updated[%d] = %#v ok=%v, want IsMaster=true", nm.member.id, updated, ok)
+		t.Fatalf("peers.updated[%d] = %#v ok=%v, want IsMaster=true", nm.member.GetID(), updated, ok)
 	}
 
 	assertWeakInvariants(t, nm.shadow)
@@ -170,15 +171,15 @@ func TestOnMessage_RpcTargetMaster_NilMaster_LazyReelectsAndDelivers(t *testing.
 
 	payload := mustEncodeRPC(t, state.RpcTargetMaster, domain.PeerIDInvalid)
 	if err := nm.policy.OnMessage(events.RoomEvent{
-		PeerID: nm.member.id,
+		PeerID: nm.member.GetID(),
 		Frame:  domain.Frame{OpCode: state.OpCodeRpc, Payload: payload},
 	}); err != nil {
 		t.Fatalf("OnMessage rpc master: %v", err)
 	}
 
-	rpcs := filterOpcode(*nm.sent, state.OpCodeRpc)
-	if len(rpcs) != 1 || rpcs[0].PeerID != nm.member.id {
-		t.Fatalf("rpc deliveries = %v, want single rpc to elected master %d", opcodes(*nm.sent), nm.member.id)
+	rpcs := testpeer.FilterByOpcode(*nm.sent, state.OpCodeRpc)
+	if len(rpcs) != 1 || rpcs[0].PeerID != nm.member.GetID() {
+		t.Fatalf("rpc deliveries = %v, want single rpc to elected master %d", testpeer.Opcodes(*nm.sent), nm.member.GetID())
 	}
 
 	assertWeakInvariants(t, nm.shadow)
@@ -194,7 +195,7 @@ func TestOnMessage_RpcTargetMaster_NilMasterElectionFails_ReturnsErrNoMaster(t *
 
 	payload := mustEncodeRPC(t, state.RpcTargetMaster, domain.PeerIDInvalid)
 	err := nm.policy.OnMessage(events.RoomEvent{
-		PeerID: nm.member.id,
+		PeerID: nm.member.GetID(),
 		Frame:  domain.Frame{OpCode: state.OpCodeRpc, Payload: payload},
 	})
 	if !errors.Is(err, domain.ErrNoMaster) {
@@ -235,9 +236,9 @@ func TestOnLeave_ElectionSkipsStaleCandidate_ElectsLivePeer(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(92), 4)
-	master := newCapturePeer(1, "master")
-	stale := newFlakyCapturePeer(2, "stale")
-	survivor := newCapturePeer(3, "survivor")
+	master := testpeer.New(1, "master")
+	stale := testpeer.New(2, "stale")
+	survivor := testpeer.New(3, "survivor")
 	mustJoin(t, h.room, master, survivor)
 	if err := h.room.Join(stale); err != nil {
 		t.Fatalf("Join stale: %v", err)
@@ -248,12 +249,12 @@ func TestOnLeave_ElectionSkipsStaleCandidate_ElectsLivePeer(t *testing.T) {
 	// OnLeave (P13), поэтому broadcast ломаем упавшим Deliver выжившего —
 	// sendPatchStateExclude вернёт ошибку, state откатится, запись о
 	// stale останется в state.Peers, а из room он уже удалён.
-	survivor.setErr(errDeliverFailed)
+	survivor.SetDeliverErr(errDeliverFailed)
 	if err := h.room.Leave(stale); err == nil {
 		t.Fatal("Leave stale: want error from failed broadcast")
 	}
-	survivor.setErr(nil)
-	survivor.clear()
+	survivor.SetDeliverErr(nil)
+	survivor.Clear()
 	assertWeakInvariants(t, shadow.view)
 
 	// Master уходит: election видит кандидатов {2 (stale в state), 3 (живой)} —
@@ -276,8 +277,8 @@ func TestOnLeave_ElectionAllStale_ResetsMasterWithoutFlags(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(93), 4)
-	master := newCapturePeer(1, "master")
-	stale := newFlakyCapturePeer(2, "stale")
+	master := testpeer.New(1, "master")
+	stale := testpeer.New(2, "stale")
 	mustJoin(t, h.room, master)
 	if err := h.room.Join(stale); err != nil {
 		t.Fatalf("Join stale: %v", err)
@@ -285,11 +286,11 @@ func TestOnLeave_ElectionAllStale_ResetsMasterWithoutFlags(t *testing.T) {
 
 	// Stale-запись через откат state (P13: уходящий уже вне r.peers на
 	// момент OnLeave) — broadcast ломаем упавшим Deliver master'а.
-	master.setErr(errDeliverFailed)
+	master.SetDeliverErr(errDeliverFailed)
 	if err := h.room.Leave(stale); err == nil {
 		t.Fatal("Leave stale: want error from failed broadcast")
 	}
-	master.setErr(nil)
+	master.SetDeliverErr(nil)
 
 	// Единственный оставшийся кандидат stale → пустые выборы (не ошибка).
 	if err := h.room.Leave(master); err != nil {
@@ -298,7 +299,7 @@ func TestOnLeave_ElectionAllStale_ResetsMasterWithoutFlags(t *testing.T) {
 
 	// Joiner видит state без рекламируемого master: stale-запись не может
 	// держать IsMaster.
-	joiner := newCapturePeer(3, "joiner")
+	joiner := testpeer.New(3, "joiner")
 	if err := h.room.Join(joiner); err != nil {
 		t.Fatalf("Join joiner: %v", err)
 	}
@@ -314,7 +315,7 @@ func TestOnLeave_ElectionAllStale_ResetsMasterWithoutFlags(t *testing.T) {
 	assertWeakInvariants(t, shadow.view)
 
 	// Masterless-эпизод не липкий: следующий тик вычищает stale и избирает joiner.
-	joiner.clear()
+	joiner.Clear()
 	if err := h.policy.OnTickPatchState(); err != nil {
 		t.Fatalf("OnTickPatchState: %v", err)
 	}
@@ -336,7 +337,7 @@ func TestOnTickPatchState_AssignMasterFails_NoIsMasterFlagDivergence(t *testing.
 	if err := nm.policy.OnTickFullState(); err != nil {
 		t.Fatalf("OnTickFullState: %v", err)
 	}
-	fulls := filterOpcode(*nm.sent, state.OpCodeFullState)
+	fulls := testpeer.FilterByOpcode(*nm.sent, state.OpCodeFullState)
 	if len(fulls) == 0 {
 		t.Fatal("want broadcast full state")
 	}
@@ -345,9 +346,9 @@ func TestOnTickPatchState_AssignMasterFails_NoIsMasterFlagDivergence(t *testing.
 		t.Fatalf("Decode full state: %v", err)
 	}
 	if len(got.Peers) != 1 {
-		t.Fatalf("state peers = %#v, want only member %d", got.Peers, nm.member.id)
+		t.Fatalf("state peers = %#v, want only member %d", got.Peers, nm.member.GetID())
 	}
-	if got.Peers[nm.member.id].IsMaster {
+	if got.Peers[nm.member.GetID()].IsMaster {
 		t.Fatal("member IsMaster=true while policy master is nil — flag divergence")
 	}
 

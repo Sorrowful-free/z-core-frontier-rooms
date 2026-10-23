@@ -11,6 +11,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
 	portrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
+	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
 // P10: исполняемые инварианты StateRoomPolicy. Поля p.master/p.state
@@ -119,19 +120,19 @@ func (s *shadowView) lastError() error {
 // wire-state из каждого доставленного кадра. Join mid-room безопасен: первый
 // кадр — join full-state, который сидит вид.
 type shadowPeer struct {
-	*capturePeer
+	*testpeer.Peer
 	view *shadowView
 }
 
 func newShadowPeer(roomCodec *codec.RoomStateCodec) *shadowPeer {
 	return &shadowPeer{
-		capturePeer: newCapturePeerWithPing(shadowPeerID, "shadow", pingUnknown),
-		view:        newShadowView(roomCodec),
+		Peer: testpeer.New(shadowPeerID, "shadow", testpeer.WithPing(pingUnknown)),
+		view: newShadowView(roomCodec),
 	}
 }
 
 func (p *shadowPeer) Deliver(ev events.PeerEvent) error {
-	err := p.capturePeer.Deliver(ev)
+	err := p.Peer.Deliver(ev)
 	p.view.feed(ev)
 	return err
 }
@@ -324,7 +325,7 @@ func TestInvariantCheckers_FlagDeliberatelyBrokenState(t *testing.T) {
 	// Master-флаг на peer, которого нет в room: слабый чек (структурный)
 	// проходит, сильный — обязан упасть.
 	h := newHarness(t, domain.RoomID(2), 4)
-	member := newCapturePeer(1, "member")
+	member := testpeer.New(1, "member")
 	mustJoin(t, h.room, member)
 
 	dead := state.NewRoomState(domain.RoomID(2), 4)

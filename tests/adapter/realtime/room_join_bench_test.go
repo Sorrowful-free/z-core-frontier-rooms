@@ -6,23 +6,8 @@ import (
 
 	adapterrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
+	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
-
-type joinBenchPeer struct {
-	id domain.PeerID
-}
-
-func (p *joinBenchPeer) GetID() domain.PeerID           { return p.id }
-func (p *joinBenchPeer) GetNickName() string            { return "join" }
-func (p *joinBenchPeer) Ping() int64                    { return 0 }
-func (p *joinBenchPeer) IsAlive() bool                  { return true }
-func (p *joinBenchPeer) Start() error                   { return nil }
-func (p *joinBenchPeer) Stop() error                    { return nil }
-func (p *joinBenchPeer) Deliver(events.PeerEvent) error { return nil }
-
-var _ realtime.Peer = (*joinBenchPeer)(nil)
 
 func BenchmarkRoom_Join(b *testing.B) {
 	b.Run("first_peer", func(b *testing.B) {
@@ -40,7 +25,7 @@ func BenchmarkRoom_Join(b *testing.B) {
 			if err := room.Start(); err != nil {
 				b.Fatal(err)
 			}
-			peer := &joinBenchPeer{id: domain.PeerID(1)}
+			peer := testpeer.New(domain.PeerID(1), "join", testpeer.WithoutCapture())
 			sink = room.Join(peer)
 			_ = room.Stop()
 		}

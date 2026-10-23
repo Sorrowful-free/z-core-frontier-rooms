@@ -216,7 +216,7 @@ func (c *enetClient) destroyHost() {
 // TestE2E_LiveMatch_ENet — 4 ENet-клиента, host dropout = молчание libenet.
 func TestE2E_LiveMatch_ENet(t *testing.T) {
 	if testing.Short() {
-		t.Skip("e2e live match ~90-100s real time — skipped under -short")
+		t.Skip("e2e live match ~115s real time — skipped under -short")
 	}
 	t.Parallel()
 
@@ -247,7 +247,7 @@ func TestE2E_LiveMatch_ENet(t *testing.T) {
 // друг друга через общий wire-протокол.
 func TestE2E_LiveMatch_Mixed(t *testing.T) {
 	if testing.Short() {
-		t.Skip("e2e live match ~90-100s real time — skipped under -short")
+		t.Skip("e2e live match ~115s real time — skipped under -short")
 	}
 	t.Parallel()
 

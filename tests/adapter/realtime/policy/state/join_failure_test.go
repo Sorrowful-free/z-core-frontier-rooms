@@ -2,12 +2,11 @@ package state_test
 
 import (
 	"errors"
-	"sync"
 	"testing"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
+	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
 var errDeliverFailed = errors.New("deliver failed")
@@ -17,14 +16,14 @@ func TestOnJoin_FailedFullStateSend_LeavesNoPhantomPeer(t *testing.T) {
 
 	h := newHarness(t, domain.RoomID(30), 4)
 
-	broken := newFlakyPeer(1, "broken")
-	broken.setErr(errDeliverFailed)
+	broken := testpeer.New(1, "broken")
+	broken.SetDeliverErr(errDeliverFailed)
 
 	err := h.room.Join(broken)
 	if !errors.Is(err, domain.ErrJoinDenied) {
 		t.Fatalf("Join err = %v, want ErrJoinDenied", err)
 	}
-	if h.room.HasPeer(broken.id) {
+	if h.room.HasPeer(broken.GetID()) {
 		t.Fatal("failed peer must be rolled back from room peers")
 	}
 
@@ -32,7 +31,7 @@ func TestOnJoin_FailedFullStateSend_LeavesNoPhantomPeer(t *testing.T) {
 		t.Fatalf("OnTickPatchState after failed join: %v (phantom peer leaked into state)", err)
 	}
 
-	joiner := newCapturePeer(2, "joiner")
+	joiner := testpeer.New(2, "joiner")
 	if err := h.room.Join(joiner); err != nil {
 		t.Fatalf("retry Join after failed join: %v", err)
 	}
@@ -51,8 +50,8 @@ func TestOnJoin_FailedJoinBroadcast_LeavesNoPhantomPeer(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(31), 4)
-	master := newCapturePeer(1, "master")
-	flaky := newFlakyPeer(2, "flaky")
+	master := testpeer.New(1, "master")
+	flaky := testpeer.New(2, "flaky")
 	if err := h.room.Join(master); err != nil {
 		t.Fatalf("Join master: %v", err)
 	}
@@ -60,22 +59,22 @@ func TestOnJoin_FailedJoinBroadcast_LeavesNoPhantomPeer(t *testing.T) {
 		t.Fatalf("Join flaky: %v", err)
 	}
 
-	flaky.setErr(errDeliverFailed)
-	joiner := newCapturePeer(3, "joiner")
+	flaky.SetDeliverErr(errDeliverFailed)
+	joiner := testpeer.New(3, "joiner")
 	err := h.room.Join(joiner)
 	if !errors.Is(err, domain.ErrJoinDenied) {
 		t.Fatalf("Join err = %v, want ErrJoinDenied", err)
 	}
-	if h.room.HasPeer(joiner.id) {
+	if h.room.HasPeer(joiner.GetID()) {
 		t.Fatal("failed joiner must be rolled back from room peers")
 	}
 
-	flaky.setErr(nil)
+	flaky.SetDeliverErr(nil)
 	if err := h.policy.OnTickPatchState(); err != nil {
 		t.Fatalf("OnTickPatchState after failed join: %v (phantom peer leaked into state)", err)
 	}
 
-	master.clear()
+	master.Clear()
 	if err := h.policy.OnTickFullState(); err != nil {
 		t.Fatalf("OnTickFullState after failed join: %v", err)
 	}
@@ -90,7 +89,7 @@ func TestOnJoin_FailedJoinBroadcast_LeavesNoPhantomPeer(t *testing.T) {
 		t.Fatal("master flag must stay on peer 1")
 	}
 
-	joiner.clear()
+	joiner.Clear()
 	if err := h.room.Join(joiner); err != nil {
 		t.Fatalf("retry Join: %v", err)
 	}
@@ -106,49 +105,16 @@ func TestOnJoin_FailedJoinBroadcast_LeavesNoPhantomPeer(t *testing.T) {
 	}
 }
 
-func decodeOnlyFullState(t *testing.T, h *harness, peer *capturePeer) *state.RoomState {
+func decodeOnlyFullState(t *testing.T, h *harness, peer *testpeer.Peer) *state.RoomState {
 	t.Helper()
 
-	full := filterOpcode(peer.snapshot(), state.OpCodeFullState)
+	full := peer.EventsByOpcode(state.OpCodeFullState)
 	if len(full) != 1 {
-		t.Fatalf("peer %d full states = %d, want 1", peer.id, len(full))
+		t.Fatalf("peer %d full states = %d, want 1", peer.GetID(), len(full))
 	}
 	got, err := h.roomCodec.Decode(full[0].Frame.Payload)
 	if err != nil {
 		t.Fatalf("Decode full state: %v", err)
 	}
 	return got
-}
-
-type flakyPeer struct {
-	id   domain.PeerID
-	nick string
-
-	mu         sync.Mutex
-	deliverErr error
-}
-
-func newFlakyPeer(id domain.PeerID, nick string) *flakyPeer {
-	return &flakyPeer{id: id, nick: nick}
-}
-
-func (p *flakyPeer) setErr(err error) {
-	p.mu.Lock()
-	p.deliverErr = err
-	p.mu.Unlock()
-}
-
-func (p *flakyPeer) GetID() domain.PeerID { return p.id }
-func (p *flakyPeer) GetNickName() string  { return p.nick }
-func (p *flakyPeer) Ping() int64          { return 0 }
-func (p *flakyPeer) IsAlive() bool        { return true }
-func (p *flakyPeer) Start() error         { return nil }
-func (p *flakyPeer) Stop() error          { return nil }
-func (p *flakyPeer) Deliver(ev events.PeerEvent) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.deliverErr != nil {
-		return p.deliverErr
-	}
-	return nil
 }

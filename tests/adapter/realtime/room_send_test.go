@@ -5,6 +5,7 @@ import (
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
+	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
 func TestRoom_Send_ExcludePeerID(t *testing.T) {
@@ -13,8 +14,8 @@ func TestRoom_Send_ExcludePeerID(t *testing.T) {
 	room := startTestRoom(t, 8)
 	t.Cleanup(func() { _ = room.Stop() })
 
-	sender := newErrorCapturePeer(domain.PeerID(1))
-	receiver := newErrorCapturePeer(domain.PeerID(2))
+	sender := testpeer.New(domain.PeerID(1), "sender")
+	receiver := testpeer.New(domain.PeerID(2), "receiver")
 
 	if err := room.Join(sender); err != nil {
 		t.Fatalf("Join sender: %v", err)
@@ -27,17 +28,17 @@ func TestRoom_Send_ExcludePeerID(t *testing.T) {
 	// а ExcludePeerID выкидывает отправителя из рассылки.
 	err := room.Send(events.PeerEvent{
 		PeerID:        domain.PeerIDInvalid,
-		ExcludePeerID: sender.id,
+		ExcludePeerID: sender.GetID(),
 		Frame:         domain.Frame{OpCode: 0x01},
 	})
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 
-	if got := len(sender.snapshot()); got != 0 {
+	if got := len(sender.Snapshot()); got != 0 {
 		t.Fatalf("sender delivered = %d, want 0 (excluded)", got)
 	}
-	if got := len(receiver.snapshot()); got != 1 {
+	if got := len(receiver.Snapshot()); got != 1 {
 		t.Fatalf("receiver delivered = %d, want 1", got)
 	}
 }

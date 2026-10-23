@@ -7,6 +7,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
+	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
 // Падение Deliver при отправке full-state новому peer пробрасывается
@@ -16,8 +17,8 @@ func TestOnJoin_FailedFullStateDeliver_PropagatesError(t *testing.T) {
 
 	h := newHarness(t, domain.RoomID(80), 4)
 	shadow := mustJoinShadow(t, h)
-	flaky := newFlakyPeer(1, "flaky")
-	flaky.setErr(errDeliverFailed)
+	flaky := testpeer.New(1, "flaky")
+	flaky.SetDeliverErr(errDeliverFailed)
 
 	err := h.room.Join(flaky)
 	if !errors.Is(err, errDeliverFailed) {
@@ -25,7 +26,7 @@ func TestOnJoin_FailedFullStateDeliver_PropagatesError(t *testing.T) {
 	}
 	assertWeakInvariants(t, shadow.view)
 
-	member := newCapturePeer(2, "member")
+	member := testpeer.New(2, "member")
 	if err := h.room.Join(member); err != nil {
 		t.Fatalf("Join member: %v", err)
 	}
@@ -39,8 +40,8 @@ func TestOnTickFullState_PeerDeliverFails_PropagatesError(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(81), 4)
-	flaky := newFlakyCapturePeer(1, "flaky")
-	other := newCapturePeer(2, "other")
+	flaky := testpeer.New(1, "flaky")
+	other := testpeer.New(2, "other")
 	if err := h.room.Join(flaky); err != nil {
 		t.Fatalf("Join flaky: %v", err)
 	}
@@ -48,7 +49,7 @@ func TestOnTickFullState_PeerDeliverFails_PropagatesError(t *testing.T) {
 		t.Fatalf("Join other: %v", err)
 	}
 	shadow := mustJoinShadow(t, h)
-	flaky.setErr(errDeliverFailed)
+	flaky.SetDeliverErr(errDeliverFailed)
 
 	err := h.policy.OnTickFullState()
 	if !errors.Is(err, errDeliverFailed) {
@@ -56,7 +57,7 @@ func TestOnTickFullState_PeerDeliverFails_PropagatesError(t *testing.T) {
 	}
 	assertWeakInvariants(t, shadow.view)
 
-	flaky.setErr(nil)
+	flaky.SetDeliverErr(nil)
 	settleTick(t, h, shadow.view)
 	resyncShadow(t, h)
 	assertStrongInvariants(t, shadow.view, h.room)
@@ -68,8 +69,8 @@ func TestOnTickPatchState_PrunePatchDeliverFails_PropagatesError(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(82), 4)
-	master := newCapturePeer(1, "master")
-	member := newFlakyCapturePeer(2, "member")
+	master := testpeer.New(1, "master")
+	member := testpeer.New(2, "member")
 	if err := h.room.Join(master); err != nil {
 		t.Fatalf("Join master: %v", err)
 	}
@@ -78,7 +79,7 @@ func TestOnTickPatchState_PrunePatchDeliverFails_PropagatesError(t *testing.T) {
 	}
 	shadow := mustJoinShadow(t, h)
 
-	member.setErr(errDeliverFailed)
+	member.SetDeliverErr(errDeliverFailed)
 	if err := h.room.Leave(master); err == nil {
 		t.Fatal("Leave master: want error from failed leave patch broadcast")
 	}
@@ -91,7 +92,7 @@ func TestOnTickPatchState_PrunePatchDeliverFails_PropagatesError(t *testing.T) {
 	}
 	assertWeakInvariants(t, shadow.view)
 
-	member.setErr(nil)
+	member.SetDeliverErr(nil)
 	settleTick(t, h, shadow.view)
 	resyncShadow(t, h)
 	assertStrongInvariants(t, shadow.view, h.room)
@@ -103,8 +104,8 @@ func TestOnMessage_FullEntities_BroadcastDeliverFails_PropagatesError(t *testing
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(83), 4)
-	master := newCapturePeer(1, "master")
-	member := newFlakyCapturePeer(2, "member")
+	master := testpeer.New(1, "master")
+	member := testpeer.New(2, "member")
 	if err := h.room.Join(master); err != nil {
 		t.Fatalf("Join master: %v", err)
 	}
@@ -113,7 +114,7 @@ func TestOnMessage_FullEntities_BroadcastDeliverFails_PropagatesError(t *testing
 	}
 	shadow := mustJoinShadow(t, h)
 
-	member.setErr(errDeliverFailed)
+	member.SetDeliverErr(errDeliverFailed)
 
 	entities := state.NewMapState[state.EntityID, state.EntityState]()
 	entities[state.EntityID(10)] = state.EntityState{
@@ -126,7 +127,7 @@ func TestOnMessage_FullEntities_BroadcastDeliverFails_PropagatesError(t *testing
 	}
 
 	err = h.policy.OnMessage(events.RoomEvent{
-		PeerID: master.id,
+		PeerID: master.GetID(),
 		Frame:  domain.Frame{OpCode: state.OpCodeFullEntities, Payload: payload},
 	})
 	if !errors.Is(err, errDeliverFailed) {
@@ -134,7 +135,7 @@ func TestOnMessage_FullEntities_BroadcastDeliverFails_PropagatesError(t *testing
 	}
 	assertWeakInvariants(t, shadow.view)
 
-	member.setErr(nil)
+	member.SetDeliverErr(nil)
 	settleTick(t, h, shadow.view)
 	resyncShadow(t, h)
 	assertStrongInvariants(t, shadow.view, h.room)

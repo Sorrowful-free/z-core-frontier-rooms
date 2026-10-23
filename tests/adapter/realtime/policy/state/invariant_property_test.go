@@ -1,80 +1,25 @@
 package state_test
 
 import (
-	"errors"
 	"fmt"
 	"math/rand"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
+	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
 // P10: property-прогон инвариантов StateRoomPolicy — seeded rand, операции
 // над реальной Room + fault-инъекции; после каждого шага — слабые
 // инварианты, периодически — settle + сильные.
-
-var errPeerDead = errors.New("peer transport dead")
-
-// mortalPeer — capturePeer с переключаемой живостью и опциональной ошибкой
-// Deliver: моделирует смерть транспорта без leave (kill + evict) и штатный
-// stop после leave.
-type mortalPeer struct {
-	*capturePeer
-
-	flagsMu    sync.Mutex
-	alive      bool
-	stopped    bool
-	deliverErr error
-}
-
-func newMortalPeer(id domain.PeerID, nick string, ping int64) *mortalPeer {
-	return &mortalPeer{capturePeer: newCapturePeerWithPing(id, nick, ping), alive: true}
-}
-
-func (p *mortalPeer) IsAlive() bool {
-	p.flagsMu.Lock()
-	defer p.flagsMu.Unlock()
-	return p.alive
-}
-
-func (p *mortalPeer) Stop() error {
-	p.flagsMu.Lock()
-	defer p.flagsMu.Unlock()
-	p.stopped = true
-	p.alive = false
-	return nil
-}
-
-func (p *mortalPeer) Deliver(ev events.PeerEvent) error {
-	p.flagsMu.Lock()
-	err := p.deliverErr
-	alive := p.alive
-	p.flagsMu.Unlock()
-	if err != nil {
-		return err
-	}
-	if !alive {
-		return errPeerDead
-	}
-	return p.capturePeer.Deliver(ev)
-}
-
-func (p *mortalPeer) setErr(err error) {
-	p.flagsMu.Lock()
-	p.deliverErr = err
-	p.flagsMu.Unlock()
-}
-
-func (p *mortalPeer) setAlive(alive bool) {
-	p.flagsMu.Lock()
-	p.alive = alive
-	p.flagsMu.Unlock()
-}
+//
+// fault-инъекции живут на testpeer.Peer: SetAlive(false) моделирует смерть
+// транспорта без leave (kill + evict), SetDeliverErr — отказы Deliver,
+// Stop — штатный stop после leave.
 
 const (
 	propSteps       = 300
@@ -121,7 +66,7 @@ func runInvariantProperty(t *testing.T, seed int64) {
 	shadow := mustJoinShadow(t, h)
 	trace := &propTrace{}
 
-	joined := map[domain.PeerID]*mortalPeer{}
+	joined := map[domain.PeerID]*testpeer.Peer{}
 
 	// joinedIDs — отсортированные ID: выбор peer через rnd индексирует
 	// стабильный порядок, прогон по seed детерминирован.
@@ -133,14 +78,14 @@ func runInvariantProperty(t *testing.T, seed int64) {
 		slices.Sort(ids)
 		return ids
 	}
-	randomJoined := func() *mortalPeer {
+	randomJoined := func() *testpeer.Peer {
 		ids := joinedIDs()
 		if len(ids) == 0 {
 			return nil
 		}
 		return joined[ids[rnd.Intn(len(ids))]]
 	}
-	randomJoinedExcept := func(except domain.PeerID) *mortalPeer {
+	randomJoinedExcept := func(except domain.PeerID) *testpeer.Peer {
 		ids := joinedIDs()
 		var rest []domain.PeerID
 		for _, id := range ids {
@@ -172,7 +117,7 @@ func runInvariantProperty(t *testing.T, seed int64) {
 		if id == domain.PeerIDInvalid {
 			return "join skipped (no free id)"
 		}
-		p := newMortalPeer(id, fmt.Sprintf("p%d", id), int64(rnd.Intn(12)-1))
+		p := testpeer.New(id, fmt.Sprintf("p%d", id), testpeer.WithPing(int64(rnd.Intn(12)-1)))
 		if err := h.room.Join(p); err != nil {
 			return fmt.Sprintf("join %d err=%v", id, err)
 		}
@@ -186,8 +131,8 @@ func runInvariantProperty(t *testing.T, seed int64) {
 			return "leave skipped (empty room)"
 		}
 		err := h.room.Leave(p)
-		delete(joined, p.id)
-		return fmt.Sprintf("leave %d err=%v", p.id, err)
+		delete(joined, p.GetID())
+		return fmt.Sprintf("leave %d err=%v", p.GetID(), err)
 	}
 
 	patchTickOp := func() string {
@@ -201,7 +146,7 @@ func runInvariantProperty(t *testing.T, seed int64) {
 	rpcOp := func() string {
 		senderID := shadowPeerID
 		if p := randomJoined(); p != nil && rnd.Intn(4) != 0 {
-			senderID = p.id
+			senderID = p.GetID()
 		}
 		var target state.RpcTarget
 		var targetID domain.PeerID
@@ -250,8 +195,8 @@ func runInvariantProperty(t *testing.T, seed int64) {
 			}
 			frame = domain.Frame{OpCode: state.OpCodePatchInput, Payload: payload}
 		}
-		err := h.policy.OnMessage(events.RoomEvent{PeerID: p.id, Frame: frame})
-		return fmt.Sprintf("input %d opcode=%#x err=%v", p.id, frame.OpCode, err)
+		err := h.policy.OnMessage(events.RoomEvent{PeerID: p.GetID(), Frame: frame})
+		return fmt.Sprintf("input %d opcode=%#x err=%v", p.GetID(), frame.OpCode, err)
 	}
 
 	entitiesOp := func() string {
@@ -264,7 +209,7 @@ func runInvariantProperty(t *testing.T, seed int64) {
 			eid := state.EntityID(1 + rnd.Intn(5))
 			entities[eid] = state.EntityState{
 				EntityTypeID: state.EntityTypeID(1),
-				Owner:        p.id,
+				Owner:        p.GetID(),
 				Components:   state.NewMapState[state.ComponentID, state.ComponentState](),
 			}
 		}
@@ -273,10 +218,10 @@ func runInvariantProperty(t *testing.T, seed int64) {
 			return fmt.Sprintf("entities encode err=%v", err)
 		}
 		err = h.policy.OnMessage(events.RoomEvent{
-			PeerID: p.id,
+			PeerID: p.GetID(),
 			Frame:  domain.Frame{OpCode: state.OpCodeFullEntities, Payload: payload},
 		})
-		return fmt.Sprintf("entities %d err=%v", p.id, err)
+		return fmt.Sprintf("entities %d err=%v", p.GetID(), err)
 	}
 
 	// Fault: у случайного выжившего падает Deliver во время leave-broadcast —
@@ -288,15 +233,15 @@ func runInvariantProperty(t *testing.T, seed int64) {
 		if p == nil {
 			return "flaky leave skipped (empty room)"
 		}
-		bystander := randomJoinedExcept(p.id)
+		bystander := randomJoinedExcept(p.GetID())
 		if bystander == nil {
-			return fmt.Sprintf("flaky leave %d skipped (no bystander)", p.id)
+			return fmt.Sprintf("flaky leave %d skipped (no bystander)", p.GetID())
 		}
-		bystander.setErr(errDeliverFailed)
+		bystander.SetDeliverErr(errDeliverFailed)
 		err := h.room.Leave(p)
-		bystander.setErr(nil)
-		delete(joined, p.id)
-		return fmt.Sprintf("flaky leave %d via bystander %d err=%v", p.id, bystander.id, err)
+		bystander.SetDeliverErr(nil)
+		delete(joined, p.GetID())
+		return fmt.Sprintf("flaky leave %d via bystander %d err=%v", p.GetID(), bystander.GetID(), err)
 	}
 
 	// Fault: транспорт умер без leave — peer остаётся в room и в state,
@@ -306,8 +251,8 @@ func runInvariantProperty(t *testing.T, seed int64) {
 		if p == nil {
 			return "kill skipped (empty room)"
 		}
-		p.setAlive(false)
-		return fmt.Sprintf("kill %d (IsAlive=false)", p.id)
+		p.SetAlive(false)
+		return fmt.Sprintf("kill %d (IsAlive=false)", p.GetID())
 	}
 
 	// Sweep-эквивалент EvictIdlePeersUseCase: выводит мёртвых через Leave;
@@ -340,8 +285,8 @@ func runInvariantProperty(t *testing.T, seed int64) {
 		}
 		err := h.room.Leave(p)
 		stopErr := p.Stop()
-		delete(joined, p.id)
-		return fmt.Sprintf("leave+stop %d err=%v stopErr=%v", p.id, err, stopErr)
+		delete(joined, p.GetID())
+		return fmt.Sprintf("leave+stop %d err=%v stopErr=%v", p.GetID(), err, stopErr)
 	}
 
 	ops := []func() string{
@@ -406,7 +351,7 @@ func runInvariantProperty(t *testing.T, seed int64) {
 	// resync обязан доехать до shadow, иначе протокол не может
 	// восстановить клиента.
 	for id, p := range joined {
-		p.setErr(nil)
+		p.SetDeliverErr(nil)
 		if !p.IsAlive() {
 			if err := h.room.Leave(p); err != nil {
 				trace.push("final evict %d err=%v", id, err)

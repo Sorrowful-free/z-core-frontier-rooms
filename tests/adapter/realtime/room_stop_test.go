@@ -12,6 +12,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	portpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/policy"
+	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
 type noopPolicy struct{}
@@ -92,7 +93,7 @@ func TestRoom_Stop_ConcurrentJoin_NoPanic(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			peer := &stubPeer{id: domain.PeerID(id + 100)}
+			peer := testpeer.New(domain.PeerID(id+100), "")
 			_ = room.Join(peer)
 		}(i)
 	}
@@ -110,9 +111,9 @@ func TestRoom_Stop_ConcurrentLeave_NoPanic(t *testing.T) {
 
 	room := startTestRoom(t, 64)
 
-	peers := make([]*stubPeer, 4)
+	peers := make([]*testpeer.Peer, 4)
 	for i := range peers {
-		peers[i] = &stubPeer{id: domain.PeerID(i + 200)}
+		peers[i] = testpeer.New(domain.PeerID(i+200), "")
 		if err := room.Join(peers[i]); err != nil {
 			t.Fatalf("Join peer %d: %v", i, err)
 		}
@@ -121,7 +122,7 @@ func TestRoom_Stop_ConcurrentLeave_NoPanic(t *testing.T) {
 	var wg sync.WaitGroup
 	for _, peer := range peers {
 		wg.Add(1)
-		go func(p *stubPeer) {
+		go func(p *testpeer.Peer) {
 			defer wg.Done()
 			_ = room.Leave(p)
 		}(peer)
@@ -140,7 +141,7 @@ func TestRoom_Stop_LifecycleErrorWrapsContextCanceled(t *testing.T) {
 
 	room := startTestRoom(t, 64)
 
-	peer := &stubPeer{id: domain.PeerID(300)}
+	peer := testpeer.New(domain.PeerID(300), "")
 	if err := room.Join(peer); err != nil {
 		t.Fatalf("Join: %v", err)
 	}
@@ -148,7 +149,7 @@ func TestRoom_Stop_LifecycleErrorWrapsContextCanceled(t *testing.T) {
 		t.Fatalf("Stop: %v", err)
 	}
 
-	if err := room.Join(&stubPeer{id: domain.PeerID(301)}); !errors.Is(err, context.Canceled) {
+	if err := room.Join(testpeer.New(domain.PeerID(301), "")); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Join after Stop err = %v, want errors.Is context.Canceled", err)
 	}
 	if err := room.Leave(peer); !errors.Is(err, context.Canceled) {

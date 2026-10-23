@@ -5,13 +5,14 @@ import (
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	benchfixtures "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/bench"
+	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
-func benchJoinPeers(b *testing.B, h *benchHarness, peerCount int) []*benchCapturePeer {
+func benchJoinPeers(b *testing.B, h *benchHarness, peerCount int) []*testpeer.Peer {
 	b.Helper()
-	peers := make([]*benchCapturePeer, peerCount)
+	peers := make([]*testpeer.Peer, peerCount)
 	for i := range peers {
-		peers[i] = newBenchCapturePeer(domain.PeerID(i+1), "peer")
+		peers[i] = testpeer.New(domain.PeerID(i+1), "peer")
 	}
 	mustJoinBench(b, h.room, peers...)
 	return peers
@@ -27,13 +28,13 @@ func BenchmarkOnTickPatchState(b *testing.B) {
 				b.Fatal(err)
 			}
 			for _, p := range peers {
-				p.clear()
+				p.Clear()
 			}
 
 			var sink error
 			b.ResetTimer()
 			for b.Loop() {
-				peers[0].ping++
+				peers[0].SetPing(peers[0].Ping() + 1)
 				sink = h.policy.OnTickPatchState()
 			}
 			_ = sink
@@ -50,7 +51,7 @@ func BenchmarkOnTickPatchState_NoChanges(b *testing.B) {
 				b.Fatal(err)
 			}
 			for _, p := range peers {
-				p.clear()
+				p.Clear()
 			}
 
 			var sink error

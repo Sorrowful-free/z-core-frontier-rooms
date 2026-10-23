@@ -6,15 +6,16 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
+	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
 func BenchmarkOnMessage_PatchInput(b *testing.B) {
 	h := newBenchHarness(b, domain.RoomID(7), 8)
-	master := newBenchCapturePeer(1, "master")
-	client := newBenchCapturePeer(2, "client")
+	master := testpeer.New(1, "master")
+	client := testpeer.New(2, "client")
 	mustJoinBench(b, h.room, master, client)
-	master.clear()
-	client.clear()
+	master.Clear()
+	client.Clear()
 
 	payload := benchEncodeInputPatch(b, h.inputCodec)
 	ev := events.RoomEvent{
@@ -36,11 +37,11 @@ func BenchmarkOnMessage_PatchInput(b *testing.B) {
 func BenchmarkOnMessage_PatchEntities(b *testing.B) {
 	b.Run("add_entity", func(b *testing.B) {
 		h := newBenchHarness(b, domain.RoomID(8), 8)
-		master := newBenchCapturePeer(1, "master")
-		client := newBenchCapturePeer(2, "client")
+		master := testpeer.New(1, "master")
+		client := testpeer.New(2, "client")
 		mustJoinBench(b, h.room, master, client)
-		master.clear()
-		client.clear()
+		master.Clear()
+		client.Clear()
 
 		payload := benchEncodeEntitiesAddPatch(b, h.entitiesCodec)
 		ev := events.RoomEvent{
@@ -61,11 +62,11 @@ func BenchmarkOnMessage_PatchEntities(b *testing.B) {
 
 	b.Run("update_value", func(b *testing.B) {
 		h := newBenchHarness(b, domain.RoomID(9), 8)
-		master := newBenchCapturePeer(1, "master")
-		client := newBenchCapturePeer(2, "client")
+		master := testpeer.New(1, "master")
+		client := testpeer.New(2, "client")
 		mustJoinBench(b, h.room, master, client)
 		benchSeedEntityForUpdate(b, h, master)
-		client.clear()
+		client.Clear()
 
 		payload := benchEncodeEntitiesUpdatePatch(b, h.entitiesCodec)
 		ev := events.RoomEvent{

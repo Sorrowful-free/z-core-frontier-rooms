@@ -12,6 +12,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	portpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/policy"
+	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
 func TestJoinCallsSendFromOnJoinWithoutDeadlock(t *testing.T) {
@@ -27,7 +28,7 @@ func TestJoinCallsSendFromOnJoinWithoutDeadlock(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = room.Stop() })
 
-	peer := &stubPeer{id: domain.PeerID(10)}
+	peer := testpeer.New(domain.PeerID(10), "")
 
 	done := make(chan error, 1)
 	go func() { done <- room.Join(peer) }()
@@ -41,7 +42,7 @@ func TestJoinCallsSendFromOnJoinWithoutDeadlock(t *testing.T) {
 		t.Fatal("Join blocked >2s (possible deadlock under handler mutex)")
 	}
 
-	if !room.HasPeer(peer.id) {
+	if !room.HasPeer(peer.GetID()) {
 		t.Fatal("peer not in room after Join")
 	}
 }
@@ -58,12 +59,12 @@ func TestJoinRollbackOnHandlerError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = room.Stop() })
 
-	peer := &stubPeer{id: domain.PeerID(11)}
+	peer := testpeer.New(domain.PeerID(11), "")
 	err := room.Join(peer)
 	if !errors.Is(err, domain.ErrJoinDenied) {
 		t.Fatalf("Join err = %v", err)
 	}
-	if room.HasPeer(peer.id) {
+	if room.HasPeer(peer.GetID()) {
 		t.Fatal("peer must be removed from room after failed OnJoin")
 	}
 }
@@ -86,7 +87,7 @@ func TestLifecyclePeerRegistryOrdering(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = room.Stop() })
 
-	peer := &stubPeer{id: domain.PeerID(20)}
+	peer := testpeer.New(domain.PeerID(20), "")
 	if err := room.Join(peer); err != nil {
 		t.Fatalf("Join: %v", err)
 	}
@@ -179,19 +180,4 @@ func (p *failOnJoinPolicy) TickIntervals() (time.Duration, time.Duration) { retu
 func (p *failOnJoinPolicy) OnTickFullState() error                        { return nil }
 func (p *failOnJoinPolicy) OnTickPatchState() error                       { return nil }
 
-type stubPeer struct {
-	id domain.PeerID
-}
-
-func (p *stubPeer) GetID() domain.PeerID { return p.id }
-func (p *stubPeer) GetNickName() string  { return "" }
-func (p *stubPeer) Ping() int64          { return 0 }
-func (p *stubPeer) IsAlive() bool        { return true }
-func (p *stubPeer) Start() error         { return nil }
-func (p *stubPeer) Stop() error          { return nil }
-func (p *stubPeer) Deliver(events.PeerEvent) error {
-	return nil
-}
-
-var _ realtime.Peer = (*stubPeer)(nil)
 var _ portpolicy.RoomPolicy = (*sendOnJoinPolicy)(nil)

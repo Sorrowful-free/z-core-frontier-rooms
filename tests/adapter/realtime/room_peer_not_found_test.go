@@ -6,6 +6,7 @@ import (
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
+	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
 func TestRoom_Leave_UnknownPeer_ReturnsErrPeerNotFound(t *testing.T) {
@@ -14,7 +15,7 @@ func TestRoom_Leave_UnknownPeer_ReturnsErrPeerNotFound(t *testing.T) {
 	room := startTestRoom(t, 8)
 	t.Cleanup(func() { _ = room.Stop() })
 
-	err := room.Leave(&stubPeer{id: domain.PeerID(404)})
+	err := room.Leave(testpeer.New(domain.PeerID(404), "ghost"))
 	if !errors.Is(err, domain.ErrPeerNotFound) {
 		t.Fatalf("Leave err = %v, want ErrPeerNotFound", err)
 	}
@@ -37,7 +38,7 @@ func TestRoom_Send_TargetPeerNotInRoom_ReturnsErrPeerNotFound(t *testing.T) {
 	room := startTestRoom(t, 8)
 	t.Cleanup(func() { _ = room.Stop() })
 
-	if err := room.Join(&stubPeer{id: domain.PeerID(1)}); err != nil {
+	if err := room.Join(testpeer.New(domain.PeerID(1), "sender")); err != nil {
 		t.Fatalf("Join: %v", err)
 	}
 

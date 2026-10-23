@@ -5,6 +5,7 @@ import (
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
+	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
 // Два peer выходят из room при сломанной доставке patch survivor'у —
@@ -14,15 +15,15 @@ func TestOnTickPatchState_PrunesAllStalePeersAndReelectsMaster(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(60), 4)
-	master := newCapturePeer(1, "master")
-	member := newCapturePeer(2, "member")
-	survivor := newFlakyCapturePeer(3, "survivor")
+	master := testpeer.New(1, "master")
+	member := testpeer.New(2, "member")
+	survivor := testpeer.New(3, "survivor")
 	mustJoin(t, h.room, master, member)
 	if err := h.room.Join(survivor); err != nil {
 		t.Fatalf("Join survivor: %v", err)
 	}
 
-	survivor.setErr(errDeliverFailed)
+	survivor.SetDeliverErr(errDeliverFailed)
 
 	if err := h.room.Leave(master); err == nil {
 		t.Fatal("Leave master: want error from failed leave patch broadcast")
@@ -30,18 +31,18 @@ func TestOnTickPatchState_PrunesAllStalePeersAndReelectsMaster(t *testing.T) {
 	if err := h.room.Leave(member); err == nil {
 		t.Fatal("Leave member: want error from failed leave patch broadcast")
 	}
-	if h.room.HasPeer(master.id) || h.room.HasPeer(member.id) {
+	if h.room.HasPeer(master.GetID()) || h.room.HasPeer(member.GetID()) {
 		t.Fatal("left peers must be removed from room even when OnLeave fails")
 	}
 
-	survivor.setErr(nil)
-	survivor.clear()
+	survivor.SetDeliverErr(nil)
+	survivor.Clear()
 
 	if err := h.policy.OnTickPatchState(); err != nil {
 		t.Fatalf("OnTickPatchState: %v", err)
 	}
 
-	patches := filterOpcode(survivor.snapshot(), state.OpCodePatchState)
+	patches := survivor.EventsByOpcode(state.OpCodePatchState)
 	if len(patches) != 1 {
 		t.Fatalf("survivor patches = %d, want 1", len(patches))
 	}
@@ -52,16 +53,16 @@ func TestOnTickPatchState_PrunesAllStalePeersAndReelectsMaster(t *testing.T) {
 	if len(patch.Peers.Removed) != 2 {
 		t.Fatalf("peers.removed = %#v, want both stale peers {1,2} in one tick", patch.Peers.Removed)
 	}
-	updated, ok := patch.Peers.Updated[survivor.id]
+	updated, ok := patch.Peers.Updated[survivor.GetID()]
 	if !ok || updated.IsMaster == nil || !*updated.IsMaster {
-		t.Fatalf("peers.updated[%d] = %#v ok=%v, want IsMaster=true", survivor.id, updated, ok)
+		t.Fatalf("peers.updated[%d] = %#v ok=%v, want IsMaster=true", survivor.GetID(), updated, ok)
 	}
 
-	survivor.clear()
+	survivor.Clear()
 	if err := h.policy.OnTickFullState(); err != nil {
 		t.Fatalf("OnTickFullState: %v", err)
 	}
-	full := filterOpcode(survivor.snapshot(), state.OpCodeFullState)
+	full := survivor.EventsByOpcode(state.OpCodeFullState)
 	if len(full) != 1 {
 		t.Fatalf("survivor full states = %d, want 1", len(full))
 	}
@@ -72,7 +73,7 @@ func TestOnTickPatchState_PrunesAllStalePeersAndReelectsMaster(t *testing.T) {
 	if len(got.Peers) != 1 {
 		t.Fatalf("state peers = %#v, want only survivor after stale prune", got.Peers)
 	}
-	if !got.Peers[survivor.id].IsMaster {
+	if !got.Peers[survivor.GetID()].IsMaster {
 		t.Fatal("survivor must be master after stale master pruned")
 	}
 }

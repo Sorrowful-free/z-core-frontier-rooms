@@ -2,7 +2,6 @@ package state_test
 
 import (
 	"context"
-	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
 	portpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/policy"
+	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
 type benchHarness struct {
@@ -52,44 +52,13 @@ func newBenchHarness(b *testing.B, roomID domain.RoomID, capacity int) *benchHar
 	}
 }
 
-func mustJoinBench(b *testing.B, room *realtime.Room, peers ...*benchCapturePeer) {
+func mustJoinBench(b *testing.B, room *realtime.Room, peers ...*testpeer.Peer) {
 	b.Helper()
 	for _, p := range peers {
 		if err := room.Join(p); err != nil {
-			b.Fatalf("Join peer %d: %v", p.id, err)
+			b.Fatalf("Join peer %d: %v", p.GetID(), err)
 		}
 	}
-}
-
-type benchCapturePeer struct {
-	id        domain.PeerID
-	nick      string
-	ping      int64
-	mu        sync.Mutex
-	delivered []events.PeerEvent
-}
-
-func newBenchCapturePeer(id domain.PeerID, nick string) *benchCapturePeer {
-	return &benchCapturePeer{id: id, nick: nick}
-}
-
-func (p *benchCapturePeer) GetID() domain.PeerID { return p.id }
-func (p *benchCapturePeer) GetNickName() string  { return p.nick }
-func (p *benchCapturePeer) Ping() int64          { return p.ping }
-func (p *benchCapturePeer) IsAlive() bool        { return true }
-func (p *benchCapturePeer) Start() error         { return nil }
-func (p *benchCapturePeer) Stop() error          { return nil }
-func (p *benchCapturePeer) Deliver(ev events.PeerEvent) error {
-	p.mu.Lock()
-	p.delivered = append(p.delivered, ev)
-	p.mu.Unlock()
-	return nil
-}
-
-func (p *benchCapturePeer) clear() {
-	p.mu.Lock()
-	p.delivered = nil
-	p.mu.Unlock()
 }
 
 func benchEncodeInputPatch(b *testing.B, inputCodec *codec.InputStateCodec) []byte {
@@ -150,7 +119,7 @@ func benchEncodeEntitiesUpdatePatch(b *testing.B, entitiesCodec *codec.EntitiesS
 	return payload
 }
 
-func benchSeedEntityForUpdate(b *testing.B, h *benchHarness, master *benchCapturePeer) {
+func benchSeedEntityForUpdate(b *testing.B, h *benchHarness, master *testpeer.Peer) {
 	b.Helper()
 
 	entities := state.NewMapState[state.EntityID, state.EntityState]()
@@ -177,5 +146,5 @@ func benchSeedEntityForUpdate(b *testing.B, h *benchHarness, master *benchCaptur
 	}); err != nil {
 		b.Fatalf("OnMessage full entities seed: %v", err)
 	}
-	master.clear()
+	master.Clear()
 }
