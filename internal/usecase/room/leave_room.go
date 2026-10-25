@@ -52,6 +52,12 @@ func (uc *LeaveRoomUseCase) LeaveRoom(ctx context.Context, roomID domain.RoomID,
 	// room.Leave изымает peer из комнаты даже при ошибке политики —
 	// Stop и Revoke выполняются всегда, ошибка leave не проглатывается.
 	leaveErr := room.Leave(peer)
+	if errors.Is(leaveErr, domain.ErrPeerStale) {
+		// Resume вытеснил объект раньше leave (P20): идентичность и слот у
+		// нового peer'а — ни Stop, ни Revoke делать нельзя.
+		uc.logging.Debug("leave room: stale peer object", "roomID", roomID, "peerID", peerID)
+		return nil
+	}
 	if leaveErr != nil {
 		uc.logging.Error("leave room: room leave failed", "error", leaveErr, "roomID", roomID, "peerID", peerID)
 	}

@@ -9,7 +9,7 @@
 - **[ENet data plane](client-protocol/enet.md)** — **основной транспорт** (UDP :7777, admit, reliable)
 - [Realtime overview](client-protocol/realtime.md) — общий кадр; WebSocket smoke-test
 - [State sync](client-protocol/state-sync.md) — master, ticks, input/entities/RPC
-- [Wire errors](client-protocol/errors.md) — OpCode 0x40+, 0x60+, 0x70+
+- [Wire errors](client-protocol/errors.md) — OpCode 0x40+, 0x60+, 0x70+, notifications 0x80+
 - [Wire state codec](wire-state-codec.md) — бинарный layout payload (BE, maps)
 
 Источник истины при расхождениях: Go codec `internal/adapter/realtime/codec/` и тесты `tests/adapter/realtime/codec/`. ENet: `internal/delivery/enet/`.

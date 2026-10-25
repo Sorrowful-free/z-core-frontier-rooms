@@ -11,8 +11,12 @@ const (
 	ReservationSlotAdmitted
 )
 
-// AdmittedSlot — admitted-слот peer в reservation (для orphan sweep).
+// AdmittedSlot — admitted-слот peer в reservation (для orphan sweep и resume).
 type AdmittedSlot struct {
-	PeerID     PeerID
+	PeerID PeerID
+	// NickName — ник из слота: единственный источник ника при resume (P20).
+	NickName string
+	// AdmittedAt — lastSeen: момент admit / последнего disconnect или
+	// reconnect (MarkDisconnected/Reconnect его обновляют, P20).
 	AdmittedAt time.Time
 }

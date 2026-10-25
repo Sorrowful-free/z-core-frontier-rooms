@@ -17,32 +17,32 @@ import (
 )
 
 type RoomsHandler struct {
-	ctx               context.Context
-	joinRoomUseCase   *room.JoinRoomUseCase
-	leaveRoomUseCase  *room.LeaveRoomUseCase
-	connectionFactory ws.WsConnectionFactory
-	transportCfg      adaptertransport.TransportConfig
-	logger            logging.Logger
-	metrics           portmetrics.Metrics
+	ctx                   context.Context
+	admitPeerUseCase      *room.AdmitPeerUseCase
+	disconnectPeerUseCase *room.DisconnectPeerUseCase
+	connectionFactory     ws.WsConnectionFactory
+	transportCfg          adaptertransport.TransportConfig
+	logger                logging.Logger
+	metrics               portmetrics.Metrics
 }
 
 func NewRoomsHandler(
 	ctx context.Context,
-	joinRoomUseCase *room.JoinRoomUseCase,
-	leaveRoomUseCase *room.LeaveRoomUseCase,
+	admitPeerUseCase *room.AdmitPeerUseCase,
+	disconnectPeerUseCase *room.DisconnectPeerUseCase,
 	connectionFactory ws.WsConnectionFactory,
 	transportCfg adaptertransport.TransportConfig,
 	logger logging.Logger,
 	m portmetrics.Metrics,
 ) *RoomsHandler {
 	return &RoomsHandler{
-		ctx:               ctx,
-		joinRoomUseCase:   joinRoomUseCase,
-		leaveRoomUseCase:  leaveRoomUseCase,
-		connectionFactory: connectionFactory,
-		transportCfg:      transportCfg,
-		logger:            logger,
-		metrics:           portmetrics.OrNoop(m),
+		ctx:                   ctx,
+		admitPeerUseCase:      admitPeerUseCase,
+		disconnectPeerUseCase: disconnectPeerUseCase,
+		connectionFactory:     connectionFactory,
+		transportCfg:          transportCfg,
+		logger:                logger,
+		metrics:               portmetrics.OrNoop(m),
 	}
 }
 
@@ -79,17 +79,19 @@ func (h *RoomsHandler) handleConnect(c *websocket.Conn) {
 		return
 	}
 
-	summary, peerID, err := h.joinRoomUseCase.JoinRoom(h.ctx, connection, token)
+	// Единый admit-вход (P20): join-ticket и reconnect-токен разводит фасад
+	// по claims.Kind; HostIDAny — на WS strict binding не проверяется.
+	_, session, err := h.admitPeerUseCase.Admit(h.ctx, connection, token, domain.HostIDAny)
 	if err != nil {
 		h.sendJoinReject(connection, err)
-		h.logger.Error("websocket join room failed", "error", err, "op", deliveryerrors.JoinRejectOpCode(err))
+		h.logger.Error("websocket admit failed", "error", err, "op", deliveryerrors.JoinRejectOpCode(err))
 		return
 	}
 
 	waiter.Wait()
 
-	if err := h.leaveRoomUseCase.LeaveRoom(h.ctx, summary.ID, peerID); err != nil {
-		h.logger.Error("websocket leave room failed", "error", err, "roomID", summary.ID, "peerID", peerID)
+	if err := h.disconnectPeerUseCase.DisconnectPeer(h.ctx, session); err != nil {
+		h.logger.Error("websocket disconnect peer failed", "error", err, "roomID", session.RoomID, "peerID", session.PeerID)
 	}
 }
 

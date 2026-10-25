@@ -18,6 +18,7 @@ Prometheus-реализация [`port/metrics`](../../port/metrics/README.md) (
 | `rooms_active_rooms` | gauge | — |
 | `rooms_active_peers` | gauge | — |
 | `rooms_peer_joins_total` / `rooms_peer_leaves_total` | counter | — |
+| `rooms_peer_disconnects_total` / `rooms_peer_reconnects_total` | counter | — |
 | `rooms_join_rejects_total` | counter | `opcode` (hex, `0x40`…) |
 | `rooms_queue_drops_total` | counter | `queue` = `room_incoming` / `peer_outbound` / `enet_incoming` |
 | `rooms_master_elections_total` | counter | — |

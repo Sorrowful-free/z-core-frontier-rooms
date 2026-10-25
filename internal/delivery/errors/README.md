@@ -56,6 +56,10 @@
 | `OpWrongHost` | `0x77` | `ErrWrongHost` (strict binding admit, P18) |
 | `OpReservationInternal` | `0x7F` | `ErrReservationInternal` |
 
+## Room notifications (`0x80+`, P20)
+
+Не ошибки и **не через этот пакет**: `OpPeerDisconnected` (`0x80`), `OpPeerReconnected` (`0x81`) рассылают use case'ы (`DisconnectPeer`/`ReconnectRoom`) напрямую через `room.Send` после leave/join — FIFO outbound держит порядок «state-патч → opcode». Payload: `peerID u64 BE` (`domain.NewPeerNotificationFrame`). См. [docs/client-protocol/errors.md](../../../docs/client-protocol/errors.md).
+
 ## State traffic (`0x01–0x07`)
 
 Игровой payload — `domain/state/opcodes.go`, layout [docs/wire-state-codec.md](../../../docs/wire-state-codec.md).

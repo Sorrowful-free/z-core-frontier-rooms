@@ -61,7 +61,7 @@ sequenceDiagram
 
 ## Ticket: HTTP → первый UDP-пакет
 
-1. `POST /rooms/:id/tickets` → JSON `{"token":"<base64url>","enet_port":7777}`.
+1. `POST /rooms/:id/tickets` → JSON `{"token":"<base64url>","reconnect_token":"<base64url>","enet_port":7777}` (`reconnect_token` — токен v4 для resume, см. [Reconnect](#reconnect-p20) ниже).
 2. Клиент **декодирует** base64url (`RawURLEncoding`, без padding) → `PackedByteArray` / `[]byte` ticket v3.
 3. Подключается на UDP-порт **`enet_port`** из ответа (если поле есть; без него - дефолтный порт сервера).
 4. **Первый** исходящий ENet-пакет после `EVENT_CONNECT` = **только** эти байты, **без** префикса OpCode.
@@ -122,6 +122,8 @@ Reject-кадр reliable и гарантированно доезжает: се�
 | `0x40`–`0x5F` | Join reject (только при admit) |
 | `0x60`–`0x6F` | In-room error (соединение живо) |
 | `0x70`–`0x7F` | Reservation reject (при admit) |
+| `0x80` `OpPeerDisconnected` | Peer ушёл в reconnect grace — payload `peer_id u64` BE (P20) |
+| `0x81` `OpPeerReconnected` | Peer вернулся под тем же peerID — payload `peer_id u64` BE (P20) |
 
 Лимит длины пакета = `MaxIncomingFrameBytes` (OpCode + payload). Превышение → **disconnect** без wire-ошибки.
 
@@ -164,14 +166,31 @@ WS delivery не различает — для отладки всё implicit re
 
 ---
 
-## Disconnect и Leave
+## Disconnect и Leave (P20)
 
-- Клиент закрыл соединение / timeout → сервер `LeaveRoom` → `Revoke` слота.
-- Не завершил admit за `ENET_ADMIT_TIMEOUT` → disconnect (дедлайн на факт admit в host loop, не на прибытие пакета; слот peer limit не висит).
-- Oversized frame / invalid frame после admit → graceful disconnect + leave; queued outbound-фреймы доезжают до разрыва.
+Разрыв admitted-сессии идёт через `DisconnectPeer` (все триггеры: `EventDisconnect`, bad/oversized frame, idle peer sweep): peer изымается из комнаты обычным leave-путём (state-запись чистится, remove-патч уходит остальным), но слот reservation **не ревокается** — `MarkDisconnected` ставит lastSeen и открывает grace-окно `RECONNECT_TTL` (default `30s`, от момента разрыва); остальным рассылается `0x80 OpPeerDisconnected`. Resume в окне — см. ниже; по истечении sweep ревокает слот и peerID умирает окончательно.
+
+- Клиент закрыл соединение / UDP timeout (`EventDisconnect`) → `DisconnectPeer` → grace.
+- Не завершил admit за `ENET_ADMIT_TIMEOUT` → disconnect (дедлайн на факт admit в host loop, не на прибытие пакета; слот peer limit не висит; grace нет — peer ещё не admitted).
+- Oversized frame / invalid frame после admit → `DisconnectPeer` + graceful disconnect; queued outbound-фреймы доезжают до разрыва.
 - Переполнение входной очереди ENet на сервере → **drop** кадра (warn в логах), соединение не рвётся.
+- Idle/zombie соединение (`!IsAlive`, peer sweep) → тот же `DisconnectPeer`, то же grace-окно.
 
-Reconnect: новый issue ticket или Replace с тем же `peer_id` — [state-sync.md](state-sync.md).
+### Reconnect (P20)
+
+`POST /rooms` и `POST /rooms/:id/tickets` возвращают `reconnect_token` (base64url) — сохранить до разрыва; expiry у токена нет, credential живёт, пока жив admitted-слот. Первый пакет admit принимает **оба** вида тикета: join (v2/v3) и reconnect (v4) — для resume шлите сырые байты `reconnect_token` так же, как join-тикет (channel 0, reliable).
+
+Token v4 — фиксированная длина **51 байт**, без nick и timestamps:
+
+```text
+version     u8   = 4
+room_id     u64 BE
+peer_id     u64 BE
+host_id     u16 BE  (привязка исходного ticket'а - strict binding действует и для v4: admit на другом host'е → reject 0x77)
+hmac        32 bytes
+```
+
+Успех: peer воскресает под **тем же peerID** и тем же nick'ом (nick берётся из слота reservation — в токене его нет); первый кадр — `0x01` FullState как обычный join, остальным — `0x81 OpPeerReconnected` (payload `peer_id u64`). Новейшее соединение побеждает: resume при живом старом conn вытесняет его. Просроченный grace или чужой/битый токен → обычный join-reject. Общий поток: [realtime.md](realtime.md#reconnect-p20).
 
 ---
 
@@ -183,7 +202,7 @@ Godot 4 встроенно использует ENet для `ENetMultiplayerPeer
 
 Декодируйте `token` из JSON так же, как сервер кодирует в `tokenToResponse`: **base64.RawURLEncoding** (без `=` padding). В GDScript — своя функция или готовая URL-safe base64 decode; результат — `PackedByteArray`.
 
-Проверка: `ticket_bytes[0] == 3` (version byte; старые тикеты v2 тоже принимаются сервером).
+Проверка: `ticket_bytes[0] == 3` (version byte; старые тикеты v2 тоже принимаются сервером; для resume первым пакетом вместо join-тикета идут байты `reconnect_token` — version byte `4`).
 
 ### 2. ENet host + connect
 

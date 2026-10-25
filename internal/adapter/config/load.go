@@ -35,7 +35,7 @@ const (
 	envHTTPDeleteRatePerMin = "HTTP_DELETE_RATE_PER_MIN"
 	envHTTPListRatePerMin   = "HTTP_LIST_RATE_PER_MIN"
 
-	envReservationOrphanAdmittedTTL   = "RESERVATION_ORPHAN_ADMITTED_TTL"
+	envReconnectTTL                   = "RECONNECT_TTL"
 	envReservationOrphanSweepInterval = "RESERVATION_ORPHAN_SWEEP_INTERVAL"
 
 	envTransportMaxIncomingFrameBytes = "TRANSPORT_MAX_INCOMING_FRAME_BYTES"
@@ -250,8 +250,11 @@ func loadTransportFromEnv() (adaptertransport.TransportConfig, error) {
 	return cfg, nil
 }
 
+// loadReservationFromEnv собирает ReservationConfig (P20): RECONNECT_TTL —
+// grace admitted-слота от lastSeen; устаревший RESERVATION_ORPHAN_ADMITTED_TTL
+// больше не читается (миграция — internal/adapter/config/README.md).
 func loadReservationFromEnv() (reservationadapter.ReservationConfig, error) {
-	orphanTTL, err := durationFromEnv(envReservationOrphanAdmittedTTL, reservationadapter.DefaultOrphanAdmittedTTL)
+	reconnectTTL, err := durationFromEnv(envReconnectTTL, reservationadapter.DefaultReconnectTTL)
 	if err != nil {
 		return reservationadapter.ReservationConfig{}, err
 	}
@@ -262,7 +265,7 @@ func loadReservationFromEnv() (reservationadapter.ReservationConfig, error) {
 	}
 
 	cfg := reservationadapter.ReservationConfig{
-		OrphanAdmittedTTL:   orphanTTL,
+		ReconnectTTL:        reconnectTTL,
 		OrphanSweepInterval: sweepInterval,
 	}
 	if err := cfg.Validate(); err != nil {

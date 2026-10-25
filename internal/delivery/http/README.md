@@ -30,14 +30,14 @@ Env — [adapter/httplimits/README.md](../../adapter/httplimits/README.md).
 
 | Метод | Путь | Use case | Успех | Body запроса | Body ответа |
 |-------|------|----------|-------|--------------|-------------|
-| `POST` | `/rooms` | Create | `201` | `capacity`, `nick_name`, `password?`, `attributes?` | `token`, `enet_port?`, `room` (как list) |
+| `POST` | `/rooms` | Create | `201` | `capacity`, `nick_name`, `password?`, `attributes?` | `token`, `reconnect_token`, `enet_port?`, `room` (как list) |
 | `GET` | `/rooms` | GetList | `200` | — | `rooms[]` |
 | `DELETE` | `/rooms/:id` | Delete | `204` | `password?` | — |
-| `POST` | `/rooms/:id/tickets` | IssueTicket | `201` | `nick_name`, `password` | `token`, `enet_port?`, `room` (как create/list) |
+| `POST` | `/rooms/:id/tickets` | IssueTicket | `201` | `nick_name`, `password` | `token`, `reconnect_token`, `enet_port?`, `room` (как create/list) |
 
 `nick_name` обязателен при create и issue (`domain.ValidateNickName`). Ошибка: `400` / `invalid_nick_name`.
 
-`enet_port` (uint16, `omitempty`) - назначенный порт ENet host'а для этого ticket'а (P18 sharding; присутствует только при поднятом ENet listener'е и выборе host'а - иначе поле опускается).
+`enet_port` (uint16, `omitempty`) - назначенный порт ENet host'а для этого ticket'а (P18 sharding; присутствует только при поднятом ENet listener'е и выборе host'а - иначе поле опускается). `reconnect_token` (string) - reconnect-токен v4 для resume под тем же peerID (P20).
 
 Пароль комнаты: если задан при create — нужен для IssueTicket и Delete.
 

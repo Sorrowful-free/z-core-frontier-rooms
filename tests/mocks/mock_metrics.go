@@ -365,6 +365,42 @@ func (c *MockMetricsOrphanAdmittedRevokedCall) DoAndReturn(f func(int)) *MockMet
 	return c
 }
 
+// PeerDisconnected mocks base method.
+func (m *MockMetrics) PeerDisconnected() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "PeerDisconnected")
+}
+
+// PeerDisconnected indicates an expected call of PeerDisconnected.
+func (mr *MockMetricsMockRecorder) PeerDisconnected() *MockMetricsPeerDisconnectedCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PeerDisconnected", reflect.TypeOf((*MockMetrics)(nil).PeerDisconnected))
+	return &MockMetricsPeerDisconnectedCall{Call: call}
+}
+
+// MockMetricsPeerDisconnectedCall wrap *gomock.Call
+type MockMetricsPeerDisconnectedCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockMetricsPeerDisconnectedCall) Return() *MockMetricsPeerDisconnectedCall {
+	c.Call = c.Call.Return()
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockMetricsPeerDisconnectedCall) Do(f func()) *MockMetricsPeerDisconnectedCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockMetricsPeerDisconnectedCall) DoAndReturn(f func()) *MockMetricsPeerDisconnectedCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // PeerJoined mocks base method.
 func (m *MockMetrics) PeerJoined() {
 	m.ctrl.T.Helper()
@@ -541,6 +577,42 @@ func (c *MockMetricsPeerSendErrorCall) Do(f func()) *MockMetricsPeerSendErrorCal
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
 func (c *MockMetricsPeerSendErrorCall) DoAndReturn(f func()) *MockMetricsPeerSendErrorCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
+// ReconnectSucceeded mocks base method.
+func (m *MockMetrics) ReconnectSucceeded() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "ReconnectSucceeded")
+}
+
+// ReconnectSucceeded indicates an expected call of ReconnectSucceeded.
+func (mr *MockMetricsMockRecorder) ReconnectSucceeded() *MockMetricsReconnectSucceededCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReconnectSucceeded", reflect.TypeOf((*MockMetrics)(nil).ReconnectSucceeded))
+	return &MockMetricsReconnectSucceededCall{Call: call}
+}
+
+// MockMetricsReconnectSucceededCall wrap *gomock.Call
+type MockMetricsReconnectSucceededCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockMetricsReconnectSucceededCall) Return() *MockMetricsReconnectSucceededCall {
+	c.Call = c.Call.Return()
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockMetricsReconnectSucceededCall) Do(f func()) *MockMetricsReconnectSucceededCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockMetricsReconnectSucceededCall) DoAndReturn(f func()) *MockMetricsReconnectSucceededCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

@@ -20,12 +20,18 @@ var (
 
 // Ticket v2 (legacy): version | roomID | peerID | issuedAt | expiresAt | nickLen | nick | MAC.
 // Ticket v3 (P18): те же поля + hostID u16 после expiresAt; hostID=0 - без привязки.
-// Verify принимает обе версии: у v2 claims.HostID = domain.HostIDAny.
+// Ticket v4 (P20): version | roomID | peerID | hostID u16 | MAC — reconnect-
+// токен фиксированной длины (51 байт), без nickName и timestamps.
+// Verify принимает все версии: у v2 claims.HostID = domain.HostIDAny, у v4
+// claims.Kind = ClaimsKindReconnect и нет expiry (grace — серверное).
 const (
 	tokenVersionV2     = 2
-	tokenVersion       = 3
+	tokenVersionV3     = 3
+	tokenVersionV4     = 4
 	fixedPayloadSizeV2 = 1 + 8 + 8 + 8 + 8 + 1
 	fixedPayloadSize   = 1 + 8 + 8 + 8 + 8 + 2 + 1
+	fixedPayloadSizeV4 = 1 + 8 + 8 + 2
+	tokenSizeV4        = fixedPayloadSizeV4 + sha256.Size
 	macSize            = sha256.Size
 	minTokenSizeV2     = fixedPayloadSizeV2 + macSize
 	hostIDOffsetV3     = 33
@@ -33,6 +39,7 @@ const (
 	nickOffsetV3       = 36
 	nickLenOffsetV2    = 33
 	nickOffsetV2       = 34
+	hostIDOffsetV4     = 17
 )
 
 // Admission — минимальная реализация port/admission: HMAC-SHA256 ticket с TTL.
@@ -66,6 +73,28 @@ func (a *Admission) Issue(ctx context.Context, roomID domain.RoomID, peerID doma
 	return a.sign(roomID, peerID, hostID, now, now.Add(a.ttl), nickName), nil
 }
 
+// IssueReconnect — reconnect-токен v4 (P20): credential воскрешения peer'а
+// под тем же peerID. Без nickName (ник берётся из слота reservation) и без
+// expiry — grace окно отсчитывает сервер от lastSeen слота.
+func (a *Admission) IssueReconnect(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, hostID domain.HostID) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if !roomID.IsValid() || !peerID.IsValid() {
+		return nil, fmt.Errorf("admission: %w", ErrInvalidCredentials)
+	}
+	buf := make([]byte, tokenSizeV4)
+	buf[0] = tokenVersionV4
+	binary.BigEndian.PutUint64(buf[1:9], uint64(roomID))
+	binary.BigEndian.PutUint64(buf[9:17], uint64(peerID))
+	binary.BigEndian.PutUint16(buf[hostIDOffsetV4:hostIDOffsetV4+2], uint16(hostID))
+
+	mac := hmac.New(sha256.New, a.secret)
+	_, _ = mac.Write(buf[:fixedPayloadSizeV4])
+	copy(buf[fixedPayloadSizeV4:], mac.Sum(nil))
+	return buf, nil
+}
+
 func (a *Admission) Validate(ctx context.Context, token []byte) (domain.Claims, error) {
 	if err := ctx.Err(); err != nil {
 		return domain.Claims{}, err
@@ -74,7 +103,9 @@ func (a *Admission) Validate(ctx context.Context, token []byte) (domain.Claims, 
 	if err != nil {
 		return domain.Claims{}, err
 	}
-	if time.Now().After(claims.ExpiresAt) {
+	// Expiry несёт только join-ticket; reconnect-токен v4 живёт, пока жив
+	// peerID — grace считается сервером от lastSeen слота (P20, Q8).
+	if claims.Kind == domain.ClaimsKindJoin && time.Now().After(claims.ExpiresAt) {
 		return domain.Claims{}, ErrExpiredToken
 	}
 	return claims, nil
@@ -84,7 +115,7 @@ func (a *Admission) sign(roomID domain.RoomID, peerID domain.PeerID, hostID doma
 	nickLen := len(nickName)
 	payloadSize := fixedPayloadSize + nickLen
 	buf := make([]byte, payloadSize+macSize)
-	buf[0] = tokenVersion
+	buf[0] = tokenVersionV3
 	binary.BigEndian.PutUint64(buf[1:9], uint64(roomID))
 	binary.BigEndian.PutUint64(buf[9:17], uint64(peerID))
 	binary.BigEndian.PutUint64(buf[17:25], uint64(issuedAt.Unix()))
@@ -99,10 +130,17 @@ func (a *Admission) sign(roomID domain.RoomID, peerID domain.PeerID, hostID doma
 	return buf
 }
 
-// verify разбирает ticket v2 или v3 и проверяет HMAC. Общие поля (roomID,
-// peerID, timestamps) лежат по одним смещениям в обеих версиях; hostID
-// существует только в v3, у v2 claims.HostID = domain.HostIDAny.
+// verify разбирает ticket v2/v3/v4 и проверяет HMAC. Общие поля (roomID,
+// peerID, timestamps) лежат по одним смещениям в v2/v3; hostID
+// существует только в v3+, у v2 claims.HostID = domain.HostIDAny.
+// Version-диспатч идёт до проверки длины: v4 короче minTokenSizeV2.
 func (a *Admission) verify(token []byte) (domain.Claims, error) {
+	if len(token) == 0 {
+		return domain.Claims{}, ErrInvalidToken
+	}
+	if token[0] == tokenVersionV4 {
+		return a.verifyReconnect(token)
+	}
 	if len(token) < minTokenSizeV2 {
 		return domain.Claims{}, ErrInvalidToken
 	}
@@ -114,7 +152,7 @@ func (a *Admission) verify(token []byte) (domain.Claims, error) {
 		fixedSize = fixedPayloadSizeV2
 		nickLenOffset = nickLenOffsetV2
 		nickOffset = nickOffsetV2
-	case tokenVersion:
+	case tokenVersionV3:
 		fixedSize = fixedPayloadSize
 		hostIDOffset = hostIDOffsetV3
 		nickLenOffset = nickLenOffsetV3
@@ -151,7 +189,7 @@ func (a *Admission) verify(token []byte) (domain.Claims, error) {
 		return domain.Claims{}, ErrInvalidToken
 	}
 	hostID := domain.HostIDAny
-	if version == tokenVersion {
+	if version == tokenVersionV3 {
 		hostID = domain.HostID(binary.BigEndian.Uint16(token[hostIDOffset : hostIDOffset+2]))
 	}
 	issuedAt := time.Unix(int64(binary.BigEndian.Uint64(token[17:25])), 0)
@@ -162,12 +200,44 @@ func (a *Admission) verify(token []byte) (domain.Claims, error) {
 	}
 
 	return domain.Claims{
+		Kind:      domain.ClaimsKindJoin,
 		RoomID:    roomID,
 		PeerID:    peerID,
 		NickName:  nickName,
 		HostID:    hostID,
 		IssuedAt:  issuedAt,
 		ExpiresAt: expiresAt,
+	}, nil
+}
+
+// verifyReconnect разбирает ticket v4 (P20): фиксированный layout
+// ver | roomID u64 | peerID u64 | hostID u16 | MAC. Claims.Kind =
+// ClaimsKindReconnect — resume-поток admit-фасада.
+func (a *Admission) verifyReconnect(token []byte) (domain.Claims, error) {
+	if len(token) != tokenSizeV4 {
+		return domain.Claims{}, ErrInvalidToken
+	}
+
+	mac := hmac.New(sha256.New, a.secret)
+	_, _ = mac.Write(token[:fixedPayloadSizeV4])
+	if !hmac.Equal(token[fixedPayloadSizeV4:], mac.Sum(nil)) {
+		return domain.Claims{}, ErrInvalidToken
+	}
+
+	roomID, err := domain.RoomIDFromUint64(binary.BigEndian.Uint64(token[1:9]))
+	if err != nil {
+		return domain.Claims{}, ErrInvalidToken
+	}
+	peerID, err := domain.PeerIDFromUint64(binary.BigEndian.Uint64(token[9:17]))
+	if err != nil {
+		return domain.Claims{}, ErrInvalidToken
+	}
+
+	return domain.Claims{
+		Kind:   domain.ClaimsKindReconnect,
+		RoomID: roomID,
+		PeerID: peerID,
+		HostID: domain.HostID(binary.BigEndian.Uint16(token[hostIDOffsetV4 : hostIDOffsetV4+2])),
 	}, nil
 }
 

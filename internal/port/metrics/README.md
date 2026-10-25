@@ -11,7 +11,7 @@
 | Gauges | `SetActiveRooms`, `AddActivePeers`, `RoomIncomingDepth(n)`, `PeerOutboundDepth(n)`, `EnetHostPeers(hostID, n)`, `ReservationActiveSlots(delta)` |
 | Комнаты | `PeerJoined`, `PeerLeft`, `JoinRejected(op)`, `MasterElected`, `RoomTickObserved(kind, d)` |
 | Очереди | `RoomIncomingDropped`, `PeerOutboundDropped`, `EnetIncomingDropped`, `EnetHostLoopQueueLatency(d)` |
-| Peer | `PeerSendError` |
+| Peer | `PeerSendError`, `PeerDisconnected`, `ReconnectSucceeded` |
 | Reservation | `ReservationReserved`, `ReservationAdmitted`, `ReservationRevoked` |
 | Sweeps | `OrphanAdmittedRevoked(n)`, `IdlePeersEvicted(n)`, `SweepRan(sweep)` |
 | HTTP | `HTTPRequestObserved(route, method, status, d)` |

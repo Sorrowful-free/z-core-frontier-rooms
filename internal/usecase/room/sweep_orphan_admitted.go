@@ -13,11 +13,12 @@ import (
 // Значение label `sweep` для SweepRan/OrphanAdmittedRevoked (bounded в адаптере).
 const sweepKindOrphanAdmitted = "orphan_admitted"
 
-// SweepOrphanAdmittedUseCase освобождает admitted-слоты без peer в room (шаг 4A).
+// SweepOrphanAdmittedUseCase — grace-expiry admitted-слотов без peer в room
+// (P20): слот без peer'а и lastSeen (AdmittedAt) + ReconnectTTL прошёл → Revoke.
 type SweepOrphanAdmittedUseCase struct {
 	roomRegistry registry.RoomRegistry
 	reservation  reservation.Reservation
-	orphanTTL    time.Duration
+	reconnectTTL time.Duration
 	logger       logging.Logger
 	metrics      portmetrics.Metrics
 }
@@ -25,14 +26,14 @@ type SweepOrphanAdmittedUseCase struct {
 func NewSweepOrphanAdmittedUseCase(
 	roomRegistry registry.RoomRegistry,
 	reservation reservation.Reservation,
-	orphanTTL time.Duration,
+	reconnectTTL time.Duration,
 	logger logging.Logger,
 	m portmetrics.Metrics,
 ) *SweepOrphanAdmittedUseCase {
 	return &SweepOrphanAdmittedUseCase{
 		roomRegistry: roomRegistry,
 		reservation:  reservation,
-		orphanTTL:    orphanTTL,
+		reconnectTTL: reconnectTTL,
 		logger:       logger,
 		metrics:      portmetrics.OrNoop(m),
 	}
@@ -69,7 +70,7 @@ func (uc *SweepOrphanAdmittedUseCase) RunOnce(ctx context.Context) (int, error) 
 			if room.HasPeer(slot.PeerID) {
 				continue
 			}
-			if uc.orphanTTL > 0 && now.Before(slot.AdmittedAt.Add(uc.orphanTTL)) {
+			if uc.reconnectTTL > 0 && now.Before(slot.AdmittedAt.Add(uc.reconnectTTL)) {
 				continue
 			}
 

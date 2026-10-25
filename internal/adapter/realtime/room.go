@@ -134,10 +134,16 @@ func (r *Room) Stop() error {
 }
 
 func (r *Room) Join(peer realtime.Peer) error {
+	peerID := peer.GetID()
+
 	r.mutex.RLock()
+	_, exists := r.peers[peerID]
 	full := len(r.peers) >= r.capacity
 	r.mutex.RUnlock()
-	if full {
+	// Занятый peerID пропускаем до lifecycle: там уже-существующий слот
+	// отклоняется ErrPeerAlreadyInRoom (гонка double-resume → Replace),
+	// а не ErrRoomFull — свой слот не должен считаться переполнением.
+	if full && !exists {
 		return fmt.Errorf("%w: %d", domain.ErrRoomFull, r.id)
 	}
 
@@ -189,7 +195,14 @@ func (r *Room) Replace(peer realtime.Peer) error {
 		peer: old,
 		done: make(chan error, 1),
 	}); err != nil {
-		return fmt.Errorf("%w: %w", domain.ErrReplaceFailed, err)
+		// Old уже изъят из r.peers до OnLeave (leave всегда вытесняет,
+		// ADR-0004 D4): teardown обязателен, иначе conn и goroutine'ы
+		// живут вне комнаты - утечка и ghost-input (P20). Безобидно и
+		// при ErrPeerStale (old вытеснен конкурентным Replace - его уже
+		// остановил вытеснитель) и при умирающей комнате: stopOnce
+		// делает повторный Stop no-op.
+		stopErr := old.Stop()
+		return fmt.Errorf("%w: %w", domain.ErrReplaceFailed, errors.Join(err, stopErr))
 	}
 
 	if err := r.dispatchLifecycle(lifecycleRequest{
@@ -203,7 +216,11 @@ func (r *Room) Replace(peer realtime.Peer) error {
 			done: make(chan error, 1),
 		})
 		if rollbackErr != nil {
-			return fmt.Errorf("%w: %w", domain.ErrReplaceFailed, errors.Join(err, rollbackErr))
+			// Старый peer вытеснен необратимо (rollback не вернул его в
+			// r.peers): teardown обязателен, иначе conn и goroutine'ы живут
+			// вне комнаты - утечка и ghost-input (triple-resume v4, P20).
+			stopErr := old.Stop()
+			return fmt.Errorf("%w: %w", domain.ErrReplaceFailed, errors.Join(err, rollbackErr, stopErr))
 		}
 		return fmt.Errorf("%w: %w", domain.ErrReplaceFailed, err)
 	}

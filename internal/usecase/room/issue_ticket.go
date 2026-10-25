@@ -26,7 +26,10 @@ import (
 //   - комната не в reservation store → ErrReservationNotFound.
 type IssueTicketResult struct {
 	Token []byte
-	Room  RoomSummary
+	// ReconnectToken - reconnect-токен v4 (P20): credential resume под тем же
+	// peerID в пределах grace; hostID - та же привязка, что у join-ticket'а.
+	ReconnectToken []byte
+	Room           RoomSummary
 	// EnetPort - порт назначенного ENet host'а (P18): клиент коннектится на него.
 	// 0 - привязки нет (hostRegistry не подключён, например WS-only окружение).
 	EnetPort uint16
@@ -106,11 +109,18 @@ func (uc *IssueTicketUseCase) IssueTicket(ctx context.Context, roomID domain.Roo
 		return IssueTicketResult{}, uc.revokeIssueReservation(ctx, roomID, peerID, err)
 	}
 
+	reconnectToken, err := uc.admission.IssueReconnect(ctx, roomID, peerID, assignment.HostID)
+	if err != nil {
+		uc.logger.Error("issue ticket: issue reconnect failed", "error", err, "roomID", roomID, "peerID", peerID)
+		return IssueTicketResult{}, uc.revokeIssueReservation(ctx, roomID, peerID, err)
+	}
+
 	uc.logger.Info("issue ticket: success", "roomID", roomID, "peerID", peerID, "hostID", assignment.HostID)
 	return IssueTicketResult{
-		Token:    token,
-		Room:     *NewRoomSummaryFromRoom(room),
-		EnetPort: assignment.Port,
+		Token:          token,
+		ReconnectToken: reconnectToken,
+		Room:           *NewRoomSummaryFromRoom(room),
+		EnetPort:       assignment.Port,
 	}, nil
 }
 

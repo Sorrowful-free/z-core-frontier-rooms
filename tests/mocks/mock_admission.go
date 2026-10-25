@@ -81,6 +81,45 @@ func (c *MockAdmissionIssueCall) DoAndReturn(f func(context.Context, domain.Room
 	return c
 }
 
+// IssueReconnect mocks base method.
+func (m *MockAdmission) IssueReconnect(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, hostID domain.HostID) ([]byte, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IssueReconnect", ctx, roomID, peerID, hostID)
+	ret0, _ := ret[0].([]byte)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IssueReconnect indicates an expected call of IssueReconnect.
+func (mr *MockAdmissionMockRecorder) IssueReconnect(ctx, roomID, peerID, hostID any) *MockAdmissionIssueReconnectCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IssueReconnect", reflect.TypeOf((*MockAdmission)(nil).IssueReconnect), ctx, roomID, peerID, hostID)
+	return &MockAdmissionIssueReconnectCall{Call: call}
+}
+
+// MockAdmissionIssueReconnectCall wrap *gomock.Call
+type MockAdmissionIssueReconnectCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockAdmissionIssueReconnectCall) Return(arg0 []byte, arg1 error) *MockAdmissionIssueReconnectCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockAdmissionIssueReconnectCall) Do(f func(context.Context, domain.RoomID, domain.PeerID, domain.HostID) ([]byte, error)) *MockAdmissionIssueReconnectCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockAdmissionIssueReconnectCall) DoAndReturn(f func(context.Context, domain.RoomID, domain.PeerID, domain.HostID) ([]byte, error)) *MockAdmissionIssueReconnectCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // TTL mocks base method.
 func (m *MockAdmission) TTL() time.Duration {
 	m.ctrl.T.Helper()

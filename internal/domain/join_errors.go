@@ -19,4 +19,7 @@ var (
 	ErrTicketSlotHeld = errors.New("ticket slot held")
 	// ErrWrongHost - ticket привязан к другому ENet host'у (claims.hostID != host admit'а); admit отклоняется (P18).
 	ErrWrongHost = errors.New("ticket bound to another enet host")
+	// ErrPeerStale — leave пришёл с peer-объектом, уже вытесненным из комнаты
+	// (Replace/resume): stale teardown старого соединения, ожидаемая гонка (P20).
+	ErrPeerStale = errors.New("peer stale")
 )

@@ -25,7 +25,7 @@ _Avoid_: LastActivity, heartbeat timestamp
 _Avoid_: shard index, node, listener id
 
 **Orphan admitted**:
-Слот reservation в состоянии `admitted`, для которого в комнате нет живого peer'а (клиент получил ticket и зашёл, но peer ушёл/умер без revoke). Вычищается фоновым `SweepOrphanAdmittedUseCase` после `OrphanAdmittedTTL` или точечным revoke+reserve в `IssueTicket` при повторном issue того же peer'а.
+Слот reservation в состоянии `admitted`, для которого в комнате нет живого peer'а (клиент получил ticket и зашёл, но peer ушёл/умер без revoke). Вычищается фоновым `SweepOrphanAdmittedUseCase` после `lastSeen + RECONNECT_TTL` (P20; прежний `OrphanAdmittedTTL` заменён) или точечным revoke+reserve в `IssueTicket` при повторном issue того же peer'а.
 _Avoid_: stale slot, dangling slot, orphan reservation
 
 **Grace window** (окно реконнекта):

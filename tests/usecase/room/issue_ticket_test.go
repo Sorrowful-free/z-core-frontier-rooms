@@ -51,6 +51,9 @@ func TestIssueTicket_Success(t *testing.T) {
 	admission.EXPECT().
 		Issue(gomock.Any(), roomID, peerID, testNickName, domain.HostIDAny).
 		Return(wantToken, nil)
+	admission.EXPECT().
+		IssueReconnect(gomock.Any(), roomID, peerID, domain.HostIDAny).
+		Return([]byte("reconnect-bytes"), nil)
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 	expectIssueTicketRoomSummary(room, roomID)
 
@@ -61,6 +64,9 @@ func TestIssueTicket_Success(t *testing.T) {
 	}
 	if string(result.Token) != string(wantToken) {
 		t.Fatalf("token = %q, want %q", result.Token, wantToken)
+	}
+	if string(result.ReconnectToken) != "reconnect-bytes" {
+		t.Fatalf("reconnect token = %q", result.ReconnectToken)
 	}
 	if result.Room.ID != roomID {
 		t.Fatalf("room.ID = %v, want %v", result.Room.ID, roomID)
@@ -271,6 +277,9 @@ func TestIssueTicket_OrphanAdmittedCleanup(t *testing.T) {
 	admission.EXPECT().
 		Issue(gomock.Any(), roomID, peerID, testNickName, domain.HostIDAny).
 		Return(wantToken, nil)
+	admission.EXPECT().
+		IssueReconnect(gomock.Any(), roomID, peerID, domain.HostIDAny).
+		Return([]byte("reconnect-bytes"), nil)
 	logger.EXPECT().Warn(gomock.Any(), gomock.Any()).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 	expectIssueTicketRoomSummary(room, roomID)
@@ -418,6 +427,9 @@ func TestIssueTicket_AssignsEnetHost(t *testing.T) {
 	admission.EXPECT().
 		Issue(gomock.Any(), roomID, peerID, testNickName, hostID).
 		Return(wantToken, nil)
+	admission.EXPECT().
+		IssueReconnect(gomock.Any(), roomID, peerID, hostID).
+		Return([]byte("reconnect-bytes"), nil)
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 	expectIssueTicketRoomSummary(room, roomID)
 

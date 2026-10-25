@@ -13,28 +13,31 @@ import (
 const sweepKindIdlePeers = "idle_peers"
 
 // EvictIdlePeersUseCase выводит zombie peer'ов с мёртвым транспортом (ADR 0001).
+// Вывод идёт через disconnect-поток (P20): zombie получает то же grace-окно —
+// полуоткрытый TCP (целевой сценарий флаки-клиентов) не отличается от чистого
+// разрыва.
 type EvictIdlePeersUseCase struct {
-	roomRegistry     registry.RoomRegistry
-	leaveRoomUseCase *LeaveRoomUseCase
-	logger           logging.Logger
-	metrics          portmetrics.Metrics
+	roomRegistry          registry.RoomRegistry
+	disconnectPeerUseCase *DisconnectPeerUseCase
+	logger                logging.Logger
+	metrics               portmetrics.Metrics
 }
 
 func NewEvictIdlePeersUseCase(
 	roomRegistry registry.RoomRegistry,
-	leaveRoomUseCase *LeaveRoomUseCase,
+	disconnectPeerUseCase *DisconnectPeerUseCase,
 	logger logging.Logger,
 	m portmetrics.Metrics,
 ) *EvictIdlePeersUseCase {
 	return &EvictIdlePeersUseCase{
-		roomRegistry:     roomRegistry,
-		leaveRoomUseCase: leaveRoomUseCase,
-		logger:           logger,
-		metrics:          portmetrics.OrNoop(m),
+		roomRegistry:          roomRegistry,
+		disconnectPeerUseCase: disconnectPeerUseCase,
+		logger:                logger,
+		metrics:               portmetrics.OrNoop(m),
 	}
 }
 
-// RunOnce проходит по комнатам и выводит peer'ов с !IsAlive() через leave-поток.
+// RunOnce проходит по комнатам и выводит peer'ов с !IsAlive() через disconnect-поток.
 func (uc *EvictIdlePeersUseCase) RunOnce(ctx context.Context) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
@@ -60,7 +63,11 @@ func (uc *EvictIdlePeersUseCase) RunOnce(ctx context.Context) (int, error) {
 			}
 
 			uc.logger.Warn("evict idle peer", "roomID", roomID, "peerID", peer.GetID())
-			if err := uc.leaveRoomUseCase.LeaveRoom(ctx, roomID, peer.GetID()); err != nil {
+			if err := uc.disconnectPeerUseCase.DisconnectPeer(ctx, PeerSession{
+				RoomID: roomID,
+				PeerID: peer.GetID(),
+				Peer:   peer,
+			}); err != nil {
 				uc.logger.Error("evict idle peer failed", "error", err, "roomID", roomID, "peerID", peer.GetID())
 				continue
 			}

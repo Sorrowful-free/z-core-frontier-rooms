@@ -178,3 +178,108 @@ func TestIssueInvalidCredentials(t *testing.T) {
 		t.Fatalf("err = %v, want ErrInvalidCredentials", err)
 	}
 }
+
+// P20: reconnect-токен v4 — roundtrip, Kind=reconnect, без expiry и nick.
+func TestIssueReconnectValidateRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	a := admission.NewAdmission(testAdmissionConfig("test-secret", time.Hour))
+
+	token, err := a.IssueReconnect(ctx, domain.RoomID(1), domain.PeerID(2), domain.HostID(3))
+	if err != nil {
+		t.Fatalf("IssueReconnect: %v", err)
+	}
+	if len(token) != 51 {
+		t.Fatalf("token len = %d, want 51", len(token))
+	}
+	if token[0] != 4 {
+		t.Fatalf("token version = %d, want 4", token[0])
+	}
+
+	claims, err := a.Validate(ctx, token)
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if claims.Kind != domain.ClaimsKindReconnect {
+		t.Fatalf("claims.Kind = %v, want reconnect", claims.Kind)
+	}
+	if claims.RoomID != 1 || claims.PeerID != 2 || claims.HostID != 3 {
+		t.Fatalf("claims = %+v", claims)
+	}
+	if claims.NickName != "" {
+		t.Fatalf("claims.NickName = %q, want empty (nick из слота)", claims.NickName)
+	}
+}
+
+// P20: join-ticket помечается Kind=join — фасад разводит потоки по Kind.
+func TestIssueJoinClaimsKind(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	a := admission.NewAdmission(testAdmissionConfig("test-secret", time.Hour))
+
+	token, err := a.Issue(ctx, domain.RoomID(1), domain.PeerID(2), "player", domain.HostIDAny)
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	claims, err := a.Validate(ctx, token)
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if claims.Kind != domain.ClaimsKindJoin {
+		t.Fatalf("claims.Kind = %v, want join", claims.Kind)
+	}
+}
+
+// P20: v4 не несёт expiry — токен живёт, пока жив peerID (grace серверное).
+func TestReconnectTokenNoExpiry(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	a := admission.NewAdmission(testAdmissionConfig("test-secret", time.Millisecond))
+
+	token, err := a.IssueReconnect(ctx, domain.RoomID(1), domain.PeerID(2), domain.HostIDAny)
+	if err != nil {
+		t.Fatalf("IssueReconnect: %v", err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	if _, err := a.Validate(ctx, token); err != nil {
+		t.Fatalf("Validate reconnect после TTL admission: %v", err)
+	}
+}
+
+func TestIssueReconnectInvalidCredentials(t *testing.T) {
+	t.Parallel()
+
+	a := admission.NewAdmission(testAdmissionConfig("test-secret", time.Hour))
+	_, err := a.IssueReconnect(context.Background(), domain.RoomIDInvalid, domain.PeerID(1), domain.HostIDAny)
+	if !errors.Is(err, domain.ErrInvalidCredentials) {
+		t.Fatalf("err = %v, want ErrInvalidCredentials", err)
+	}
+}
+
+func TestValidateReconnectTampered(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	a := admission.NewAdmission(testAdmissionConfig("test-secret", time.Hour))
+	other := admission.NewAdmission(testAdmissionConfig("other-secret-32-bytes-padded-here!!", time.Hour))
+
+	token, err := a.IssueReconnect(ctx, domain.RoomID(1), domain.PeerID(2), domain.HostIDAny)
+	if err != nil {
+		t.Fatalf("IssueReconnect: %v", err)
+	}
+	// Чужой секрет → ErrInvalidToken.
+	if _, err := other.Validate(ctx, token); !errors.Is(err, domain.ErrInvalidToken) {
+		t.Fatalf("foreign secret err = %v, want ErrInvalidToken", err)
+	}
+	// Укороченный/битый токен → ErrInvalidToken.
+	if _, err := a.Validate(ctx, token[:40]); !errors.Is(err, domain.ErrInvalidToken) {
+		t.Fatalf("truncated err = %v, want ErrInvalidToken", err)
+	}
+	token[10] ^= 0xFF
+	if _, err := a.Validate(ctx, token); !errors.Is(err, domain.ErrInvalidToken) {
+		t.Fatalf("tampered err = %v, want ErrInvalidToken", err)
+	}
+}

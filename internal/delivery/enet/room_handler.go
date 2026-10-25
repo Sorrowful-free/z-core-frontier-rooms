@@ -7,7 +7,6 @@ import (
 
 	transportenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
-	portadmission "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/admission"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 	portmetrics "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/metrics"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/enet"
@@ -25,37 +24,36 @@ type enetHost struct {
 }
 
 // RoomsHandler - inbound ENet: mux над N host'ами (по одному HostLoop на порт
-// из cfg.ListenPorts, P18), ticket в первом пакете, JoinRoom / LeaveRoom
-// use cases. Strict binding: admit проверяет claims.HostID против host'а.
+// из cfg.ListenPorts, P18), ticket в первом пакете, AdmitPeer /
+// DisconnectPeer use cases. Strict binding: admit-фасад проверяет
+// claims.HostID против host'а, принявшего соединение.
 // Реализует port/transport/enet.HostRegistry для балансировки issue ticket'ов.
 type RoomsHandler struct {
-	ctx               context.Context
-	joinRoomUseCase   *room.JoinRoomUseCase
-	leaveRoomUseCase  *room.LeaveRoomUseCase
-	connectionFactory enet.EnetConnectionFactory
-	admission         portadmission.Admission
-	logger            logging.Logger
-	metrics           portmetrics.Metrics
-	cfg               transportenet.EnetConfig
-	hosts             []*enetHost
-	assignRR          atomic.Uint64
+	ctx                   context.Context
+	admitPeerUseCase      *room.AdmitPeerUseCase
+	disconnectPeerUseCase *room.DisconnectPeerUseCase
+	connectionFactory     enet.EnetConnectionFactory
+	logger                logging.Logger
+	metrics               portmetrics.Metrics
+	cfg                   transportenet.EnetConfig
+	hosts                 []*enetHost
+	assignRR              atomic.Uint64
 }
 
-func NewRoomsHandler(ctx context.Context, joinRoomUseCase *room.JoinRoomUseCase, leaveRoomUseCase *room.LeaveRoomUseCase, connectionFactory enet.EnetConnectionFactory, admission portadmission.Admission, cfg transportenet.EnetConfig, logger logging.Logger, m portmetrics.Metrics) *RoomsHandler {
+func NewRoomsHandler(ctx context.Context, admitPeerUseCase *room.AdmitPeerUseCase, disconnectPeerUseCase *room.DisconnectPeerUseCase, connectionFactory enet.EnetConnectionFactory, cfg transportenet.EnetConfig, logger logging.Logger, m portmetrics.Metrics) *RoomsHandler {
 	hosts := make([]*enetHost, len(cfg.ListenPorts))
 	for i, port := range cfg.ListenPorts {
 		hosts[i] = &enetHost{id: domain.HostID(i + 1), port: port}
 	}
 	return &RoomsHandler{
-		ctx:               ctx,
-		joinRoomUseCase:   joinRoomUseCase,
-		leaveRoomUseCase:  leaveRoomUseCase,
-		connectionFactory: connectionFactory,
-		admission:         admission,
-		logger:            logger,
-		metrics:           portmetrics.OrNoop(m),
-		cfg:               cfg,
-		hosts:             hosts,
+		ctx:                   ctx,
+		admitPeerUseCase:      admitPeerUseCase,
+		disconnectPeerUseCase: disconnectPeerUseCase,
+		connectionFactory:     connectionFactory,
+		logger:                logger,
+		metrics:               portmetrics.OrNoop(m),
+		cfg:                   cfg,
+		hosts:                 hosts,
 	}
 }
 

@@ -53,15 +53,17 @@ var durationObjectives = map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001}
 type Metrics struct {
 	registry *prometheus.Registry
 
-	activeRooms    prometheus.Gauge
-	activePeers    prometheus.Gauge
-	peerJoins      prometheus.Counter
-	peerLeaves     prometheus.Counter
-	joinRejects    *prometheus.CounterVec
-	queueDrops     *prometheus.CounterVec
-	masterElection prometheus.Counter
-	reservationOps *prometheus.CounterVec
-	sweepProcessed *prometheus.CounterVec
+	activeRooms     prometheus.Gauge
+	activePeers     prometheus.Gauge
+	peerJoins       prometheus.Counter
+	peerLeaves      prometheus.Counter
+	peerDisconnects prometheus.Counter
+	peerReconnects  prometheus.Counter
+	joinRejects     *prometheus.CounterVec
+	queueDrops      *prometheus.CounterVec
+	masterElection  prometheus.Counter
+	reservationOps  *prometheus.CounterVec
+	sweepProcessed  *prometheus.CounterVec
 
 	roomIncomingDepth        prometheus.Gauge
 	peerOutboundDepth        prometheus.Gauge
@@ -99,6 +101,14 @@ func New(cfg MetricsConfig) (*Metrics, error) {
 		peerLeaves: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: namespace, Name: "peer_leaves_total",
 			Help: "Peer leaves (room-loop membership transitions).",
+		}),
+		peerDisconnects: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace, Name: "peer_disconnects_total",
+			Help: "Peers marked disconnected into reconnect grace (P20).",
+		}),
+		peerReconnects: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace, Name: "peer_reconnects_total",
+			Help: "Successful reconnects (resume under the same peerID, P20).",
 		}),
 		joinRejects: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: namespace, Name: "join_rejects_total",
@@ -166,6 +176,8 @@ func New(cfg MetricsConfig) (*Metrics, error) {
 		m.activePeers,
 		m.peerJoins,
 		m.peerLeaves,
+		m.peerDisconnects,
+		m.peerReconnects,
 		m.joinRejects,
 		m.queueDrops,
 		m.masterElection,
@@ -205,6 +217,14 @@ func (m *Metrics) PeerJoined() {
 
 func (m *Metrics) PeerLeft() {
 	m.peerLeaves.Inc()
+}
+
+func (m *Metrics) PeerDisconnected() {
+	m.peerDisconnects.Inc()
+}
+
+func (m *Metrics) ReconnectSucceeded() {
+	m.peerReconnects.Inc()
 }
 
 func (m *Metrics) JoinRejected(op domain.OpCode) {

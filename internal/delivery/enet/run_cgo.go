@@ -19,7 +19,7 @@ import (
 // (adapter/transport/enet/hostloop_cgo.go): host.Service идёт blocking-
 // командой Call в loop, peer/packet-операции внутри dispatch - Call/Do в тот
 // же loop. Сам dispatch исполняется на run-горутине, НЕ на loop-горутине:
-// admit/leave путь (JoinRoom/LeaveRoom → dispatchLifecycle) синхронно ждёт
+// admit/teardown путь (AdmitPeer/DisconnectPeer → dispatchLifecycle) синхронно ждёт
 // room-горутину, а та в OnJoin/OnLeave делает EnetConnection.Ping - blocking
 // Call в этот же loop. Dispatch на loop-горутине замыкал бы cross-deadlock
 // executor↔room; на run-горутине блокировка безобидна, executor при этом
@@ -162,9 +162,9 @@ func (h *RoomsHandler) dispatchEvent(
 		sess, ok := sessions[id]
 		delete(sessions, id)
 		if ok {
-			if sess.admitted && sess.roomID.IsValid() && sess.peerID.IsValid() {
-				if err := h.leaveRoomUseCase.LeaveRoom(ctx, sess.roomID, sess.peerID); err != nil {
-					h.logger.Error("enet leave room failed", "error", err, "enet_peer_id", id, "roomID", sess.roomID, "peerID", sess.peerID)
+			if sess.admitted && sess.session.PeerID.IsValid() {
+				if err := h.disconnectPeerUseCase.DisconnectPeer(ctx, sess.session); err != nil {
+					h.logger.Error("enet disconnect peer failed", "error", err, "enet_peer_id", id, "roomID", sess.session.RoomID, "peerID", sess.session.PeerID)
 				}
 			}
 			_ = sess.close()
@@ -173,37 +173,24 @@ func (h *RoomsHandler) dispatchEvent(
 	}
 }
 
-// admit - первый пакет peer'а. Strict binding (P18): claims.HostID ticket'а
-// обязан совпасть с host'ом, принявшим соединение, иначе join-reject
-// (ErrWrongHost → OpWrongHost 0x77). Ticket без hostID (старый v2 или
-// выписанный без registry) проходит на любом host'е - backward compat.
-// Проверка до JoinRoom: на чужом host'е ticket не должен тратить слот
-// reservation и тем более join'ить peer'а.
+// admit - первый пакет peer'а: единый admit-вход (P20). Strict binding (P18)
+// проверяет фасад: claims.HostID ticket'а обязан совпасть с host'ом,
+// принявшим соединение, иначе join-reject (ErrWrongHost → OpWrongHost 0x77)
+// до траты слота reservation. Ticket без hostID проходит на любом host'е.
 func (h *RoomsHandler) admit(ctx context.Context, host *enetHost, sess *peerSession, token []byte) error {
 	if len(token) == 0 {
 		h.logger.Warn("enet connect: empty token", "enet_peer_id", sess.id)
 		return domain.ErrEmptyToken
 	}
 
-	claims, err := h.admission.Validate(ctx, token)
+	_, session, err := h.admitPeerUseCase.Admit(ctx, sess.conn, token, host.id)
 	if err != nil {
-		h.logger.Warn("enet admit: invalid ticket", "error", err, "enet_peer_id", sess.id)
-		return err
-	}
-	if claims.HostID != domain.HostIDAny && claims.HostID != host.id {
-		h.logger.Warn("enet admit: ticket bound to another host", "enet_peer_id", sess.id, "wantHostID", claims.HostID, "hostID", host.id)
-		return domain.ErrWrongHost
-	}
-
-	summary, peerID, err := h.joinRoomUseCase.JoinRoom(ctx, sess.conn, token)
-	if err != nil {
-		h.logger.Error("enet join room failed", "error", err, "enet_peer_id", sess.id, "op", deliveryerrors.JoinRejectOpCode(err))
+		h.logger.Error("enet admit failed", "error", err, "enet_peer_id", sess.id, "op", deliveryerrors.JoinRejectOpCode(err))
 		return err
 	}
 
 	sess.admitted = true
-	sess.roomID = summary.ID
-	sess.peerID = peerID
+	sess.session = session
 	h.logger.Info("enet peer admitted", "enet_peer_id", sess.id, "hostID", host.id)
 	return nil
 }
@@ -213,18 +200,19 @@ func (h *RoomsHandler) packetTooLarge(size int) bool {
 	return max > 0 && size > max
 }
 
-// disconnectSession - LeaveRoom (если admitted) + graceful close + удаление из map.
-// conn.Close кладёт graceful peer.Disconnect в очередь loop'а: queued outbound
-// пакеты уходят до разрыва (FIFO сохраняет порядок reject → disconnect).
+// disconnectSession - DisconnectPeer (если admitted, P20) + graceful close +
+// удаление из map. conn.Close кладёт graceful peer.Disconnect в очередь
+// loop'а: queued outbound пакеты уходят до разрыва (FIFO сохраняет порядок
+// reject → disconnect).
 func (h *RoomsHandler) disconnectSession(
 	ctx context.Context,
 	sessions map[uint16]*peerSession,
 	id uint16,
 	sess *peerSession,
 ) {
-	if sess.admitted && sess.roomID.IsValid() && sess.peerID.IsValid() {
-		if err := h.leaveRoomUseCase.LeaveRoom(ctx, sess.roomID, sess.peerID); err != nil {
-			h.logger.Error("enet leave room failed", "error", err, "enet_peer_id", id, "roomID", sess.roomID, "peerID", sess.peerID)
+	if sess.admitted && sess.session.PeerID.IsValid() {
+		if err := h.disconnectPeerUseCase.DisconnectPeer(ctx, sess.session); err != nil {
+			h.logger.Error("enet disconnect peer failed", "error", err, "enet_peer_id", id, "roomID", sess.session.RoomID, "peerID", sess.session.PeerID)
 		}
 	}
 	_ = sess.close()

@@ -175,9 +175,12 @@ func New(t *testing.T, opts ...Option) *Env {
 	connectionFactory := transportws.NewWsConnectionFactory(logger, cfg.transport)
 
 	leaveUC := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
+	disconnectUC := useroom.NewDisconnectPeerUseCase(registry, reservation, logger)
 	deleteUC := useroom.NewDeleteUseCase(registry, reservation, leaveUC, logger)
 	getListUC := useroom.NewGetListUseCase(registry, logger)
-	joinUC := useroom.NewJoinRoomUseCase(admission, peerFactory, registry, reservation, logger)
+	joinUC := useroom.NewJoinRoomUseCase(peerFactory, registry, reservation, logger)
+	reconnectUC := useroom.NewReconnectRoomUseCase(peerFactory, registry, reservation, logger, m)
+	admitUC := useroom.NewAdmitPeerUseCase(admission, joinUC, reconnectUC, logger)
 
 	var enetHandler *deliveryenet.RoomsHandler
 	var enetPorts []uint16
@@ -196,8 +199,8 @@ func New(t *testing.T, opts ...Option) *Env {
 		// больше нет: у каждого host'а своя очередь (P15).
 		enetCfg.ServiceTimeoutMs = 1
 		enetPorts = enetCfg.ListenPorts
-		enetHandler = deliveryenet.NewRoomsHandler(context.Background(), joinUC, leaveUC,
-			adapterenet.NewEnetConnectionFactory(nil, logger), admission, enetCfg, logger, m)
+		enetHandler = deliveryenet.NewRoomsHandler(context.Background(), admitUC, disconnectUC,
+			adapterenet.NewEnetConnectionFactory(nil, logger), enetCfg, logger, m)
 	}
 
 	// Handler (когда ENet включён) - HostRegistry: strict binding ticket'ов
@@ -211,7 +214,7 @@ func New(t *testing.T, opts ...Option) *Env {
 
 	var idleSweep *useroom.SweepHandle
 	if cfg.idleSweepInterval > 0 {
-		evictIdleUC := useroom.NewEvictIdlePeersUseCase(registry, leaveUC, logger, m)
+		evictIdleUC := useroom.NewEvictIdlePeersUseCase(registry, disconnectUC, logger, m)
 		idleSweep = useroom.StartIdlePeerSweep(context.Background(), evictIdleUC, cfg.idleSweepInterval, logger)
 	}
 
@@ -221,7 +224,7 @@ func New(t *testing.T, opts ...Option) *Env {
 	}
 	deliveryhttp.NewRoomsHandler(createUC, issueUC, deleteUC, getListUC, logger).
 		RegisterRoutes(app, cfg.httpAuth, limits)
-	deliveryws.NewRoomsHandler(context.Background(), joinUC, leaveUC, connectionFactory, cfg.transport, logger, m).
+	deliveryws.NewRoomsHandler(context.Background(), admitUC, disconnectUC, connectionFactory, cfg.transport, logger, m).
 		RegisterRoutes(app)
 
 	var adminApp *fiber.App
@@ -448,6 +451,15 @@ func (e *Env) IssueTicket(t *testing.T, roomID domain.RoomID, nick string) strin
 func (e *Env) IssueTicketPort(t *testing.T, roomID domain.RoomID, nick string) (string, uint16) {
 	t.Helper()
 
+	token, _, port := e.IssueTicketReconnect(t, roomID, nick)
+	return token, port
+}
+
+// IssueTicketReconnect - то же, что IssueTicketPort, плюс reconnect-токен v4
+// (P20): credential resume под тем же peerID после разрыва.
+func (e *Env) IssueTicketReconnect(t *testing.T, roomID domain.RoomID, nick string) (joinToken, reconnectToken string, enetPort uint16) {
+	t.Helper()
+
 	resp, body := e.Do(t, http.MethodPost, fmt.Sprintf("/rooms/%d/tickets", roomID), map[string]any{
 		"nick_name": nick,
 	})
@@ -455,8 +467,9 @@ func (e *Env) IssueTicketPort(t *testing.T, roomID domain.RoomID, nick string) (
 		t.Fatalf("issue ticket status = %d, body = %s", resp.StatusCode, body)
 	}
 	var ticket struct {
-		Token    string `json:"token"`
-		EnetPort uint16 `json:"enet_port"`
+		Token          string `json:"token"`
+		ReconnectToken string `json:"reconnect_token"`
+		EnetPort       uint16 `json:"enet_port"`
 	}
 	if err := json.Unmarshal(body, &ticket); err != nil {
 		t.Fatalf("unmarshal ticket: %v", err)
@@ -464,7 +477,10 @@ func (e *Env) IssueTicketPort(t *testing.T, roomID domain.RoomID, nick string) (
 	if ticket.Token == "" {
 		t.Fatal("issue ticket: empty token")
 	}
-	return ticket.Token, ticket.EnetPort
+	if ticket.ReconnectToken == "" {
+		t.Fatal("issue ticket: empty reconnect token")
+	}
+	return ticket.Token, ticket.ReconnectToken, ticket.EnetPort
 }
 
 // WaitPeerNick ждёт присутствия (want=true) или отсутствия (want=false) peer'а

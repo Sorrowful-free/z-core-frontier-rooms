@@ -9,11 +9,16 @@
 | `create.go` | Control | `limits.AllowCreateRoom` → `RegisterRoom` → registry → `IssueTicket` (хост); откат комнаты при ошибке issue |
 | `delete.go` | Control | kick peers (`LeaveRoom`) → `DeleteRoom` → `UnregisterRoom` |
 | `get_list.go` | Control | Список комнат |
-| `issue_ticket.go` | Control | `ValidateNickName` → AssignHost (ENet sharding) → Reserve → Issue → snapshot комнаты (`RoomSummary`) + `EnetPort` |
-| `join_room.go` | Data | Validate → Admit → CreatePeer(nick) → Join/Replace → Start |
-| `leave_room.go` | Data | Leave → Stop → Revoke |
-| `sweep_orphan_admitted.go` | Background | admitted без peer в room → Revoke (шаг 4A) |
-| `evict_idle_peers.go` | Background | peer с `!IsAlive()` → LeaveRoom (idle eviction, ADR 0001) |
+| `issue_ticket.go` | Control | `ValidateNickName` → AssignHost (ENet sharding) → Reserve → Issue + IssueReconnect → snapshot комнаты (`RoomSummary`) + `EnetPort` + reconnect-токен |
+| `admit_peer.go` | Data | Фасад (P20): Validate один раз → claims.Kind → join или resume; ENet strict binding (enetHostID) |
+| `join_room.go` | Data | Admit → CreatePeer(nick) → Join/Replace → Start → `PeerSession` |
+| `reconnect_room.go` | Data | Resume (P20): `reservation.Reconnect` → CreatePeer(nick из слота) → Join/Replace → Start → `OpPeerReconnected` |
+| `disconnect_peer.go` | Data | Разрыв в grace (P20): `GetPeer` identity-check → `MarkDisconnected` → Leave → Stop → `OpPeerDisconnected` |
+| `leave_room.go` | Data | Leave → Stop → Revoke (явный leave / rollback) |
+| `peer_session.go` | Data | `PeerSession{RoomID, PeerID, Peer}` — session-handle до teardown (P20) |
+| `place_peer.go` | Data | Общий хвост admit-потоков (P20): CreatePeer → HasPeer?Replace:Join (resume дожимает `ErrPeerAlreadyInRoom` гонки через Replace) → Start + rollback → `PeerSession` |
+| `sweep_orphan_admitted.go` | Background | grace-expiry: admitted без peer в room и `lastSeen + ReconnectTTL` прошёл → Revoke |
+| `evict_idle_peers.go` | Background | peer с `!IsAlive()` → DisconnectPeer (idle eviction, ADR 0001 + P20) |
 
 ## Create
 
@@ -36,15 +41,43 @@ ValidateNickName → GetRoom → HasPeer? → VerifyRoomPassword
 
 **Host sharding (P18):** если сконфигурирован `port/transport/enet.HostRegistry` (реализация - `delivery/enet.RoomsHandler`), use case выбирает host для ticket'а: least-loaded по живым peer'ам, round-robin tie-break. Выбранный `HostID` идёт в claims (strict binding admit), `Port` - в `IssueTicketResult.EnetPort` → HTTP `enet_port`. Без registry (`nil`) - `AssignHost` пропускается, ticket без привязки (`HostIDAny`), `EnetPort = 0` (поле в ответе опускается).
 
+## AdmitPeer (P20)
+
+```text
+Validate(token) один раз → enetHostID strict binding (WS — HostIDAny, без проверки)
+→ claims.Kind: join → JoinRoom | reconnect → ReconnectRoom
+```
+
 ## JoinRoom
 
 ```text
-Validate → GetRoom → Admit → CreatePeer(..., claims.NickName)
-→ Replace (если HasPeer) | Join → Start
+GetRoom → Admit → CreatePeer(..., claims.NickName)
+→ Replace (если HasPeer) | Join → Start → PeerSession
 ```
 
 Откат: при ошибке до успешного join в room — `Revoke` (кроме failed Replace: старый peer остаётся).  
 При `Start` failure — `Leave`, `Stop`, `Revoke`.
+
+## ReconnectRoom (P20)
+
+```text
+GetRoom → reservation.Reconnect (атомарно: admitted + refresh lastSeen + слот с NickName)
+→ CreatePeer(..., slot.NickName) → HasPeer ? Replace : Join → Start
+→ room.Send(OpPeerReconnected{peerID}) остальным → PeerSession
+```
+
+`reservation.Admit` не вызывается; при любом фейле слот не ревокается (peer в grace). Reject-маппинг — существующие коды (`OpPeerNotFound` / `OpReservationNotReserved` / `OpInvalidToken`).
+
+Гонка double-resume одного токена: `Join` возвращает `ErrPeerAlreadyInRoom` (lifecycle отклоняет занятый peerID) → дожим `Replace` — newest-wins (Q10), вытесненный объект останавливается `old.Stop()` внутри `Replace`.
+
+## DisconnectPeer (P20)
+
+```text
+GetPeer(session.PeerID) — stale teardown (peer вытеснен Replace / уже удалён) → no-op до mark'а
+→ MarkDisconnected (lastSeen = now, слот остаётся и держит capacity)
+→ room.Leave(session.Peer) [ErrPeerStale → no-op; ErrPeerNotFound → warn]
+→ peer.Stop → room.Send(OpPeerDisconnected{peerID}) остальным
+```
 
 ## LeaveRoom
 
@@ -61,7 +94,7 @@ VerifyRoomPassword (только Delete) → GetRoom → kick all peers (LeaveRo
 
 ## EvictIdlePeers
 
-Периодический sweep (`StartIdlePeerSweep`): `registry.GetList` → `room.GetPeers` → `!peer.IsAlive()` → `LeaveRoom` (`Leave` → `Stop` → `Revoke`, молчаливый `Close`). Ошибка одного peer логируется, sweep продолжается. `interval <= 0` — no-op (nil handle); таймаут живости — внутри `WsConnection` (`TransportConfig.PeerIdleTimeout`).
+Периодический sweep (`StartIdlePeerSweep`): `registry.GetList` → `room.GetPeers` → `!peer.IsAlive()` → `DisconnectPeer` (P20: zombie получает то же grace-окно — `MarkDisconnected` → `Leave` → `Stop` → `OpPeerDisconnected`). Ошибка одного peer логируется, sweep продолжается. `interval <= 0` — no-op (nil handle); таймаут живости — внутри `WsConnection` (`TransportConfig.PeerIdleTimeout`).
 
 Оба sweep (`StartIdlePeerSweep`, `StartOrphanAdmittedSweep`) возвращают `*SweepHandle`: `Stop()` отменяет ctx и ждёт завершения горутины, включая in-flight `RunOnce`.
 

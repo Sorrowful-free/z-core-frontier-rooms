@@ -36,17 +36,17 @@ func TestEvictIdlePeers_DeadPeerEvicted(t *testing.T) {
 	peer.EXPECT().IsAlive().Return(false)
 
 	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
-	room.EXPECT().HasPeer(peerID).Return(true)
 	room.EXPECT().GetPeer(peerID).Return(peer, nil)
+	reservation.EXPECT().MarkDisconnected(gomock.Any(), roomID, peerID).Return(nil)
 	room.EXPECT().Leave(peer).Return(nil)
 	peer.EXPECT().Stop().Return(nil)
-	reservation.EXPECT().Revoke(gomock.Any(), roomID, peerID).Return(nil)
+	room.EXPECT().Send(gomock.Any()).Return(nil)
 
 	logger.EXPECT().Warn(gomock.Any(), gomock.Any()).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
-	leaveUC := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
-	uc := useroom.NewEvictIdlePeersUseCase(registry, leaveUC, logger, nil)
+	disconnectUC := useroom.NewDisconnectPeerUseCase(registry, reservation, logger)
+	uc := useroom.NewEvictIdlePeersUseCase(registry, disconnectUC, logger, nil)
 	evicted, err := uc.RunOnce(context.Background())
 	if err != nil {
 		t.Fatalf("RunOnce: %v", err)
@@ -75,8 +75,8 @@ func TestEvictIdlePeers_AlivePeerSkipped(t *testing.T) {
 	room.EXPECT().GetPeers().Return([]realtime.Peer{peer}).AnyTimes()
 	peer.EXPECT().IsAlive().Return(true)
 
-	leaveUC := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
-	uc := useroom.NewEvictIdlePeersUseCase(registry, leaveUC, logger, nil)
+	disconnectUC := useroom.NewDisconnectPeerUseCase(registry, reservation, logger)
+	uc := useroom.NewEvictIdlePeersUseCase(registry, disconnectUC, logger, nil)
 	evicted, err := uc.RunOnce(context.Background())
 	if err != nil {
 		t.Fatalf("RunOnce: %v", err)
@@ -114,25 +114,25 @@ func TestEvictIdlePeers_LeaveErrorTolerated(t *testing.T) {
 
 	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil).Times(2)
 
-	room.EXPECT().HasPeer(peer1ID).Return(true)
 	room.EXPECT().GetPeer(peer1ID).Return(peer1, nil)
+	reservation.EXPECT().MarkDisconnected(gomock.Any(), roomID, peer1ID).Return(nil)
 	room.EXPECT().Leave(peer1).Return(leaveErr)
-	// Leave изымает peer даже при ошибке — Stop и Revoke всё равно выполняются.
+	// Leave изымает peer даже при ошибке — Stop и broadcast всё равно выполняются.
 	peer1.EXPECT().Stop().Return(nil)
-	reservation.EXPECT().Revoke(gomock.Any(), roomID, peer1ID).Return(nil)
+	room.EXPECT().Send(gomock.Any()).Return(nil)
 
-	room.EXPECT().HasPeer(peer2ID).Return(true)
 	room.EXPECT().GetPeer(peer2ID).Return(peer2, nil)
+	reservation.EXPECT().MarkDisconnected(gomock.Any(), roomID, peer2ID).Return(nil)
 	room.EXPECT().Leave(peer2).Return(nil)
 	peer2.EXPECT().Stop().Return(nil)
-	reservation.EXPECT().Revoke(gomock.Any(), roomID, peer2ID).Return(nil)
+	room.EXPECT().Send(gomock.Any()).Return(nil)
 
 	logger.EXPECT().Warn(gomock.Any(), gomock.Any()).AnyTimes()
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
-	leaveUC := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
-	uc := useroom.NewEvictIdlePeersUseCase(registry, leaveUC, logger, nil)
+	disconnectUC := useroom.NewDisconnectPeerUseCase(registry, reservation, logger)
+	uc := useroom.NewEvictIdlePeersUseCase(registry, disconnectUC, logger, nil)
 	evicted, err := uc.RunOnce(context.Background())
 	if err != nil {
 		t.Fatalf("RunOnce: %v", err)
@@ -163,8 +163,8 @@ func TestStartIdlePeerSweep_StopWaitsForRunOnce(t *testing.T) {
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
-	leaveUC := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
-	uc := useroom.NewEvictIdlePeersUseCase(registry, leaveUC, logger, nil)
+	disconnectUC := useroom.NewDisconnectPeerUseCase(registry, reservation, logger)
+	uc := useroom.NewEvictIdlePeersUseCase(registry, disconnectUC, logger, nil)
 	handle := useroom.StartIdlePeerSweep(context.Background(), uc, time.Millisecond, logger)
 	if handle == nil {
 		t.Fatal("handle = nil, want non-nil")

@@ -11,17 +11,19 @@ import (
 	portmetrics "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/metrics"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/enet"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
 	libenet "github.com/codecat/go-enet"
 )
 
 type peerSession struct {
-	id          uint16
-	host        *enetHost // для least-loaded счётчика (P18)
-	incoming    chan domain.Frame
-	conn        transport.Connection
-	admitted    bool
-	roomID      domain.RoomID
-	peerID      domain.PeerID
+	id       uint16
+	host     *enetHost // для least-loaded счётчика (P18)
+	incoming chan domain.Frame
+	conn     transport.Connection
+	admitted bool
+	// session — session-handle admitted-соединения (P20): teardown идёт
+	// через DisconnectPeer именно с этим peer-объектом (identity-check).
+	session     room.PeerSession
 	connectedAt time.Time
 	closeOnce   sync.Once
 	metrics     portmetrics.Metrics

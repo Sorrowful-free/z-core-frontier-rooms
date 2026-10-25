@@ -119,6 +119,83 @@ func (c *MockReservationListAdmittedPeersCall) DoAndReturn(f func(context.Contex
 	return c
 }
 
+// MarkDisconnected mocks base method.
+func (m *MockReservation) MarkDisconnected(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "MarkDisconnected", ctx, roomID, peerID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// MarkDisconnected indicates an expected call of MarkDisconnected.
+func (mr *MockReservationMockRecorder) MarkDisconnected(ctx, roomID, peerID any) *MockReservationMarkDisconnectedCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MarkDisconnected", reflect.TypeOf((*MockReservation)(nil).MarkDisconnected), ctx, roomID, peerID)
+	return &MockReservationMarkDisconnectedCall{Call: call}
+}
+
+// MockReservationMarkDisconnectedCall wrap *gomock.Call
+type MockReservationMarkDisconnectedCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockReservationMarkDisconnectedCall) Return(arg0 error) *MockReservationMarkDisconnectedCall {
+	c.Call = c.Call.Return(arg0)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockReservationMarkDisconnectedCall) Do(f func(context.Context, domain.RoomID, domain.PeerID) error) *MockReservationMarkDisconnectedCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockReservationMarkDisconnectedCall) DoAndReturn(f func(context.Context, domain.RoomID, domain.PeerID) error) *MockReservationMarkDisconnectedCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
+// Reconnect mocks base method.
+func (m *MockReservation) Reconnect(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) (domain.AdmittedSlot, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Reconnect", ctx, roomID, peerID)
+	ret0, _ := ret[0].(domain.AdmittedSlot)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Reconnect indicates an expected call of Reconnect.
+func (mr *MockReservationMockRecorder) Reconnect(ctx, roomID, peerID any) *MockReservationReconnectCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Reconnect", reflect.TypeOf((*MockReservation)(nil).Reconnect), ctx, roomID, peerID)
+	return &MockReservationReconnectCall{Call: call}
+}
+
+// MockReservationReconnectCall wrap *gomock.Call
+type MockReservationReconnectCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockReservationReconnectCall) Return(arg0 domain.AdmittedSlot, arg1 error) *MockReservationReconnectCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockReservationReconnectCall) Do(f func(context.Context, domain.RoomID, domain.PeerID) (domain.AdmittedSlot, error)) *MockReservationReconnectCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockReservationReconnectCall) DoAndReturn(f func(context.Context, domain.RoomID, domain.PeerID) (domain.AdmittedSlot, error)) *MockReservationReconnectCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // RegisterRoom mocks base method.
 func (m *MockReservation) RegisterRoom(ctx context.Context, roomID domain.RoomID, capacity int, password string) error {
 	m.ctrl.T.Helper()

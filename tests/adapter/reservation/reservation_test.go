@@ -393,3 +393,134 @@ func TestReservation_ConcurrentDifferentRooms(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// P20: MarkDisconnected держит admitted-слот (grace), обновляет lastSeen.
+func TestMarkDisconnected_KeepsAdmittedSlot(t *testing.T) {
+	t.Parallel()
+
+	const (
+		roomID = domain.RoomID(20)
+		peerID = domain.PeerID(200)
+	)
+	ctx := context.Background()
+	res := newTestReservation()
+
+	if err := res.RegisterRoom(ctx, roomID, 1, ""); err != nil {
+		t.Fatalf("RegisterRoom: %v", err)
+	}
+	if err := res.Reserve(ctx, roomID, peerID, testNick(peerID), time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("Reserve: %v", err)
+	}
+	if err := res.Admit(ctx, roomID, peerID); err != nil {
+		t.Fatalf("Admit: %v", err)
+	}
+
+	before := time.Now()
+	if err := res.MarkDisconnected(ctx, roomID, peerID); err != nil {
+		t.Fatalf("MarkDisconnected: %v", err)
+	}
+
+	// Слот жив и admitted — capacity по-прежнему занята.
+	if err := res.Reserve(ctx, roomID, domain.PeerID(201), "other", time.Now().Add(time.Hour)); !errors.Is(err, domain.ErrReservationFull) {
+		t.Fatalf("Reserve after mark err = %v, want ErrReservationFull (слот в grace)", err)
+	}
+
+	slots, err := res.ListAdmittedPeers(ctx, roomID)
+	if err != nil {
+		t.Fatalf("ListAdmittedPeers: %v", err)
+	}
+	if len(slots) != 1 || slots[0].PeerID != peerID {
+		t.Fatalf("slots = %+v", slots)
+	}
+	if slots[0].AdmittedAt.Before(before) {
+		t.Fatalf("lastSeen %v before mark %v", slots[0].AdmittedAt, before)
+	}
+	if slots[0].NickName != testNick(peerID) {
+		t.Fatalf("slot nick = %q, want %q", slots[0].NickName, testNick(peerID))
+	}
+}
+
+func TestMarkDisconnected_NotAdmitted(t *testing.T) {
+	t.Parallel()
+
+	const roomID = domain.RoomID(21)
+	ctx := context.Background()
+	res := newTestReservation()
+
+	if err := res.RegisterRoom(ctx, roomID, 2, ""); err != nil {
+		t.Fatalf("RegisterRoom: %v", err)
+	}
+	if err := res.MarkDisconnected(ctx, roomID, domain.PeerID(1)); !errors.Is(err, domain.ErrReservationNotReserved) {
+		t.Fatalf("mark missing peer err = %v, want ErrReservationNotReserved", err)
+	}
+	if err := res.Reserve(ctx, roomID, domain.PeerID(1), "p1", time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("Reserve: %v", err)
+	}
+	if err := res.MarkDisconnected(ctx, roomID, domain.PeerID(1)); !errors.Is(err, domain.ErrReservationNotReserved) {
+		t.Fatalf("mark reserved peer err = %v, want ErrReservationNotReserved", err)
+	}
+}
+
+// P20: Reconnect — атомарная проверка admitted + refresh lastSeen + nick.
+func TestReconnect_ReturnsSlotAndRefreshes(t *testing.T) {
+	t.Parallel()
+
+	const (
+		roomID = domain.RoomID(22)
+		peerID = domain.PeerID(220)
+	)
+	ctx := context.Background()
+	res := newTestReservation()
+
+	if err := res.RegisterRoom(ctx, roomID, 1, ""); err != nil {
+		t.Fatalf("RegisterRoom: %v", err)
+	}
+	if err := res.Reserve(ctx, roomID, peerID, testNick(peerID), time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("Reserve: %v", err)
+	}
+	if err := res.Admit(ctx, roomID, peerID); err != nil {
+		t.Fatalf("Admit: %v", err)
+	}
+	if err := res.MarkDisconnected(ctx, roomID, peerID); err != nil {
+		t.Fatalf("MarkDisconnected: %v", err)
+	}
+
+	before := time.Now()
+	slot, err := res.Reconnect(ctx, roomID, peerID)
+	if err != nil {
+		t.Fatalf("Reconnect: %v", err)
+	}
+	if slot.PeerID != peerID || slot.NickName != testNick(peerID) {
+		t.Fatalf("slot = %+v", slot)
+	}
+	if slot.AdmittedAt.Before(before) {
+		t.Fatalf("lastSeen %v not refreshed", slot.AdmittedAt)
+	}
+}
+
+func TestReconnect_Rejected(t *testing.T) {
+	t.Parallel()
+
+	const roomID = domain.RoomID(23)
+	ctx := context.Background()
+	res := newTestReservation()
+
+	if err := res.RegisterRoom(ctx, roomID, 2, ""); err != nil {
+		t.Fatalf("RegisterRoom: %v", err)
+	}
+	// Слота нет.
+	if _, err := res.Reconnect(ctx, roomID, domain.PeerID(1)); !errors.Is(err, domain.ErrReservationNotReserved) {
+		t.Fatalf("reconnect missing err = %v, want ErrReservationNotReserved", err)
+	}
+	// Слот reserved (ещё не admit).
+	if err := res.Reserve(ctx, roomID, domain.PeerID(1), "p1", time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("Reserve: %v", err)
+	}
+	if _, err := res.Reconnect(ctx, roomID, domain.PeerID(1)); !errors.Is(err, domain.ErrReservationNotReserved) {
+		t.Fatalf("reconnect reserved err = %v, want ErrReservationNotReserved", err)
+	}
+	// Комната не зарегистрирована.
+	if _, err := res.Reconnect(ctx, domain.RoomID(99), domain.PeerID(1)); !errors.Is(err, domain.ErrReservationNotFound) {
+		t.Fatalf("reconnect bad room err = %v, want ErrReservationNotFound", err)
+	}
+}

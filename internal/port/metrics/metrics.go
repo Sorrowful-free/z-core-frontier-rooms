@@ -25,6 +25,12 @@ type Metrics interface {
 	PeerJoined()
 	// PeerLeft — counter: peer изъят из комнаты (lifecycle room loop).
 	PeerLeft()
+	// PeerDisconnected — counter: peer ушёл в reconnect grace
+	// (reservation.MarkDisconnected, P20).
+	PeerDisconnected()
+	// ReconnectSucceeded — counter: resume под тем же peerID завершился
+	// успехом (ReconnectRoomUseCase, P20).
+	ReconnectSucceeded()
 
 	// JoinRejected — counter: join/admit reject-кадр на wire, label —
 	// OpCode отказа (bounded: конечное множество reject-opcode'ов).
@@ -100,6 +106,8 @@ func (noopMetrics) SetActiveRooms(int)                                     {}
 func (noopMetrics) AddActivePeers(int)                                     {}
 func (noopMetrics) PeerJoined()                                            {}
 func (noopMetrics) PeerLeft()                                              {}
+func (noopMetrics) PeerDisconnected()                                      {}
+func (noopMetrics) ReconnectSucceeded()                                    {}
 func (noopMetrics) JoinRejected(domain.OpCode)                             {}
 func (noopMetrics) RoomIncomingDropped()                                   {}
 func (noopMetrics) PeerOutboundDropped()                                   {}

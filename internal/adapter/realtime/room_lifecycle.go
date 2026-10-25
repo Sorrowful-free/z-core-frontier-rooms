@@ -41,14 +41,20 @@ func (r *Room) runLifecycle(req lifecycleRequest) {
 func (r *Room) runJoinLocked(peer realtime.Peer) error {
 	peerID := peer.GetID()
 	r.mutex.Lock()
+	// Занятый peerID — гонка double-join (два resume одного reconnect-
+	// токена, P20): молчаливый overwrite сиротил бы проигравший peer-
+	// объект вне r.peers (conn-утечка, его teardown встретит ErrPeerStale,
+	// а кадры от него продолжат идти в room.Deliver). Проверка до capacity:
+	// свой слот переполнением не считается. Resume-поток дожимает отказ
+	// через Replace (newest-wins, Q10).
+	if _, exists := r.peers[peerID]; exists {
+		r.mutex.Unlock()
+		return fmt.Errorf("%w: %d", domain.ErrPeerAlreadyInRoom, peerID)
+	}
 	if len(r.peers) >= r.capacity {
 		r.mutex.Unlock()
 		return fmt.Errorf("%w: %d", domain.ErrRoomFull, r.id)
 	}
-	// Метрика членства привязана к реальной мутации map: join считается
-	// только если peerID реально добавлен (не перезаписан), иначе
-	// active_peers уедет в дрейф при повторном join того же peer.
-	_, existed := r.peers[peerID]
 	r.peers[peerID] = peer
 	r.mutex.Unlock()
 
@@ -58,27 +64,32 @@ func (r *Room) runJoinLocked(peer realtime.Peer) error {
 		r.mutex.Unlock()
 		return err
 	}
-	if !existed {
-		r.metrics.PeerJoined()
-		r.metrics.AddActivePeers(1)
-	}
+	r.metrics.PeerJoined()
+	r.metrics.AddActivePeers(1)
 	return nil
 }
 
 func (r *Room) runLeaveLocked(peer realtime.Peer) error {
 	peerID := peer.GetID()
 	r.mutex.Lock()
+	// Identity-check (P20): изымаем только если под peerID лежит тот же
+	// объект — stale teardown (старый conn, проснувшийся после
+	// Replace/resume) не должен выкинуть нового peer'а.
+	current, present := r.peers[peerID]
+	if present && current != peer {
+		r.mutex.Unlock()
+		return domain.ErrPeerStale
+	}
 	// Декремент только по факту изъятия: повторный leave (оба caller'а
 	// проскочили pre-check до сериализации на loop'е) не должен
 	// дважды декрементить active_peers.
-	_, removed := r.peers[peerID]
 	delete(r.peers, peerID)
 	r.mutex.Unlock()
 	// При ошибке OnLeave state-запись peer'а само-вычищается следующим
 	// prune-тиком refreshPeerPings (GetPeer → ErrPeerNotFound → stale).
 	err := r.policy.OnLeave(peer)
 	// Peer уже изъят из r.peers - leave считается и при ошибке policy.
-	if removed {
+	if present {
 		r.metrics.PeerLeft()
 		r.metrics.AddActivePeers(-1)
 	}

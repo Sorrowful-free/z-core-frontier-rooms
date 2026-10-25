@@ -47,6 +47,80 @@ func TestJoinCallsSendFromOnJoinWithoutDeadlock(t *testing.T) {
 	}
 }
 
+// P20-fix: повторный Join под тем же peerID отклоняется lifecycle'ом —
+// раньше runJoinLocked молча перезаписывал r.peers[peerID] и проигравший
+// peer-объект сиротел вне map (conn-утечка, teardown → ErrPeerStale).
+// Ошибка доходит до caller'а через ErrJoinDenied-обёртку Join.
+func TestJoin_SecondJoinSamePeerIDRejected(t *testing.T) {
+	t.Parallel()
+
+	logger := stdlib.New("test")
+	policy := &trackingReplacePolicy{}
+	room := adapterrealtime.NewRoom(context.Background(), domain.RoomID(34), policy, 4, nil, 0, logger)
+
+	if err := room.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { _ = room.Stop() })
+
+	const peerID = domain.PeerID(8)
+	first := testpeer.New(peerID, "first")
+	if err := room.Join(first); err != nil {
+		t.Fatalf("Join first: %v", err)
+	}
+
+	second := testpeer.New(peerID, "second")
+	err := room.Join(second)
+	if !errors.Is(err, domain.ErrPeerAlreadyInRoom) {
+		t.Fatalf("Join second err = %v, want ErrPeerAlreadyInRoom", err)
+	}
+	if !errors.Is(err, domain.ErrJoinDenied) {
+		t.Fatalf("Join second err = %v, want wrapped ErrJoinDenied", err)
+	}
+
+	got, getErr := room.GetPeer(peerID)
+	if getErr != nil {
+		t.Fatalf("GetPeer: %v", getErr)
+	}
+	if got != first {
+		t.Fatal("rejected join must not overwrite the live peer")
+	}
+	if policy.inRoom[peerID] != "first" {
+		t.Fatalf("policy state = %q, want first", policy.inRoom[peerID])
+	}
+}
+
+// Проигравший гонку double-resume не сиротеет: даже при заполненной
+// комнате его Join доходит до lifecycle и получает ErrPeerAlreadyInRoom
+// (→ Replace в resume-потоке), а не ErrRoomFull.
+func TestJoin_DuplicatePeerIDNotFullRejected(t *testing.T) {
+	t.Parallel()
+
+	logger := stdlib.New("test")
+	policy := &trackingReplacePolicy{}
+	room := adapterrealtime.NewRoom(context.Background(), domain.RoomID(35), policy, 1, nil, 0, logger)
+
+	if err := room.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { _ = room.Stop() })
+
+	const peerID = domain.PeerID(9)
+	first := testpeer.New(peerID, "first")
+	if err := room.Join(first); err != nil {
+		t.Fatalf("Join first: %v", err)
+	}
+
+	second := testpeer.New(peerID, "second")
+	if err := room.Join(second); !errors.Is(err, domain.ErrPeerAlreadyInRoom) {
+		t.Fatalf("Join second err = %v, want ErrPeerAlreadyInRoom", err)
+	}
+	// Новый peerID при полной комнате — по-прежнему ErrRoomFull.
+	if err := room.Join(testpeer.New(domain.PeerID(10), "other")); !errors.Is(err, domain.ErrRoomFull) {
+		t.Fatalf("Join other err = %v, want ErrRoomFull", err)
+	}
+}
+
 func TestJoinRollbackOnHandlerError(t *testing.T) {
 	t.Parallel()
 

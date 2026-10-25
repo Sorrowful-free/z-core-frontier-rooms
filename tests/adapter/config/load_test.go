@@ -149,8 +149,8 @@ func TestLoadFromEnv_SuccessDefaults(t *testing.T) {
 	if cfg.HTTPLimits.IssueTicketsPerMinute != httplimitsadapter.DefaultIssueTicketsPerMinute {
 		t.Fatalf("issue rate = %d", cfg.HTTPLimits.IssueTicketsPerMinute)
 	}
-	if cfg.Reservation.OrphanAdmittedTTL != reservationadapter.DefaultOrphanAdmittedTTL {
-		t.Fatalf("orphan admitted ttl = %v", cfg.Reservation.OrphanAdmittedTTL)
+	if cfg.Reservation.ReconnectTTL != reservationadapter.DefaultReconnectTTL {
+		t.Fatalf("reconnect ttl = %v", cfg.Reservation.ReconnectTTL)
 	}
 	if cfg.Reservation.OrphanSweepInterval != reservationadapter.DefaultOrphanSweepInterval {
 		t.Fatalf("orphan sweep interval = %v", cfg.Reservation.OrphanSweepInterval)

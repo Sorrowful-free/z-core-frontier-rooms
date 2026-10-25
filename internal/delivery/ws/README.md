@@ -6,14 +6,14 @@ WebSocket data plane на том же `*fiber.App`, что HTTP.
 
 `GET /ws?token=<base64url>`
 
-Ticket по-прежнему в query (контракт клиента). Строка **base64url** из `POST /rooms/:id/tickets` (без padding), URL-encoded в query. Сервер декодирует в сырые байты ticket v3 (v2 тоже принимается) перед `JoinRoomUseCase`. Access-лог Fiber (`fibzap`) пишет `path` без query, чтобы token не попадал в логи.
+Ticket по-прежнему в query (контракт клиента). Строка **base64url** из `POST /rooms/:id/tickets` (без padding), URL-encoded в query — join-тикет или `reconnect_token` (v4, P20) для resume под тем же peerID. Сервер декодирует в сырые байты перед `AdmitPeerUseCase`. Access-лог Fiber (`fibzap`) пишет `path` без query, чтобы token не попадал в логи.
 
 Клиентская спека: [docs/client-protocol/realtime.md](../../../docs/client-protocol/realtime.md) (обзор), [docs/client-protocol/enet.md](../../../docs/client-protocol/enet.md) (основной транспорт).
 
-1. Декодировать base64url из query → сырые байты ticket (v3/v2)
-2. `JoinRoomUseCase`
+1. Декодировать base64url из query → сырые байты ticket (v3/v2/v4)
+2. `AdmitPeerUseCase.Admit(..., HostIDAny)` — фасад валидирует token один раз и разводит join/resume по `claims.Kind` (P20)
 3. Цикл `connection.Receive` → `room.Deliver`
-4. При disconnect → `LeaveRoom`
+4. При disconnect → `DisconnectPeer` с `PeerSession` из admit (P20: `MarkDisconnected` → `Leave` → `Stop` → `OpPeerDisconnected`; grace-окно `RECONNECT_TTL`)
 
 Ошибка join: один кадр OpCode (`delivery/errors.SendJoinReject`) → close WS.
 
@@ -21,6 +21,6 @@ Ticket по-прежнему в query (контракт клиента). Стр�
 
 Каждый **успешно отправленный** reject-кадр считается метрикой `rooms_join_rejects_total{opcode}` (P19b: `SendJoinReject` возвращает ошибку send; `sendJoinReject` эмитит `JoinRejected(op)` только при nil, ошибка - Warn-лог).
 
-Idle peer'ы выводятся sweep'ом (`EvictIdlePeersUseCase`), когда соединение перестаёт подтверждать живость: входящие кадры и pong двигают `lastSeen`, `Send` — нет; мёртвый транспорт → `IsAlive() = false` → молчаливый `Close` через `LeaveRoom` (ADR 0001).
+Idle peer'ы выводятся sweep'ом (`EvictIdlePeersUseCase`), когда соединение перестаёт подтверждать живость: входящие кадры и pong двигают `lastSeen`, `Send` — нет; мёртвый транспорт → `IsAlive() = false` → `DisconnectPeer` (ADR 0001; P20 — zombie получает то же grace-окно, что и чистый разрыв).
 
 Импорт ошибок: `deliveryerrors ".../delivery/errors"`.

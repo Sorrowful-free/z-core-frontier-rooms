@@ -3,10 +3,8 @@ package room
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/admission"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/registry"
@@ -15,7 +13,6 @@ import (
 )
 
 type JoinRoomUseCase struct {
-	admission    admission.Admission
 	peerFactory  realtime.PeerFactory
 	roomRegistry registry.RoomRegistry
 	reservation  reservation.Reservation
@@ -23,14 +20,12 @@ type JoinRoomUseCase struct {
 }
 
 func NewJoinRoomUseCase(
-	admission admission.Admission,
 	peerFactory realtime.PeerFactory,
 	roomRegistry registry.RoomRegistry,
 	reservation reservation.Reservation,
 	logging logging.Logger,
 ) *JoinRoomUseCase {
 	return &JoinRoomUseCase{
-		admission:    admission,
 		peerFactory:  peerFactory,
 		roomRegistry: roomRegistry,
 		reservation:  reservation,
@@ -38,58 +33,32 @@ func NewJoinRoomUseCase(
 	}
 }
 
-func (uc *JoinRoomUseCase) JoinRoom(ctx context.Context, connection transport.Connection, token []byte) (RoomSummary, domain.PeerID, error) {
+// JoinRoom — join-поток за AdmitPeerUseCase (P20, T2): claims уже
+// провалидированы фасадом (HMAC на входе один раз — повторного нет).
+func (uc *JoinRoomUseCase) JoinRoom(ctx context.Context, connection transport.Connection, claims domain.Claims) (RoomSummary, PeerSession, error) {
 
 	if err := ctx.Err(); err != nil {
-		return EmptyRoomSummary, domain.PeerIDInvalid, err
-	}
-
-	claims, err := uc.admission.Validate(ctx, token)
-	if err != nil {
-		return EmptyRoomSummary, domain.PeerIDInvalid, err
+		return EmptyRoomSummary, PeerSession{}, err
 	}
 
 	room, err := uc.roomRegistry.GetRoom(ctx, claims.RoomID)
 	if err != nil {
-		return EmptyRoomSummary, domain.PeerIDInvalid, err
+		return EmptyRoomSummary, PeerSession{}, err
 	}
 
 	if err := uc.reservation.Admit(ctx, claims.RoomID, claims.PeerID); err != nil {
 		uc.logging.Error("join room: admit failed", "error", err, "roomID", claims.RoomID, "peerID", claims.PeerID)
-		return EmptyRoomSummary, domain.PeerIDInvalid, err
+		return EmptyRoomSummary, PeerSession{}, err
 	}
 
-	peer, err := uc.peerFactory.CreatePeer(room.Context(), claims.PeerID, claims.NickName, connection, room, uc.logging)
+	session, err := placePeer(uc.peerFactory, room, connection, claims.PeerID, claims.NickName, uc.logging, false)
 	if err != nil {
-		return EmptyRoomSummary, domain.PeerIDInvalid, uc.revokeJoinReservation(ctx, room, claims.RoomID, claims.PeerID, err)
-	}
-
-	if room.HasPeer(claims.PeerID) {
-		if err := room.Replace(peer); err != nil {
-			uc.logging.Error("join room: replace peer failed", "error", err, "peerID", claims.PeerID)
-			return EmptyRoomSummary, domain.PeerIDInvalid, uc.revokeJoinReservation(ctx, room, claims.RoomID, claims.PeerID, err)
-		}
-		uc.logging.Info("peer replaced", "peerID", claims.PeerID)
-	} else if err := room.Join(peer); err != nil {
-		uc.logging.Error("join room: join peer failed", "error", err, "peerID", claims.PeerID)
-		return EmptyRoomSummary, domain.PeerIDInvalid, uc.revokeJoinReservation(ctx, room, claims.RoomID, claims.PeerID, err)
-	}
-
-	if err := peer.Start(); err != nil {
-		if leaveErr := room.Leave(peer); leaveErr != nil {
-			uc.logging.Error("join room: rollback leave failed", "error", leaveErr, "peerID", claims.PeerID)
-		}
-		if stopErr := peer.Stop(); stopErr != nil {
-			uc.logging.Error("join room: rollback peer stop failed", "error", stopErr, "peerID", claims.PeerID)
-		}
-		startErr := fmt.Errorf("%w: %w", domain.ErrPeerStartFailed, err)
-		uc.logging.Error("join room: start peer failed", "error", startErr, "peerID", claims.PeerID)
-		return EmptyRoomSummary, domain.PeerIDInvalid, uc.revokeJoinReservation(ctx, room, claims.RoomID, claims.PeerID, startErr)
+		return EmptyRoomSummary, PeerSession{}, uc.revokeJoinReservation(ctx, room, claims.RoomID, claims.PeerID, err)
 	}
 
 	roomSummary := NewRoomSummaryFromRoom(room)
 	uc.logging.Info("join room: join room success", "roomID", claims.RoomID, "peerID", claims.PeerID)
-	return *roomSummary, claims.PeerID, nil
+	return *roomSummary, session, nil
 }
 
 // revokeJoinReservation откатывает слот после неудачного join.

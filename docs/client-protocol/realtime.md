@@ -51,6 +51,7 @@ hmac        32 bytes SHA-256 HMAC
 | `0x40`–`0x5F` | Join reject — [errors.md](errors.md) |
 | `0x60`–`0x6F` | In-room error (соединение живо) |
 | `0x70`–`0x7F` | Reservation reject (при join) |
+| `0x80`–`0x81` | Room notifications `OpPeerDisconnected`/`OpPeerReconnected` (payload `peerID u64 BE`) — [errors.md](errors.md#room-notifications-0x80-не-ошибки-p20) |
 
 **Лимит:** `TRANSPORT_MAX_INCOMING_FRAME_BYTES` (env, default 262144).
 
@@ -61,6 +62,21 @@ hmac        32 bytes SHA-256 HMAC
 3. `0x05`/`0x06` input — любой peer.
 4. `0x03`/`0x04` entities — только master.
 5. `0x07` RPC — relay по target.
+
+---
+
+## Reconnect (P20)
+
+Краткий разрыв транспорта **не** уничтожает идентичность: peer сразу исчезает из комнаты (остальные получают remove-патч и `0x80`), но слот reservation держит capacity и peerID в пределах grace-окна `RECONNECT_TTL` (серверный, default `30s`, от момента разрыва).
+
+1. `POST /rooms/:id/tickets` возвращает `reconnect_token` — сохранить до разрыва (без expiry у токена; живёт, пока жив admitted-слот).
+2. Разрыв → сервер рассылает `0x80` остальным.
+3. Повторный admit тем же транспортом: WS `?token=<reconnect_token>` или первый ENet-пакет — вместо join-тикета.
+4. Успех: peer возвращается под **тем же peerID** и тем же nick'ом (nick из слота — в токене его нет), получает `0x01` FullState как обычный join; остальным — `0x81` с `peerID u64 BE`.
+5. Просроченный grace или чужой/битый токен → join-reject (те же коды `0x41`/`0x43`/`0x46`/`0x73`).
+6. Новейшее соединение побеждает: reconnect при живом старом conn вытесняет его (Replace).
+
+**Token v4 (reconnect):** `version(1)=4 | roomID u64 | peerID u64 | hostID u16 | HMAC-SHA256(32)` — 51 байт, base64url как join-тикет; без nick и timestamps; `hostID` наследует привязку исходного тикета (strict binding ENet).
 
 ---
 

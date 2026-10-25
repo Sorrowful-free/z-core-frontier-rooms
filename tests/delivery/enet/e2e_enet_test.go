@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	admissionadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/admission"
 	adapterenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"
 	deliveryenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/enet"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
@@ -79,10 +78,9 @@ func (c *enetTestClient) waitEvent(t *testing.T, want libenet.EventType, timeout
 func newTestHandler(cfg adapterenet.EnetConfig) *deliveryenet.RoomsHandler {
 	return deliveryenet.NewRoomsHandler(
 		context.Background(),
-		nil, // joinRoomUseCase — e2e покрывает только пути до JoinRoom
-		nil, // leaveRoomUseCase
+		nil, // admitPeerUseCase — e2e покрывает только пути до admit
+		nil, // disconnectPeerUseCase
 		adapterenet.NewEnetConnectionFactory(nil, discardLogger{}),
-		admissionadapter.NewAdmission(admissionadapter.AdmissionConfig{Secret: []byte("test-secret"), TTL: time.Hour}),
 		cfg,
 		discardLogger{},
 		nil,

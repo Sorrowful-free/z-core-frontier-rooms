@@ -86,6 +86,18 @@ Reservation-ошибки на join мапятся в диапазон `0x70+` (�
 
 ---
 
+## Room notifications (`0x80`+) — не ошибки (P20)
+
+Рассылаются сервером остальным peer'ам комнаты; соединение живо.
+Payload: **`peerID u64` big-endian** (8 байт).
+
+| OpCode | Hex | Смысл | Действие клиента |
+|--------|-----|-------|------------------|
+| `OpPeerDisconnected` | `0x80` | Peer ушёл в reconnect grace (может вернуться под тем же peerID) | Отметить peer как disconnected; state-запись уже удалена (remove-патч шёл раньше по тому же соединению) |
+| `OpPeerReconnected` | `0x81` | Peer воскрес под тем же peerID | Отметить peer как live; add-патч/full-state уже был |
+
+Возобновлённый peer **не получает** `0x81` о себе (exclude), но получает `0x01` FullState как обычный join.
+
 ## HTTP vs wire
 
 Ошибки **до** join (issue ticket) — JSON на HTTP (`room_not_found`, `ticket_slot_held`, …) — [http.md](http.md).

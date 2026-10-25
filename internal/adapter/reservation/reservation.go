@@ -21,10 +21,13 @@ const (
 )
 
 type peerSlot struct {
-	peerID     domain.PeerID
-	nickName   string
-	state      reservationState
-	expiresAt  time.Time
+	peerID    domain.PeerID
+	nickName  string
+	state     reservationState
+	expiresAt time.Time
+	// admittedAt переиспользован как lastSeen (P20): refresh на
+	// MarkDisconnected и Reconnect, от него orphan sweep отсчитывает
+	// RECONNECT_TTL grace-окно.
 	admittedAt time.Time
 }
 
@@ -247,6 +250,64 @@ func (r *Reservation) Admit(ctx context.Context, roomID domain.RoomID, peerID do
 	return nil
 }
 
+// touchAdmitted — общая атомарная часть MarkDisconnected/Reconnect (P20):
+// под room.mu admitted-слот проверяется и admittedAt обновляется до now
+// (свежий lastSeen — sweep не тронет слот ни во время grace-mark, ни во
+// время resume; гонка sweep-revoke ↔ resume закрыта). Слота нет или он
+// не admitted → ErrReservationNotReserved. Возвращает слот после refresh.
+func (r *Reservation) touchAdmitted(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) (peerSlot, error) {
+	if err := ctx.Err(); err != nil {
+		return peerSlot{}, err
+	}
+
+	room, err := r.lookupRoom(roomID)
+	if err != nil {
+		return peerSlot{}, err
+	}
+
+	room.mu.Lock()
+	defer room.mu.Unlock()
+
+	if err := room.checkLive(roomID); err != nil {
+		return peerSlot{}, err
+	}
+
+	peer, ok := room.peers[peerID]
+	if !ok || peer.state != reservationStateAdmitted {
+		return peerSlot{}, reservationErrPeer(domain.ErrReservationNotReserved, roomID, peerID)
+	}
+
+	peer.admittedAt = time.Now()
+	room.peers[peerID] = peer
+	return peer, nil
+}
+
+// MarkDisconnected — начало reconnect grace (P20): слот остаётся admitted
+// и удерживает capacity, admittedAt обновляется до момента разрыва
+// (lastSeen — от него orphan sweep отсчитывает RECONNECT_TTL).
+func (r *Reservation) MarkDisconnected(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) error {
+	if _, err := r.touchAdmitted(ctx, roomID, peerID); err != nil {
+		return err
+	}
+	r.metrics.PeerDisconnected()
+	return nil
+}
+
+// Reconnect — атомарный resume admitted-слота (P20): admittedAt
+// обновляется (свежий lastSeen) и слот с NickName возвращается — nick
+// для resume живёт только здесь (в токене v4 его нет, T4).
+func (r *Reservation) Reconnect(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) (domain.AdmittedSlot, error) {
+	slot, err := r.touchAdmitted(ctx, roomID, peerID)
+	if err != nil {
+		return domain.AdmittedSlot{}, err
+	}
+	return domain.AdmittedSlot{
+		PeerID:     peerID,
+		NickName:   slot.nickName,
+		AdmittedAt: slot.admittedAt,
+	}, nil
+}
+
 func (r *Reservation) State(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) (domain.ReservationSlot, error) {
 	if err := ctx.Err(); err != nil {
 		return domain.ReservationSlotNone, err
@@ -303,6 +364,7 @@ func (r *Reservation) ListAdmittedPeers(ctx context.Context, roomID domain.RoomI
 		}
 		slots = append(slots, domain.AdmittedSlot{
 			PeerID:     peerID,
+			NickName:   peer.nickName,
 			AdmittedAt: peer.admittedAt,
 		})
 	}

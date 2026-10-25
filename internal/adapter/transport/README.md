@@ -24,10 +24,10 @@
 
 ## Idle eviction (ADR 0001)
 
-`Connection.IsAlive()` — контракт живости: `false` → peer подлежит idle eviction (`EvictIdlePeersUseCase` выводит через `LeaveRoom`, молчаливый `Close`).
+`Connection.IsAlive()` — контракт живости: `false` → peer подлежит idle eviction (`EvictIdlePeersUseCase` выводит через `DisconnectPeer`, молчаливый `Close`).
 
 - **WS**: `lastSeen` (UnixNano, atomic) обновляется на успешный входящий кадр и на pong; `Send` не считается. `IsAlive() = false`, если `closed` или `lastSeen` старше `PeerIdleTimeout`. `PeerIdleTimeout == 0` — только `closed` (отрицательные отклоняет `Validate`).
-- **ENet**: атомарный флаг, сбрасываемый на `Close()`. Zombie вычищает собственный таймаут ENet (`EventDisconnect` → `LeaveRoom`); флаг — для единого контракта.
+- **ENet**: атомарный флаг, сбрасываемый на `Close()`. Zombie вычищает собственный таймаут ENet (`EventDisconnect` → `DisconnectPeer`); флаг — для единого контракта.
 
 ## Wire
 
@@ -47,8 +47,8 @@ ENet: проверка в `delivery/enet` до admit и в `frameFromPacket`.
 
 C API libenet не thread-safe; host, его peers и packets трогает только goroutine `HostLoop` (`enet/hostloop_cgo.go`, P15) - executor, разбирающий FIFO-очередь команд. `NewHostLoop` создаёт host внутри себя: владельцы (server `delivery/enet` run, тестовые клиенты) гоняют работу blocking-командами `Call[T](loop, fn)`/`loop.Do(fn)` - включая `host.Service` как команду (клиентский pump двигает свой service сам); `EnetConnection` шлёт `Send`/`Close` async через `loop.enqueue`, `Ping` - blocking `Call`. Глобальной сериализации нет - конкурируют только submit'ы одного host'а, худший latency send по-прежнему ~`ServiceTimeoutMs`, зато конвой между host'ами ушёл.
 
-Инвариант живучести: executor исполняет только ограниченные по времени libenet-вызовы и никогда не ждёт доменных горутин - blocking `Call`/`Do` поэтому deadlock'нуться не может. Доменная работа, способная блокироваться (admit → `JoinRoom` → `dispatchLifecycle` → ожидание room-горутины), выполняется вне команд loop'а (delivery dispatch идёт на run-горутине); иначе `Ping` из room-контекста замкнул бы cross-deadlock executor↔room. `Event`-аксессоры читают Go-копию события - confinement'а не требуют. `loop.Stop()` закрывает приём blocking-команд → drain очереди → `host.Destroy`; submit'ы после stop получают `ErrHostLoopStopped`, ожидающие caller'ы разблокируются исполнением или ошибкой.
+Инвариант живучести: executor исполняет только ограниченные по времени libenet-вызовы и никогда не ждёт доменных горутин - blocking `Call`/`Do` поэтому deadlock'нуться не может. Доменная работа, способная блокироваться (admit/teardown → `AdmitPeer`/`DisconnectPeer` → `dispatchLifecycle` → ожидание room-горутины), выполняется вне команд loop'а (delivery dispatch идёт на run-горутине); иначе `Ping` из room-контекста замкнул бы cross-deadlock executor↔room. `Event`-аксессоры читают Go-копию события - confinement'а не требуют. `loop.Stop()` закрывает приём blocking-команд → drain очереди → `host.Destroy`; submit'ы после stop получают `ErrHostLoopStopped`, ожидающие caller'ы разблокируются исполнением или ошибкой.
 
 `EnetConnection.Close` кладёт graceful `DisconnectLater` в очередь loop'а (FIFO сохраняет wire-порядок queued пакетов до разрыва); `Send`/`Ping` после `Close` - `io.EOF`/`-1` по `alive`-флагу.
 
-**go-enet quirk:** `peer.SendBytes`/`SendPacket` игнорируют код возврата `enet_peer_send` — `Send` в disconnecting/zombie peer молча возвращает nil. Разрыв всплывёт позже как `EventDisconnect` → `LeaveRoom`; `alive`-флаг отсекает только явно закрытые conn.
+**go-enet quirk:** `peer.SendBytes`/`SendPacket` игнорируют код возврата `enet_peer_send` — `Send` в disconnecting/zombie peer молча возвращает nil. Разрыв всплывёт позже как `EventDisconnect` → `DisconnectPeer`; `alive`-флаг отсекает только явно закрытые conn.

@@ -100,7 +100,10 @@ func run() error {
 	}
 
 	leaveRoomUseCase := room.NewLeaveRoomUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "leave room use case"))
-	joinRoomUseCase := room.NewJoinRoomUseCase(admission, peerFactory, roomRegistry, reservation, zaplog.NewFrom(z, "join room use case"))
+	disconnectPeerUseCase := room.NewDisconnectPeerUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "disconnect peer use case"))
+	joinRoomUseCase := room.NewJoinRoomUseCase(peerFactory, roomRegistry, reservation, zaplog.NewFrom(z, "join room use case"))
+	reconnectRoomUseCase := room.NewReconnectRoomUseCase(peerFactory, roomRegistry, reservation, zaplog.NewFrom(z, "reconnect room use case"), m)
+	admitPeerUseCase := room.NewAdmitPeerUseCase(admission, joinRoomUseCase, reconnectRoomUseCase, zaplog.NewFrom(z, "admit peer use case"))
 
 	// cfg.Enet уже провалидирован в LoadFromEnv; после копирования transport-лимитов - повторная Validate.
 	enetCfg := cfg.Enet
@@ -113,10 +116,9 @@ func run() error {
 	// ticket'ов по живым peer'ам host'ов (least-loaded) живёт внутри него.
 	enetHandler := deliveryenet.NewRoomsHandler(
 		appCtx,
-		joinRoomUseCase,
-		leaveRoomUseCase,
+		admitPeerUseCase,
+		disconnectPeerUseCase,
 		enetConnectionFactory,
-		admission,
 		enetCfg,
 		zaplog.NewFrom(z, "enet rooms handler"),
 		m,
@@ -129,7 +131,7 @@ func run() error {
 	sweepOrphanAdmittedUseCase := room.NewSweepOrphanAdmittedUseCase(
 		roomRegistry,
 		reservation,
-		cfg.Reservation.OrphanAdmittedTTL,
+		cfg.Reservation.ReconnectTTL,
 		zaplog.NewFrom(z, "orphan admitted sweep"),
 		m,
 	)
@@ -137,7 +139,7 @@ func run() error {
 
 	var idleSweep *room.SweepHandle
 	if cfg.Transport.PeerIdleTimeout > 0 {
-		evictIdlePeersUseCase := room.NewEvictIdlePeersUseCase(roomRegistry, leaveRoomUseCase, zaplog.NewFrom(z, "idle peer sweep"), m)
+		evictIdlePeersUseCase := room.NewEvictIdlePeersUseCase(roomRegistry, disconnectPeerUseCase, zaplog.NewFrom(z, "idle peer sweep"), m)
 		idleSweep = room.StartIdlePeerSweep(appCtx, evictIdlePeersUseCase, cfg.Transport.PeerIdleSweepInterval, zaplog.NewFrom(z, "idle peer sweep"))
 	}
 
@@ -148,7 +150,7 @@ func run() error {
 	roomsHandler := http.NewRoomsHandler(createUseCase, issueTicketUseCase, deleteUseCase, getListUseCase, zaplog.NewFrom(z, "rooms handler"))
 	roomsHandler.RegisterRoutes(fiberApp, cfg.HTTPAuth, httpLimits)
 
-	wsHandler := deliveryws.NewRoomsHandler(appCtx, joinRoomUseCase, leaveRoomUseCase, wsConnectionFactory, cfg.Transport, zaplog.NewFrom(z, "ws rooms handler"), m)
+	wsHandler := deliveryws.NewRoomsHandler(appCtx, admitPeerUseCase, disconnectPeerUseCase, wsConnectionFactory, cfg.Transport, zaplog.NewFrom(z, "ws rooms handler"), m)
 	wsHandler.RegisterRoutes(fiberApp)
 
 	enetHandle := enetHandler.Listen()
