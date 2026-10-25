@@ -28,6 +28,14 @@ _Avoid_: shard index, node, listener id
 Слот reservation в состоянии `admitted`, для которого в комнате нет живого peer'а (клиент получил ticket и зашёл, но peer ушёл/умер без revoke). Вычищается фоновым `SweepOrphanAdmittedUseCase` после `OrphanAdmittedTTL` или точечным revoke+reserve в `IssueTicket` при повторном issue того же peer'а.
 _Avoid_: stale slot, dangling slot, orphan reservation
 
+**Grace window** (окно реконнекта):
+Период после разрыва транспорта, в течение которого peerID можно воскресить reconnect-токеном. Peer при этом удаляется из комнаты сразу (delete-peer модель, P20): grace живёт на admitted-слоте reservation — слот держит capacity и отсчитывает `disconnectedAt + RECONNECT_TTL`; по истечении sweep делает Revoke.
+_Avoid_: reconnect TTL от issue тикета, suspended peer, offline peer
+
+**Reconnect token**:
+HMAC-credential (ticket v4) для resume под тем же peerID: `ver | roomID | peerID | hostID | MAC` — без nickName и expiry, grace — серверное состояние на слоте. Отличен от join-тикета по версии/типу в claims; одноразовый входной тикет и reconnect-credential — разные сущности.
+_Avoid_: resume ticket (это термин про peerID в v3), session token
+
 **Ghost input**:
 Входной кадр (input/RPC/state) от peer'а, которого уже нет в комнате (zombie или удалённый без вычистки из state). Policy отклоняет такие кадры проверкой членства (`ErrPeerNotFound`), иначе state получал бы записи от несуществующего peer'а.
 _Avoid_: phantom input, stale input
