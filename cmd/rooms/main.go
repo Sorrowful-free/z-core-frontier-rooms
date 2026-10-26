@@ -102,7 +102,7 @@ func run() error {
 	leaveRoomUseCase := room.NewLeaveRoomUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "leave room use case"))
 	disconnectPeerUseCase := room.NewDisconnectPeerUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "disconnect peer use case"))
 	joinRoomUseCase := room.NewJoinRoomUseCase(peerFactory, roomRegistry, reservation, zaplog.NewFrom(z, "join room use case"))
-	reconnectRoomUseCase := room.NewReconnectRoomUseCase(peerFactory, roomRegistry, reservation, zaplog.NewFrom(z, "reconnect room use case"), m)
+	reconnectRoomUseCase := room.NewReconnectRoomUseCase(peerFactory, roomRegistry, reservation, cfg.Reservation.ReconnectTTL, zaplog.NewFrom(z, "reconnect room use case"), m)
 	admitPeerUseCase := room.NewAdmitPeerUseCase(admission, joinRoomUseCase, reconnectRoomUseCase, zaplog.NewFrom(z, "admit peer use case"))
 
 	// cfg.Enet уже провалидирован в LoadFromEnv; после копирования transport-лимитов - повторная Validate.

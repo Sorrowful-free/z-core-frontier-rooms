@@ -70,7 +70,7 @@ func (uc *SweepOrphanAdmittedUseCase) RunOnce(ctx context.Context) (int, error) 
 			if room.HasPeer(slot.PeerID) {
 				continue
 			}
-			if uc.reconnectTTL > 0 && now.Before(slot.AdmittedAt.Add(uc.reconnectTTL)) {
+			if !graceExpired(slot.AdmittedAt, uc.reconnectTTL, now) {
 				continue
 			}
 

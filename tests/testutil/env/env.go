@@ -179,7 +179,7 @@ func New(t *testing.T, opts ...Option) *Env {
 	deleteUC := useroom.NewDeleteUseCase(registry, reservation, leaveUC, logger)
 	getListUC := useroom.NewGetListUseCase(registry, logger)
 	joinUC := useroom.NewJoinRoomUseCase(peerFactory, registry, reservation, logger)
-	reconnectUC := useroom.NewReconnectRoomUseCase(peerFactory, registry, reservation, logger, m)
+	reconnectUC := useroom.NewReconnectRoomUseCase(peerFactory, registry, reservation, adapterreservation.DefaultReconnectTTL, logger, m)
 	admitUC := useroom.NewAdmitPeerUseCase(admission, joinUC, reconnectUC, logger)
 
 	var enetHandler *deliveryenet.RoomsHandler

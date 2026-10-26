@@ -12,7 +12,7 @@
 | `issue_ticket.go` | Control | `ValidateNickName` → AssignHost (ENet sharding) → Reserve → Issue + IssueReconnect → snapshot комнаты (`RoomSummary`) + `EnetPort` + reconnect-токен |
 | `admit_peer.go` | Data | Фасад (P20): Validate один раз → claims.Kind → join или resume; ENet strict binding (enetHostID) |
 | `join_room.go` | Data | Admit → CreatePeer(nick) → Join/Replace → Start → `PeerSession` |
-| `reconnect_room.go` | Data | Resume (P20): `reservation.Reconnect` → CreatePeer(nick из слота) → Join/Replace → Start → `OpPeerReconnected` |
+| `reconnect_room.go` | Data | Resume (P20/P24): `reservation.SlotDetails` → deadline-гейт (`ErrReservationExpired`) → `reservation.Reconnect` → CreatePeer(nick из слота) → Join/Replace → Start → `OpPeerReconnected` |
 | `disconnect_peer.go` | Data | Разрыв в grace (P20): `GetPeer` identity-check → `MarkDisconnected` → Leave → Stop → `OpPeerDisconnected` |
 | `leave_room.go` | Data | Leave → Stop → Revoke (явный leave / rollback) |
 | `peer_session.go` | Data | `PeerSession{RoomID, PeerID, Peer}` — session-handle до teardown (P20) |
@@ -58,15 +58,19 @@ GetRoom → Admit → CreatePeer(..., claims.NickName)
 Откат: при ошибке до успешного join в room — `Revoke` (кроме failed Replace: старый peer остаётся).  
 При `Start` failure — `Leave`, `Stop`, `Revoke`.
 
-## ReconnectRoom (P20)
+## ReconnectRoom (P20, дедлайн P24)
 
 ```text
-GetRoom → reservation.Reconnect (атомарно: admitted + refresh lastSeen + слот с NickName)
+GetRoom → reservation.SlotDetails (read-only lastSeen, без refresh'а)
+→ deadline-гейт: !HasPeer && lastSeen + reconnectTTL < now → ErrReservationExpired (0x74)
+→ reservation.Reconnect (атомарно: admitted + refresh lastSeen + слот с NickName)
 → CreatePeer(..., slot.NickName) → HasPeer ? Replace : Join → Start
 → room.Send(OpPeerReconnected{peerID}) остальным → PeerSession
 ```
 
-`reservation.Admit` не вызывается; при любом фейле слот не ревокается (peer в grace). Reject-маппинг — существующие коды (`OpPeerNotFound` / `OpReservationNotReserved` / `OpInvalidToken`).
+`reservation.Admit` не вызывается; при любом фейле слот не ревокается (peer в grace). Reject-маппинг — существующие коды (`OpPeerNotFound` / `OpReservationNotReserved` / `OpReservationExpired` / `OpInvalidToken`).
+
+Дедлайн-гейт идёт **до** `Reconnect` (P24): rejected попытка не трогает lastSeen и не продлевает grace — без гейта resume после `lastSeen + RECONNECT_TTL` был бы успешен до прохода sweep (при `ORPHAN_SWEEP_INTERVAL=0` — бессмертно). Живой peer (`HasPeer`) гейтом не затрагивается — `admittedAt` давно подключённого peer'а старый законно, newest-wins Replace доступен и при `reconnectTTL <= 0` (ноль-семантизм sweep: TTL=0 запрещает воскрешение, не перехват соединения). `reconnectTTL` — из `ReservationConfig.ReconnectTTL` (cmd/rooms).
 
 Гонка double-resume одного токена: `Join` возвращает `ErrPeerAlreadyInRoom` (lifecycle отклоняет занятый peerID) → дожим `Replace` — newest-wins (Q10), вытесненный объект останавливается `old.Stop()` внутри `Replace`.
 

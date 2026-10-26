@@ -524,3 +524,78 @@ func TestReconnect_Rejected(t *testing.T) {
 		t.Fatalf("reconnect bad room err = %v, want ErrReservationNotFound", err)
 	}
 }
+
+// P24: SlotDetails — read-only просмотр admitted-слота: возвращает слот
+// с NickName и НЕ освежает admittedAt (честный lastSeen для deadline-гейта
+// resume — отклонённая попытка не продлевает grace).
+func TestSlotDetails_ReadsAdmittedWithoutRefresh(t *testing.T) {
+	t.Parallel()
+
+	const (
+		roomID = domain.RoomID(24)
+		peerID = domain.PeerID(240)
+	)
+	ctx := context.Background()
+	res := newTestReservation()
+
+	if err := res.RegisterRoom(ctx, roomID, 1, ""); err != nil {
+		t.Fatalf("RegisterRoom: %v", err)
+	}
+	if err := res.Reserve(ctx, roomID, peerID, testNick(peerID), time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("Reserve: %v", err)
+	}
+	if err := res.Admit(ctx, roomID, peerID); err != nil {
+		t.Fatalf("Admit: %v", err)
+	}
+	if err := res.MarkDisconnected(ctx, roomID, peerID); err != nil {
+		t.Fatalf("MarkDisconnected: %v", err)
+	}
+
+	first, err := res.SlotDetails(ctx, roomID, peerID)
+	if err != nil {
+		t.Fatalf("SlotDetails: %v", err)
+	}
+	if first.PeerID != peerID || first.NickName != testNick(peerID) {
+		t.Fatalf("slot = %+v", first)
+	}
+	if first.AdmittedAt.IsZero() {
+		t.Fatal("admittedAt is zero")
+	}
+
+	second, err := res.SlotDetails(ctx, roomID, peerID)
+	if err != nil {
+		t.Fatalf("SlotDetails second: %v", err)
+	}
+	// Read-only: повторное чтение не двигает lastSeen (в отличие от Reconnect,
+	// который вернул бы освежённый admittedAt).
+	if !second.AdmittedAt.Equal(first.AdmittedAt) {
+		t.Fatalf("admittedAt refreshed: %v -> %v", first.AdmittedAt, second.AdmittedAt)
+	}
+}
+
+func TestSlotDetails_Rejected(t *testing.T) {
+	t.Parallel()
+
+	const roomID = domain.RoomID(25)
+	ctx := context.Background()
+	res := newTestReservation()
+
+	if err := res.RegisterRoom(ctx, roomID, 2, ""); err != nil {
+		t.Fatalf("RegisterRoom: %v", err)
+	}
+	// Слота нет.
+	if _, err := res.SlotDetails(ctx, roomID, domain.PeerID(1)); !errors.Is(err, domain.ErrReservationNotReserved) {
+		t.Fatalf("slot details missing err = %v, want ErrReservationNotReserved", err)
+	}
+	// Слот reserved (ещё не admit).
+	if err := res.Reserve(ctx, roomID, domain.PeerID(1), "p1", time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("Reserve: %v", err)
+	}
+	if _, err := res.SlotDetails(ctx, roomID, domain.PeerID(1)); !errors.Is(err, domain.ErrReservationNotReserved) {
+		t.Fatalf("slot details reserved err = %v, want ErrReservationNotReserved", err)
+	}
+	// Комната не зарегистрирована.
+	if _, err := res.SlotDetails(ctx, domain.RoomID(99), domain.PeerID(1)); !errors.Is(err, domain.ErrReservationNotFound) {
+		t.Fatalf("slot details bad room err = %v, want ErrReservationNotFound", err)
+	}
+}

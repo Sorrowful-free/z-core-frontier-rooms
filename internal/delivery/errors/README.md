@@ -56,6 +56,8 @@
 | `OpWrongHost` | `0x77` | `ErrWrongHost` (strict binding admit, P18) |
 | `OpReservationInternal` | `0x7F` | `ErrReservationInternal` |
 
+`OpReservationExpired` (`0x74`) на resume — истёкший grace-дедлайн `lastSeen + RECONNECT_TTL` (P24, гейт в `ReconnectRoomUseCase` до refresh'а); на join — просроченный `reserved`-слот в `Admit`.
+
 ## Room notifications (`0x80+`, P20)
 
 Не ошибки и **не через этот пакет**: `OpPeerDisconnected` (`0x80`), `OpPeerReconnected` (`0x81`) рассылают use case'ы (`DisconnectPeer`/`ReconnectRoom`) напрямую через `room.Send` после leave/join — FIFO outbound держит порядок «state-патч → opcode». Payload: `peerID u64 BE` (`domain.NewPeerNotificationFrame`). См. [docs/client-protocol/errors.md](../../../docs/client-protocol/errors.md).

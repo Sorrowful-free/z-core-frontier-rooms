@@ -272,9 +272,9 @@ func (r *Reservation) touchAdmitted(ctx context.Context, roomID domain.RoomID, p
 		return peerSlot{}, err
 	}
 
-	peer, ok := room.peers[peerID]
-	if !ok || peer.state != reservationStateAdmitted {
-		return peerSlot{}, reservationErrPeer(domain.ErrReservationNotReserved, roomID, peerID)
+	peer, err := room.admittedSlotLocked(roomID, peerID)
+	if err != nil {
+		return peerSlot{}, err
 	}
 
 	peer.admittedAt = time.Now()
@@ -305,6 +305,39 @@ func (r *Reservation) Reconnect(ctx context.Context, roomID domain.RoomID, peerI
 		PeerID:     peerID,
 		NickName:   slot.nickName,
 		AdmittedAt: slot.admittedAt,
+	}, nil
+}
+
+// SlotDetails — read-only просмотр admitted-слота (P24): тот же
+// сериализованный путь, что у touchAdmitted, но БЕЗ refresh'а
+// admittedAt — возвращает честный lastSeen для deadline-гейта resume
+// (отклонённая попытка не продлевает grace).
+func (r *Reservation) SlotDetails(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) (domain.AdmittedSlot, error) {
+	if err := ctx.Err(); err != nil {
+		return domain.AdmittedSlot{}, err
+	}
+
+	room, err := r.lookupRoom(roomID)
+	if err != nil {
+		return domain.AdmittedSlot{}, err
+	}
+
+	room.mu.Lock()
+	defer room.mu.Unlock()
+
+	if err := room.checkLive(roomID); err != nil {
+		return domain.AdmittedSlot{}, err
+	}
+
+	peer, err := room.admittedSlotLocked(roomID, peerID)
+	if err != nil {
+		return domain.AdmittedSlot{}, err
+	}
+
+	return domain.AdmittedSlot{
+		PeerID:     peerID,
+		NickName:   peer.nickName,
+		AdmittedAt: peer.admittedAt,
 	}, nil
 }
 
@@ -396,6 +429,16 @@ func (r *Reservation) Revoke(ctx context.Context, roomID domain.RoomID, peerID d
 	r.metrics.ReservationRevoked()
 	r.metrics.ReservationActiveSlots(-1)
 	return nil
+}
+
+// admittedSlotLocked — общая неизменяющая проверка admitted-слота
+// (touchAdmitted и SlotDetails, P24). Вызывать под room.mu.
+func (room *reservationRoom) admittedSlotLocked(roomID domain.RoomID, peerID domain.PeerID) (peerSlot, error) {
+	peer, ok := room.peers[peerID]
+	if !ok || peer.state != reservationStateAdmitted {
+		return peerSlot{}, reservationErrPeer(domain.ErrReservationNotReserved, roomID, peerID)
+	}
+	return peer, nil
 }
 
 // checkLive отклоняет операции над tombstone-комнатой (после UnregisterRoom).

@@ -34,7 +34,7 @@ func newAdmitUseCase(
 	logger *mocks.MockLogger,
 ) *useroom.AdmitPeerUseCase {
 	joinUC := useroom.NewJoinRoomUseCase(peerFactory, registry, reservation, logger)
-	reconnectUC := useroom.NewReconnectRoomUseCase(peerFactory, registry, reservation, logger, nil)
+	reconnectUC := useroom.NewReconnectRoomUseCase(peerFactory, registry, reservation, testReconnectTTL, logger, nil)
 	return useroom.NewAdmitPeerUseCase(admission, joinUC, reconnectUC, logger)
 }
 
@@ -142,11 +142,14 @@ func TestAdmitPeer_RoutesReconnectByKind(t *testing.T) {
 	admission.EXPECT().Validate(gomock.Any(), gomock.Any()).Return(claims, nil)
 	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
 	reservation.EXPECT().
+		SlotDetails(gomock.Any(), roomID, peerID).
+		Return(freshAdmittedSlot(peerID, "player"), nil)
+	reservation.EXPECT().
 		Reconnect(gomock.Any(), roomID, peerID).
 		Return(domain.AdmittedSlot{PeerID: peerID, NickName: "player"}, nil)
 	room.EXPECT().Context().Return(context.Background()).AnyTimes()
 	peerFactory.EXPECT().CreatePeer(gomock.Any(), peerID, "player", conn, room, logger).Return(peer, nil)
-	room.EXPECT().HasPeer(peerID).Return(false)
+	room.EXPECT().HasPeer(peerID).Return(false).Times(2)
 	room.EXPECT().Join(peer).Return(nil)
 	peer.EXPECT().Start().Return(nil)
 	room.EXPECT().Send(gomock.Any()).Return(nil)
