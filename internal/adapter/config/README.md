@@ -59,12 +59,12 @@
 
 | Переменная | Обязательна | Default | Описание |
 |------------|-------------|---------|----------|
-| `RECONNECT_TTL` | нет | `30s` | Grace admitted-слота от lastSeen (разрыв/resume) до revoke; `0` — сразу при sweep |
+| `RESERVATION_RECONNECT_TTL` | нет | `30s` | Grace admitted-слота от lastSeen (разрыв/resume) до revoke; `0` — сразу при sweep |
 | `RESERVATION_ORPHAN_SWEEP_INTERVAL` | нет | `10s` | Период фонового sweep; `0` — отключить |
 
 Валидация — `reservation.ReservationConfig.Validate()`.
 
-**Миграция (P20):** `RESERVATION_ORPHAN_ADMITTED_TTL` больше не читается — единый TTL слота это `RECONNECT_TTL` (`ReservationConfig.ReconnectTTL`) от `admittedAt`(lastSeen): disconnect (`MarkDisconnected`) и resume (`Reconnect`) обновляют один timestamp, роли TTL сливаются. Заданный `RESERVATION_ORPHAN_ADMITTED_TTL` молча ни на что не влияет — перенесите значение в `RECONNECT_TTL`.
+**Миграция (P20):** `RESERVATION_ORPHAN_ADMITTED_TTL` больше не читается — единый TTL слота это `RESERVATION_RECONNECT_TTL` (`ReservationConfig.ReconnectTTL`; до P25 — `RECONNECT_TTL`) от `lastSeen` admitted-слота: disconnect (`MarkDisconnected`) и resume (`Reconnect`) обновляют один timestamp, роли TTL сливаются. Заданный `RESERVATION_ORPHAN_ADMITTED_TTL` молча ни на что не влияет — перенесите значение в `RESERVATION_RECONNECT_TTL`.
 
 ## Env (enet listener)
 

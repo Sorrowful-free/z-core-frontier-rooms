@@ -15,7 +15,7 @@ import (
 // peer изымается из комнаты обычным leave-путём (state-запись чистится,
 // election мгновенный, remove-патч уходит остальным), но слот reservation
 // не ревокается — MarkDisconnected ставит lastSeen, от которого sweep
-// отсчитывает RECONNECT_TTL grace-окна; остальным рассылается
+// отсчитывает RESERVATION_RECONNECT_TTL grace-окна; остальным рассылается
 // OpPeerDisconnected. Все disconnect-триггеры (WS waiter, ENet
 // EventDisconnect/bad-frame, idle sweep) идут сюда; LeaveRoomUseCase
 // остаётся для явных leave и rollback'ов.
@@ -76,6 +76,10 @@ func (uc *DisconnectPeerUseCase) DisconnectPeer(ctx context.Context, session Pee
 	// +2, lastSeen освежается дважды). Broadcast при этом остаётся
 	// одиночным: проигравший room.Leave получает ErrPeerNotFound и выходит
 	// раньше рассылки. Принято как benign-шум, дедупликация не добавляется.
+	// Stale-mark — гонка того же класса: mark стоит между identity pre-check
+	// и авторитетным Leave, поэтому при вытеснении peer'а Replace'ом в этом
+	// окне метка ложится на слот уже нового peer'а (метрика +1, lastSeen
+	// освежается), а Leave затем отвечает ErrPeerStale.
 	if err := uc.reservation.MarkDisconnected(ctx, session.RoomID, session.PeerID); err != nil {
 		uc.logging.Error("disconnect peer: mark disconnected failed", "error", err, "roomID", session.RoomID, "peerID", session.PeerID)
 	}

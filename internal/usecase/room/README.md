@@ -70,7 +70,7 @@ GetRoom → reservation.SlotDetails (read-only lastSeen, без refresh'а)
 
 `reservation.Admit` не вызывается; при любом фейле слот не ревокается (peer в grace). Reject-маппинг — существующие коды (`OpPeerNotFound` / `OpReservationNotReserved` / `OpReservationExpired` / `OpInvalidToken`).
 
-Дедлайн-гейт идёт **до** `Reconnect` (P24): rejected попытка не трогает lastSeen и не продлевает grace — без гейта resume после `lastSeen + RECONNECT_TTL` был бы успешен до прохода sweep (при `ORPHAN_SWEEP_INTERVAL=0` — бессмертно). Живой peer (`HasPeer`) гейтом не затрагивается — `admittedAt` давно подключённого peer'а старый законно, newest-wins Replace доступен и при `reconnectTTL <= 0` (ноль-семантизм sweep: TTL=0 запрещает воскрешение, не перехват соединения). `reconnectTTL` — из `ReservationConfig.ReconnectTTL` (cmd/rooms).
+Дедлайн-гейт идёт **до** `Reconnect` (P24): rejected попытка не трогает lastSeen и не продлевает grace — без гейта resume после `lastSeen + RESERVATION_RECONNECT_TTL` был бы успешен до прохода sweep (при `ORPHAN_SWEEP_INTERVAL=0` — бессмертно). Живой peer (`HasPeer`) гейтом не затрагивается — `lastSeen` давно подключённого peer'а старый законно, newest-wins Replace доступен и при `reconnectTTL <= 0` (ноль-семантизм sweep: TTL=0 запрещает воскрешение, не перехват соединения). `reconnectTTL` — из `ReservationConfig.ReconnectTTL` (cmd/rooms).
 
 Гонка double-resume одного токена: `Join` возвращает `ErrPeerAlreadyInRoom` (lifecycle отклоняет занятый peerID) → дожим `Replace` — newest-wins (Q10), вытесненный объект останавливается `old.Stop()` внутри `Replace`.
 

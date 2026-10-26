@@ -20,6 +20,8 @@ alwaysApply: false
 
 Домен: `opcodes.go`, `join_errors.go`, `reservation_error.go`, `room_errors.go` (`InRoomErrorOpCode`).
 
+`ErrPeerStale` — internal-only sentinel (identity-scoped lifecycle реестра, P20): wire-opcode нет и не добавляется — до reject-кадра недостижим (мапился бы в `OpInternal`).
+
 ## Чеклист join (`0x40–0x5F`)
 
 - [x] `join_errors.go` + `opcodes.go`

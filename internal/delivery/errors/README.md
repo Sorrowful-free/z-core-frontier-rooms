@@ -56,7 +56,9 @@
 | `OpWrongHost` | `0x77` | `ErrWrongHost` (strict binding admit, P18) |
 | `OpReservationInternal` | `0x7F` | `ErrReservationInternal` |
 
-`OpReservationExpired` (`0x74`) на resume — истёкший grace-дедлайн `lastSeen + RECONNECT_TTL` (P24, гейт в `ReconnectRoomUseCase` до refresh'а); на join — просроченный `reserved`-слот в `Admit`.
+`OpReservationExpired` (`0x74`) на resume — истёкший grace-дедлайн `lastSeen + RESERVATION_RECONNECT_TTL` (P24, гейт в `ReconnectRoomUseCase` до refresh'а); на join — просроченный `reserved`-слот в `Admit`.
+
+`ErrPeerStale` (identity-scoped teardown реестра peer'ов, P20) — **internal-only** sentinel: в таблицах нет и до wire недостижим (мапился бы в `OpInternal`), отдельного opcode у него нет.
 
 ## Room notifications (`0x80+`, P20)
 

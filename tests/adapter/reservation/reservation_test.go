@@ -329,8 +329,8 @@ func TestListAdmittedPeers(t *testing.T) {
 	if slots[0].PeerID != admitted {
 		t.Fatalf("peerID = %v, want %v", slots[0].PeerID, admitted)
 	}
-	if slots[0].AdmittedAt.IsZero() {
-		t.Fatal("admittedAt is zero")
+	if slots[0].LastSeen.IsZero() {
+		t.Fatal("lastSeen is zero")
 	}
 }
 
@@ -432,8 +432,8 @@ func TestMarkDisconnected_KeepsAdmittedSlot(t *testing.T) {
 	if len(slots) != 1 || slots[0].PeerID != peerID {
 		t.Fatalf("slots = %+v", slots)
 	}
-	if slots[0].AdmittedAt.Before(before) {
-		t.Fatalf("lastSeen %v before mark %v", slots[0].AdmittedAt, before)
+	if slots[0].LastSeen.Before(before) {
+		t.Fatalf("lastSeen %v before mark %v", slots[0].LastSeen, before)
 	}
 	if slots[0].NickName != testNick(peerID) {
 		t.Fatalf("slot nick = %q, want %q", slots[0].NickName, testNick(peerID))
@@ -493,8 +493,8 @@ func TestReconnect_ReturnsSlotAndRefreshes(t *testing.T) {
 	if slot.PeerID != peerID || slot.NickName != testNick(peerID) {
 		t.Fatalf("slot = %+v", slot)
 	}
-	if slot.AdmittedAt.Before(before) {
-		t.Fatalf("lastSeen %v not refreshed", slot.AdmittedAt)
+	if slot.LastSeen.Before(before) {
+		t.Fatalf("lastSeen %v not refreshed", slot.LastSeen)
 	}
 }
 
@@ -526,7 +526,7 @@ func TestReconnect_Rejected(t *testing.T) {
 }
 
 // P24: SlotDetails — read-only просмотр admitted-слота: возвращает слот
-// с NickName и НЕ освежает admittedAt (честный lastSeen для deadline-гейта
+// с NickName и НЕ освежает lastSeen (честный lastSeen для deadline-гейта
 // resume — отклонённая попытка не продлевает grace).
 func TestSlotDetails_ReadsAdmittedWithoutRefresh(t *testing.T) {
 	t.Parallel()
@@ -558,8 +558,8 @@ func TestSlotDetails_ReadsAdmittedWithoutRefresh(t *testing.T) {
 	if first.PeerID != peerID || first.NickName != testNick(peerID) {
 		t.Fatalf("slot = %+v", first)
 	}
-	if first.AdmittedAt.IsZero() {
-		t.Fatal("admittedAt is zero")
+	if first.LastSeen.IsZero() {
+		t.Fatal("lastSeen is zero")
 	}
 
 	second, err := res.SlotDetails(ctx, roomID, peerID)
@@ -567,9 +567,9 @@ func TestSlotDetails_ReadsAdmittedWithoutRefresh(t *testing.T) {
 		t.Fatalf("SlotDetails second: %v", err)
 	}
 	// Read-only: повторное чтение не двигает lastSeen (в отличие от Reconnect,
-	// который вернул бы освежённый admittedAt).
-	if !second.AdmittedAt.Equal(first.AdmittedAt) {
-		t.Fatalf("admittedAt refreshed: %v -> %v", first.AdmittedAt, second.AdmittedAt)
+	// который вернул бы освежённый lastSeen).
+	if !second.LastSeen.Equal(first.LastSeen) {
+		t.Fatalf("lastSeen refreshed: %v -> %v", first.LastSeen, second.LastSeen)
 	}
 }
 

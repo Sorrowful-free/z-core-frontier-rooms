@@ -162,9 +162,9 @@ func (h *RoomsHandler) dispatchEvent(
 		sess, ok := sessions[id]
 		delete(sessions, id)
 		if ok {
-			if sess.admitted && sess.session.PeerID.IsValid() {
-				if err := h.disconnectPeerUseCase.DisconnectPeer(ctx, sess.session); err != nil {
-					h.logger.Error("enet disconnect peer failed", "error", err, "enet_peer_id", id, "roomID", sess.session.RoomID, "peerID", sess.session.PeerID)
+			if sess.admitted && sess.roomSession.PeerID.IsValid() {
+				if err := h.disconnectPeerUseCase.DisconnectPeer(ctx, sess.roomSession); err != nil {
+					h.logger.Error("enet disconnect peer failed", "error", err, "enet_peer_id", id, "roomID", sess.roomSession.RoomID, "peerID", sess.roomSession.PeerID)
 				}
 			}
 			_ = sess.close()
@@ -183,14 +183,14 @@ func (h *RoomsHandler) admit(ctx context.Context, host *enetHost, sess *peerSess
 		return domain.ErrEmptyToken
 	}
 
-	_, session, err := h.admitPeerUseCase.Admit(ctx, sess.conn, token, host.id)
+	session, err := h.admitPeerUseCase.Admit(ctx, sess.conn, token, host.id)
 	if err != nil {
 		h.logger.Error("enet admit failed", "error", err, "enet_peer_id", sess.id, "op", deliveryerrors.JoinRejectOpCode(err))
 		return err
 	}
 
 	sess.admitted = true
-	sess.session = session
+	sess.roomSession = session
 	h.logger.Info("enet peer admitted", "enet_peer_id", sess.id, "hostID", host.id)
 	return nil
 }
@@ -210,9 +210,9 @@ func (h *RoomsHandler) disconnectSession(
 	id uint16,
 	sess *peerSession,
 ) {
-	if sess.admitted && sess.session.PeerID.IsValid() {
-		if err := h.disconnectPeerUseCase.DisconnectPeer(ctx, sess.session); err != nil {
-			h.logger.Error("enet disconnect peer failed", "error", err, "enet_peer_id", id, "roomID", sess.session.RoomID, "peerID", sess.session.PeerID)
+	if sess.admitted && sess.roomSession.PeerID.IsValid() {
+		if err := h.disconnectPeerUseCase.DisconnectPeer(ctx, sess.roomSession); err != nil {
+			h.logger.Error("enet disconnect peer failed", "error", err, "enet_peer_id", id, "roomID", sess.roomSession.RoomID, "peerID", sess.roomSession.PeerID)
 		}
 	}
 	_ = sess.close()

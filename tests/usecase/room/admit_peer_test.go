@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	useroom "github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/mocks"
 	"go.uber.org/mock/gomock"
@@ -49,7 +48,7 @@ func TestAdmitPeer_ValidateError(t *testing.T) {
 		Return(domain.Claims{}, domain.ErrInvalidToken)
 
 	uc := newAdmitUseCase(admission, registry, peerFactory, reservation, logger)
-	_, session, err := uc.Admit(context.Background(), mocks.NewMockConnection(ctrl), []byte("token"), domain.HostIDAny)
+	session, err := uc.Admit(context.Background(), mocks.NewMockConnection(ctrl), []byte("token"), domain.HostIDAny)
 	if !errors.Is(err, domain.ErrInvalidToken) {
 		t.Fatalf("err = %v, want ErrInvalidToken", err)
 	}
@@ -72,7 +71,7 @@ func TestAdmitPeer_WrongHost(t *testing.T) {
 	logger.EXPECT().Warn(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := newAdmitUseCase(admission, registry, peerFactory, reservation, logger)
-	_, _, err := uc.Admit(context.Background(), mocks.NewMockConnection(ctrl), []byte("t"), domain.HostID(1))
+	_, err := uc.Admit(context.Background(), mocks.NewMockConnection(ctrl), []byte("t"), domain.HostID(1))
 	if !errors.Is(err, domain.ErrWrongHost) {
 		t.Fatalf("err = %v, want ErrWrongHost", err)
 	}
@@ -104,15 +103,10 @@ func TestAdmitPeer_WS_SkipsHostBinding(t *testing.T) {
 	room.EXPECT().Join(peer).Return(nil)
 	peer.EXPECT().Start().Return(nil)
 	room.EXPECT().GetID().Return(roomID).AnyTimes()
-	room.EXPECT().GetPeers().Return([]realtime.Peer{peer}).AnyTimes()
-	room.EXPECT().GetAttributes().Return(nil).AnyTimes()
-	peer.EXPECT().GetID().Return(peerID).AnyTimes()
-	peer.EXPECT().GetNickName().Return("player").AnyTimes()
-	peer.EXPECT().Ping().Return(int64(0)).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := newAdmitUseCase(admission, registry, peerFactory, reservation, logger)
-	_, session, err := uc.Admit(context.Background(), conn, []byte("t"), domain.HostIDAny)
+	session, err := uc.Admit(context.Background(), conn, []byte("t"), domain.HostIDAny)
 	if err != nil {
 		t.Fatalf("Admit: %v", err)
 	}
@@ -154,15 +148,10 @@ func TestAdmitPeer_RoutesReconnectByKind(t *testing.T) {
 	peer.EXPECT().Start().Return(nil)
 	room.EXPECT().Send(gomock.Any()).Return(nil)
 	room.EXPECT().GetID().Return(roomID).AnyTimes()
-	room.EXPECT().GetPeers().Return([]realtime.Peer{peer}).AnyTimes()
-	room.EXPECT().GetAttributes().Return(nil).AnyTimes()
-	peer.EXPECT().GetID().Return(peerID).AnyTimes()
-	peer.EXPECT().GetNickName().Return("player").AnyTimes()
-	peer.EXPECT().Ping().Return(int64(0)).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := newAdmitUseCase(admission, registry, peerFactory, reservation, logger)
-	_, session, err := uc.Admit(context.Background(), conn, []byte("t"), domain.HostIDAny)
+	session, err := uc.Admit(context.Background(), conn, []byte("t"), domain.HostIDAny)
 	if err != nil {
 		t.Fatalf("Admit: %v", err)
 	}

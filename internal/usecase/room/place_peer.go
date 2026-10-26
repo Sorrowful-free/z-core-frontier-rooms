@@ -10,16 +10,40 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport"
 )
 
+// placePeerJoin — хвост join-потока (P20): ErrPeerAlreadyInRoom от Join
+// отклоняется — занятый peerID для join-тикета легально недостижим.
+func placePeerJoin(
+	peerFactory realtime.PeerFactory,
+	room realtime.Room,
+	connection transport.Connection,
+	peerID domain.PeerID,
+	nickName string,
+	logger logging.Logger,
+) (PeerSession, error) {
+	return placePeer(peerFactory, room, connection, peerID, nickName, logger, false)
+}
+
+// placePeerResume — хвост resume-потока (P20): ErrPeerAlreadyInRoom от
+// Join — это проигрыш гонки double-resume одного v4-токена, победитель
+// уже вставил peer'а; дожимаем Replace — newest-wins (Q10), вытесненный
+// объект остановит old.Stop() внутри Replace.
+func placePeerResume(
+	peerFactory realtime.PeerFactory,
+	room realtime.Room,
+	connection transport.Connection,
+	peerID domain.PeerID,
+	nickName string,
+	logger logging.Logger,
+) (PeerSession, error) {
+	return placePeer(peerFactory, room, connection, peerID, nickName, logger, true)
+}
+
 // placePeer — общий хвост admit-потоков join/resume (P20): CreatePeer →
 // размещение (Replace по живому peer'у | Join) → Start с rollback'ом
 // Leave+Stop → PeerSession. Судьба слота reservation при ошибке — на
-// caller'е (join ревокает, resume — нет).
-//
-// raceReplace различает ответ на ErrPeerAlreadyInRoom от Join: resume
-// (true) — это проигрыш гонки double-resume одного v4-токена, победитель
-// уже вставил peer'а; дожимаем Replace — newest-wins (Q10), вытесненный
-// объект остановит old.Stop() внутри Replace. Join-поток (false)
-// отклоняет — занятый peerID для join-тикета легально недостижим.
+// caller'е (join ревокает, resume — нет). Вызывающие идут через тонкие
+// wrapper'ы placePeerJoin/placePeerResume — raceReplace-флаг не
+// передаётся снаружи.
 func placePeer(
 	peerFactory realtime.PeerFactory,
 	room realtime.Room,

@@ -224,6 +224,20 @@ func TestLoadFromEnv_SuccessCustomTTL(t *testing.T) {
 	}
 }
 
+func TestLoadFromEnv_ReservationReconnectTTL(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	t.Setenv("RESERVATION_RECONNECT_TTL", "45s")
+
+	cfg, err := appconfig.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv: %v", err)
+	}
+	if cfg.Reservation.ReconnectTTL != 45*time.Second {
+		t.Fatalf("reconnect ttl = %v, want 45s", cfg.Reservation.ReconnectTTL)
+	}
+}
+
 func TestLoadFromEnv_HTTPAuthDisabled(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", validSecret())
 	setHTTPAuthDisabled(t)

@@ -35,30 +35,29 @@ func NewJoinRoomUseCase(
 
 // JoinRoom — join-поток за AdmitPeerUseCase (P20, T2): claims уже
 // провалидированы фасадом (HMAC на входе один раз — повторного нет).
-func (uc *JoinRoomUseCase) JoinRoom(ctx context.Context, connection transport.Connection, claims domain.Claims) (RoomSummary, PeerSession, error) {
+func (uc *JoinRoomUseCase) JoinRoom(ctx context.Context, connection transport.Connection, claims domain.Claims) (PeerSession, error) {
 
 	if err := ctx.Err(); err != nil {
-		return EmptyRoomSummary, PeerSession{}, err
+		return PeerSession{}, err
 	}
 
 	room, err := uc.roomRegistry.GetRoom(ctx, claims.RoomID)
 	if err != nil {
-		return EmptyRoomSummary, PeerSession{}, err
+		return PeerSession{}, err
 	}
 
 	if err := uc.reservation.Admit(ctx, claims.RoomID, claims.PeerID); err != nil {
 		uc.logging.Error("join room: admit failed", "error", err, "roomID", claims.RoomID, "peerID", claims.PeerID)
-		return EmptyRoomSummary, PeerSession{}, err
+		return PeerSession{}, err
 	}
 
-	session, err := placePeer(uc.peerFactory, room, connection, claims.PeerID, claims.NickName, uc.logging, false)
+	session, err := placePeerJoin(uc.peerFactory, room, connection, claims.PeerID, claims.NickName, uc.logging)
 	if err != nil {
-		return EmptyRoomSummary, PeerSession{}, uc.revokeJoinReservation(ctx, room, claims.RoomID, claims.PeerID, err)
+		return PeerSession{}, uc.revokeJoinReservation(ctx, room, claims.RoomID, claims.PeerID, err)
 	}
 
-	roomSummary := NewRoomSummaryFromRoom(room)
 	uc.logging.Info("join room: join room success", "roomID", claims.RoomID, "peerID", claims.PeerID)
-	return *roomSummary, session, nil
+	return session, nil
 }
 
 // revokeJoinReservation откатывает слот после неудачного join.

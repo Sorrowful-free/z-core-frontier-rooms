@@ -27,13 +27,13 @@ func TestSweepOrphanAdmitted_RevokesOrphanAfterTTL(t *testing.T) {
 		roomID = domain.RoomID(1)
 		peerID = domain.PeerID(10)
 	)
-	admittedAt := time.Now().Add(-time.Minute)
+	lastSeen := time.Now().Add(-time.Minute)
 
 	registry.EXPECT().GetList(gomock.Any()).Return([]realtime.Room{room}, nil)
 	room.EXPECT().GetID().Return(roomID).AnyTimes()
 	reservation.EXPECT().ListAdmittedPeers(gomock.Any(), roomID).Return([]domain.AdmittedSlot{{
-		PeerID:     peerID,
-		AdmittedAt: admittedAt,
+		PeerID:   peerID,
+		LastSeen: lastSeen,
 	}}, nil)
 	room.EXPECT().HasPeer(peerID).Return(false)
 	logger.EXPECT().Warn(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
@@ -66,8 +66,8 @@ func TestSweepOrphanAdmitted_SkipsWhenPeerInRoom(t *testing.T) {
 	registry.EXPECT().GetList(gomock.Any()).Return([]realtime.Room{room}, nil)
 	room.EXPECT().GetID().Return(roomID).AnyTimes()
 	reservation.EXPECT().ListAdmittedPeers(gomock.Any(), roomID).Return([]domain.AdmittedSlot{{
-		PeerID:     peerID,
-		AdmittedAt: time.Now().Add(-time.Hour),
+		PeerID:   peerID,
+		LastSeen: time.Now().Add(-time.Hour),
 	}}, nil)
 	room.EXPECT().HasPeer(peerID).Return(true)
 
@@ -103,8 +103,8 @@ func TestSweepOrphanAdmitted_BadRoomSkipped(t *testing.T) {
 
 	reservation.EXPECT().ListAdmittedPeers(gomock.Any(), badRoomID).Return(nil, errors.New("reservation store failed"))
 	reservation.EXPECT().ListAdmittedPeers(gomock.Any(), okRoomID).Return([]domain.AdmittedSlot{{
-		PeerID:     peerID,
-		AdmittedAt: time.Now().Add(-time.Hour),
+		PeerID:   peerID,
+		LastSeen: time.Now().Add(-time.Hour),
 	}}, nil)
 	okRoom.EXPECT().HasPeer(peerID).Return(false)
 	reservation.EXPECT().Revoke(gomock.Any(), okRoomID, peerID).Return(nil)
@@ -139,8 +139,8 @@ func TestSweepOrphanAdmitted_SkipsBeforeTTL(t *testing.T) {
 	registry.EXPECT().GetList(gomock.Any()).Return([]realtime.Room{room}, nil)
 	room.EXPECT().GetID().Return(roomID).AnyTimes()
 	reservation.EXPECT().ListAdmittedPeers(gomock.Any(), roomID).Return([]domain.AdmittedSlot{{
-		PeerID:     peerID,
-		AdmittedAt: time.Now(),
+		PeerID:   peerID,
+		LastSeen: time.Now(),
 	}}, nil)
 	room.EXPECT().HasPeer(peerID).Return(false)
 

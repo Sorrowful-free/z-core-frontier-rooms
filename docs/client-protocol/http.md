@@ -71,7 +71,7 @@ ID комнаты выдаёт сервер — в запросе поля `id` 
 
 `token` - **base64.RawURLEncoding** (без padding `=`). Декодировать в сырые байты ticket v3 → первый UDP-пакет ([enet.md](enet.md)) или query `?token=` для WS.
 
-`reconnect_token` - **base64.RawURLEncoding**, reconnect-токен v4 (P20): resume под тем же peerID после разрыва в пределах grace-окна `RECONNECT_TTL`; идёт на тот же admit-вход (`?token=` / первый ENet-пакет). См. [realtime.md](realtime.md#reconnect-p20).
+`reconnect_token` - **base64.RawURLEncoding**, reconnect-токен v4 (P20): resume под тем же peerID после разрыва в пределах grace-окна `RESERVATION_RECONNECT_TTL`; идёт на тот же admit-вход (`?token=` / первый ENet-пакет). См. [realtime.md](realtime.md#reconnect-p20).
 
 `enet_port` - назначенный UDP-порт ENet host'а (P18, привязка тикета к host'у/shard'у). Поле присутствует, только если на сервере поднят ENet listener.
 

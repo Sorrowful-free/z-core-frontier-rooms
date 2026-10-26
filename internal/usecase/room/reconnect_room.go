@@ -50,14 +50,14 @@ func NewReconnectRoomUseCase(
 	}
 }
 
-func (uc *ReconnectRoomUseCase) ReconnectRoom(ctx context.Context, connection transport.Connection, claims domain.Claims) (RoomSummary, PeerSession, error) {
+func (uc *ReconnectRoomUseCase) ReconnectRoom(ctx context.Context, connection transport.Connection, claims domain.Claims) (PeerSession, error) {
 	if err := ctx.Err(); err != nil {
-		return EmptyRoomSummary, PeerSession{}, err
+		return PeerSession{}, err
 	}
 
 	room, err := uc.roomRegistry.GetRoom(ctx, claims.RoomID)
 	if err != nil {
-		return EmptyRoomSummary, PeerSession{}, err
+		return PeerSession{}, err
 	}
 
 	// Read-only просмотр слота (P24): честный lastSeen ДО refresh'а —
@@ -65,20 +65,20 @@ func (uc *ReconnectRoomUseCase) ReconnectRoom(ctx context.Context, connection tr
 	slot, err := uc.reservation.SlotDetails(ctx, claims.RoomID, claims.PeerID)
 	if err != nil {
 		uc.logging.Error("reconnect room: reservation slot details failed", "error", err, "roomID", claims.RoomID, "peerID", claims.PeerID)
-		return EmptyRoomSummary, PeerSession{}, err
+		return PeerSession{}, err
 	}
 
 	// Deadline-гейт (P24): admitted-слот без живого peer'а и с истёкшим
 	// lastSeen + reconnectTTL → ErrReservationExpired — grace конечна и без
 	// прохода sweep; предикат общий со sweep — см. graceExpired. Живой peer
-	// (HasPeer) гейтом не затрагивается: admittedAt давно подключённого
+	// (HasPeer) гейтом не затрагивается: lastSeen давно подключённого
 	// peer'а старый законно, Replace (newest-wins, Q10) идёт без гейта.
 	// reconnectTTL <= 0 → любой !HasPeer resume expired — TTL=0 запрещает
 	// именно воскрешение, не перехват живого соединения.
-	if !room.HasPeer(claims.PeerID) && graceExpired(slot.AdmittedAt, uc.reconnectTTL, time.Now()) {
+	if !room.HasPeer(claims.PeerID) && graceExpired(slot.LastSeen, uc.reconnectTTL, time.Now()) {
 		expiredErr := fmt.Errorf("%w: room %d peer %d", domain.ErrReservationExpired, claims.RoomID, claims.PeerID)
 		uc.logging.Error("reconnect room: grace deadline expired", "error", expiredErr, "roomID", claims.RoomID, "peerID", claims.PeerID)
-		return EmptyRoomSummary, PeerSession{}, expiredErr
+		return PeerSession{}, expiredErr
 	}
 
 	// Атомарно под mutex комнаты reservation (T5): admitted-слот + refresh
@@ -86,12 +86,12 @@ func (uc *ReconnectRoomUseCase) ReconnectRoom(ctx context.Context, connection tr
 	slot, err = uc.reservation.Reconnect(ctx, claims.RoomID, claims.PeerID)
 	if err != nil {
 		uc.logging.Error("reconnect room: reservation reconnect failed", "error", err, "roomID", claims.RoomID, "peerID", claims.PeerID)
-		return EmptyRoomSummary, PeerSession{}, err
+		return PeerSession{}, err
 	}
 
-	session, err := placePeer(uc.peerFactory, room, connection, claims.PeerID, slot.NickName, uc.logging, true)
+	session, err := placePeerResume(uc.peerFactory, room, connection, claims.PeerID, slot.NickName, uc.logging)
 	if err != nil {
-		return EmptyRoomSummary, PeerSession{}, err
+		return PeerSession{}, err
 	}
 
 	// OpPeerReconnected остальным (Q5): FIFO outbound каждого получателя
@@ -105,7 +105,6 @@ func (uc *ReconnectRoomUseCase) ReconnectRoom(ctx context.Context, connection tr
 	}
 
 	uc.metrics.ReconnectSucceeded()
-	roomSummary := NewRoomSummaryFromRoom(room)
 	uc.logging.Info("reconnect room: reconnect success", "roomID", claims.RoomID, "peerID", claims.PeerID)
-	return *roomSummary, session, nil
+	return session, nil
 }

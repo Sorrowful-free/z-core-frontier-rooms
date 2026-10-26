@@ -11,12 +11,6 @@ type RoomSummary struct {
 	Peers      []PeerSummary
 }
 
-var EmptyRoomSummary = RoomSummary{
-	ID:         domain.RoomIDInvalid,
-	Attributes: nil,
-	Peers:      []PeerSummary{},
-}
-
 func NewRoomSummary(id domain.RoomID, attributes domain.RoomAttributes, peers []PeerSummary) *RoomSummary {
 	return &RoomSummary{
 		ID:         id,

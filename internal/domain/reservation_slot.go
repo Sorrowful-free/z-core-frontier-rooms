@@ -16,7 +16,8 @@ type AdmittedSlot struct {
 	PeerID PeerID
 	// NickName — ник из слота: единственный источник ника при resume (P20).
 	NickName string
-	// AdmittedAt — lastSeen: момент admit / последнего disconnect или
-	// reconnect (MarkDisconnected/Reconnect его обновляют, P20).
-	AdmittedAt time.Time
+	// LastSeen — единый timestamp grace слота: момент admit, последнего
+	// disconnect-mark (MarkDisconnected) или resume-refresh (Reconnect) —
+	// все три пишут одно поле (P20); от него считается grace-дедлайн.
+	LastSeen time.Time
 }

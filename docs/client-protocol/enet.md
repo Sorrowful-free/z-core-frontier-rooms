@@ -168,7 +168,7 @@ WS delivery не различает — для отладки всё implicit re
 
 ## Disconnect и Leave (P20)
 
-Разрыв admitted-сессии идёт через `DisconnectPeer` (все триггеры: `EventDisconnect`, bad/oversized frame, idle peer sweep): peer изымается из комнаты обычным leave-путём (state-запись чистится, remove-патч уходит остальным), но слот reservation **не ревокается** — `MarkDisconnected` ставит lastSeen и открывает grace-окно `RECONNECT_TTL` (default `30s`, от момента разрыва); остальным рассылается `0x80 OpPeerDisconnected`. Resume в окне — см. ниже; по истечении sweep ревокает слот и peerID умирает окончательно.
+Разрыв admitted-сессии идёт через `DisconnectPeer` (все триггеры: `EventDisconnect`, bad/oversized frame, idle peer sweep): peer изымается из комнаты обычным leave-путём (state-запись чистится, remove-патч уходит остальным), но слот reservation **не ревокается** — `MarkDisconnected` ставит lastSeen и открывает grace-окно `RESERVATION_RECONNECT_TTL` (default `30s`, от момента разрыва); остальным рассылается `0x80 OpPeerDisconnected`. Resume в окне — см. ниже; по истечении sweep ревокает слот и peerID умирает окончательно.
 
 - Клиент закрыл соединение / UDP timeout (`EventDisconnect`) → `DisconnectPeer` → grace.
 - Не завершил admit за `ENET_ADMIT_TIMEOUT` → disconnect (дедлайн на факт admit в host loop, не на прибытие пакета; слот peer limit не висит; grace нет — peer ещё не admitted).

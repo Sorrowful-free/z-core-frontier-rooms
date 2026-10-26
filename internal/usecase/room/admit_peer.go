@@ -44,19 +44,19 @@ func (uc *AdmitPeerUseCase) Admit(
 	connection transport.Connection,
 	token []byte,
 	enetHostID domain.HostID,
-) (RoomSummary, PeerSession, error) {
+) (PeerSession, error) {
 	if err := ctx.Err(); err != nil {
-		return EmptyRoomSummary, PeerSession{}, err
+		return PeerSession{}, err
 	}
 
 	claims, err := uc.admission.Validate(ctx, token)
 	if err != nil {
-		return EmptyRoomSummary, PeerSession{}, err
+		return PeerSession{}, err
 	}
 
 	if enetHostID.IsValid() && claims.HostID != domain.HostIDAny && claims.HostID != enetHostID {
 		uc.logging.Warn("admit peer: ticket bound to another host", "wantHostID", claims.HostID, "hostID", enetHostID)
-		return EmptyRoomSummary, PeerSession{}, domain.ErrWrongHost
+		return PeerSession{}, domain.ErrWrongHost
 	}
 
 	switch claims.Kind {
@@ -65,6 +65,6 @@ func (uc *AdmitPeerUseCase) Admit(
 	case domain.ClaimsKindReconnect:
 		return uc.reconnect.ReconnectRoom(ctx, connection, claims)
 	default:
-		return EmptyRoomSummary, PeerSession{}, fmt.Errorf("%w: claims kind %d", domain.ErrInvalidToken, claims.Kind)
+		return PeerSession{}, fmt.Errorf("%w: claims kind %d", domain.ErrInvalidToken, claims.Kind)
 	}
 }

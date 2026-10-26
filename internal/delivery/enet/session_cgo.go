@@ -21,9 +21,9 @@ type peerSession struct {
 	incoming chan domain.Frame
 	conn     transport.Connection
 	admitted bool
-	// session — session-handle admitted-соединения (P20): teardown идёт
-	// через DisconnectPeer именно с этим peer-объектом (identity-check).
-	session     room.PeerSession
+	// roomSession — session-handle admitted-соединения (P20): teardown
+	// идёт через DisconnectPeer именно с этим peer-объектом (identity-check).
+	roomSession room.PeerSession
 	connectedAt time.Time
 	closeOnce   sync.Once
 	metrics     portmetrics.Metrics

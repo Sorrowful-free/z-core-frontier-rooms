@@ -8,13 +8,12 @@ import (
 	"time"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	useroom "github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/mocks"
 	"go.uber.org/mock/gomock"
 )
 
-// testReconnectTTL — дедлайн grace в тестах resume; свежий AdmittedAt
+// testReconnectTTL — дедлайн grace в тестах resume; свежий LastSeen
 // проходит гейт, старый (now - 2*ttl) — отклоняется expired.
 const testReconnectTTL = time.Minute
 
@@ -26,7 +25,7 @@ func newReconnectClaims(roomID domain.RoomID, peerID domain.PeerID) domain.Claim
 
 // freshAdmittedSlot — слот со свежим lastSeen: deadline-гейт (P24) пропускает.
 func freshAdmittedSlot(peerID domain.PeerID, nick string) domain.AdmittedSlot {
-	return domain.AdmittedSlot{PeerID: peerID, NickName: nick, AdmittedAt: time.Now()}
+	return domain.AdmittedSlot{PeerID: peerID, NickName: nick, LastSeen: time.Now()}
 }
 
 // Resume по отсутствующему peer'у: Reconnect → CreatePeer из слота → Join →
@@ -64,23 +63,15 @@ func TestReconnectRoom_JoinAbsentPeer(t *testing.T) {
 	peer.EXPECT().Start().Return(nil)
 	room.EXPECT().Send(gomock.Any()).Return(nil)
 	room.EXPECT().GetID().Return(roomID).AnyTimes()
-	room.EXPECT().GetPeers().Return([]realtime.Peer{peer}).AnyTimes()
-	room.EXPECT().GetAttributes().Return(nil).AnyTimes()
-	peer.EXPECT().GetID().Return(peerID).AnyTimes()
-	peer.EXPECT().GetNickName().Return("player").AnyTimes()
-	peer.EXPECT().Ping().Return(int64(0)).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewReconnectRoomUseCase(peerFactory, registry, reservation, testReconnectTTL, logger, nil)
-	summary, session, err := uc.ReconnectRoom(context.Background(), conn, claims)
+	session, err := uc.ReconnectRoom(context.Background(), conn, claims)
 	if err != nil {
 		t.Fatalf("ReconnectRoom: %v", err)
 	}
 	if session.Peer != peer || session.PeerID != peerID || session.RoomID != roomID {
 		t.Fatalf("session = %+v", session)
-	}
-	if summary.ID != roomID {
-		t.Fatalf("summary.ID = %v, want %v", summary.ID, roomID)
 	}
 }
 
@@ -117,15 +108,10 @@ func TestReconnectRoom_ReplaceLivePeer(t *testing.T) {
 	peer.EXPECT().Start().Return(nil)
 	room.EXPECT().Send(gomock.Any()).Return(nil)
 	room.EXPECT().GetID().Return(roomID).AnyTimes()
-	room.EXPECT().GetPeers().Return([]realtime.Peer{peer}).AnyTimes()
-	room.EXPECT().GetAttributes().Return(nil).AnyTimes()
-	peer.EXPECT().GetID().Return(peerID).AnyTimes()
-	peer.EXPECT().GetNickName().Return("player").AnyTimes()
-	peer.EXPECT().Ping().Return(int64(0)).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewReconnectRoomUseCase(peerFactory, registry, reservation, testReconnectTTL, logger, nil)
-	_, session, err := uc.ReconnectRoom(context.Background(), conn, claims)
+	session, err := uc.ReconnectRoom(context.Background(), conn, claims)
 	if err != nil {
 		t.Fatalf("ReconnectRoom: %v", err)
 	}
@@ -158,7 +144,7 @@ func TestReconnectRoom_SlotNotAdmitted(t *testing.T) {
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewReconnectRoomUseCase(peerFactory, registry, reservation, testReconnectTTL, logger, nil)
-	_, _, err := uc.ReconnectRoom(context.Background(), mocks.NewMockConnection(ctrl), newReconnectClaims(roomID, peerID))
+	_, err := uc.ReconnectRoom(context.Background(), mocks.NewMockConnection(ctrl), newReconnectClaims(roomID, peerID))
 	if !errors.Is(err, domain.ErrReservationNotReserved) {
 		t.Fatalf("err = %v, want ErrReservationNotReserved", err)
 	}
@@ -203,15 +189,10 @@ func TestReconnectRoom_JoinRaceFallsBackToReplace(t *testing.T) {
 	peer.EXPECT().Start().Return(nil)
 	room.EXPECT().Send(gomock.Any()).Return(nil)
 	room.EXPECT().GetID().Return(roomID).AnyTimes()
-	room.EXPECT().GetPeers().Return([]realtime.Peer{peer}).AnyTimes()
-	room.EXPECT().GetAttributes().Return(nil).AnyTimes()
-	peer.EXPECT().GetID().Return(peerID).AnyTimes()
-	peer.EXPECT().GetNickName().Return("player").AnyTimes()
-	peer.EXPECT().Ping().Return(int64(0)).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewReconnectRoomUseCase(peerFactory, registry, reservation, testReconnectTTL, logger, nil)
-	_, session, err := uc.ReconnectRoom(context.Background(), conn, claims)
+	session, err := uc.ReconnectRoom(context.Background(), conn, claims)
 	if err != nil {
 		t.Fatalf("ReconnectRoom: %v", err)
 	}
@@ -257,7 +238,7 @@ func TestReconnectRoom_JoinRaceReplaceFailure(t *testing.T) {
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewReconnectRoomUseCase(peerFactory, registry, reservation, testReconnectTTL, logger, nil)
-	_, _, err := uc.ReconnectRoom(context.Background(), conn, claims)
+	_, err := uc.ReconnectRoom(context.Background(), conn, claims)
 	if !errors.Is(err, replaceErr) {
 		t.Fatalf("err = %v, want ErrReplaceFailed", err)
 	}
@@ -297,7 +278,7 @@ func TestReconnectRoom_JoinFailureDoesNotRevoke(t *testing.T) {
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewReconnectRoomUseCase(peerFactory, registry, reservation, testReconnectTTL, logger, nil)
-	_, _, err := uc.ReconnectRoom(context.Background(), conn, claims)
+	_, err := uc.ReconnectRoom(context.Background(), conn, claims)
 	if !errors.Is(err, joinErr) {
 		t.Fatalf("err = %v, want joinErr", err)
 	}
@@ -323,9 +304,9 @@ func TestReconnectRoom_ExpiredGraceRejected(t *testing.T) {
 	)
 
 	stale := domain.AdmittedSlot{
-		PeerID:     peerID,
-		NickName:   "player",
-		AdmittedAt: time.Now().Add(-2 * testReconnectTTL),
+		PeerID:   peerID,
+		NickName: "player",
+		LastSeen: time.Now().Add(-2 * testReconnectTTL),
 	}
 	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
 	reservation.EXPECT().SlotDetails(gomock.Any(), roomID, peerID).Return(stale, nil)
@@ -333,13 +314,13 @@ func TestReconnectRoom_ExpiredGraceRejected(t *testing.T) {
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewReconnectRoomUseCase(peerFactory, registry, reservation, testReconnectTTL, logger, nil)
-	_, _, err := uc.ReconnectRoom(context.Background(), mocks.NewMockConnection(ctrl), newReconnectClaims(roomID, peerID))
+	_, err := uc.ReconnectRoom(context.Background(), mocks.NewMockConnection(ctrl), newReconnectClaims(roomID, peerID))
 	if !errors.Is(err, domain.ErrReservationExpired) {
 		t.Fatalf("err = %v, want ErrReservationExpired", err)
 	}
 }
 
-// P24: живой peer (HasPeer) дедлайном не гейтится — admittedAt давно
+// P24: живой peer (HasPeer) дедлайном не гейтится — lastSeen давно
 // подключённого peer'а старый законно; Replace newest-wins идёт без гейта.
 func TestReconnectRoom_LivePeerNotGatedByDeadline(t *testing.T) {
 	t.Parallel()
@@ -359,11 +340,11 @@ func TestReconnectRoom_LivePeerNotGatedByDeadline(t *testing.T) {
 	)
 	claims := newReconnectClaims(roomID, peerID)
 
-	// AdmittedAt далеко за дедлайном — для живого peer'а это норма.
+	// LastSeen далеко за дедлайном — для живого peer'а это норма.
 	stale := domain.AdmittedSlot{
-		PeerID:     peerID,
-		NickName:   "player",
-		AdmittedAt: time.Now().Add(-time.Hour),
+		PeerID:   peerID,
+		NickName: "player",
+		LastSeen: time.Now().Add(-time.Hour),
 	}
 	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
 	reservation.EXPECT().SlotDetails(gomock.Any(), roomID, peerID).Return(stale, nil)
@@ -377,15 +358,10 @@ func TestReconnectRoom_LivePeerNotGatedByDeadline(t *testing.T) {
 	peer.EXPECT().Start().Return(nil)
 	room.EXPECT().Send(gomock.Any()).Return(nil)
 	room.EXPECT().GetID().Return(roomID).AnyTimes()
-	room.EXPECT().GetPeers().Return([]realtime.Peer{peer}).AnyTimes()
-	room.EXPECT().GetAttributes().Return(nil).AnyTimes()
-	peer.EXPECT().GetID().Return(peerID).AnyTimes()
-	peer.EXPECT().GetNickName().Return("player").AnyTimes()
-	peer.EXPECT().Ping().Return(int64(0)).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewReconnectRoomUseCase(peerFactory, registry, reservation, testReconnectTTL, logger, nil)
-	_, session, err := uc.ReconnectRoom(context.Background(), conn, claims)
+	session, err := uc.ReconnectRoom(context.Background(), conn, claims)
 	if err != nil {
 		t.Fatalf("ReconnectRoom: %v", err)
 	}
@@ -419,7 +395,7 @@ func TestReconnectRoom_ZeroTTLResumeExpired(t *testing.T) {
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewReconnectRoomUseCase(peerFactory, registry, reservation, 0, logger, nil)
-	_, _, err := uc.ReconnectRoom(context.Background(), mocks.NewMockConnection(ctrl), newReconnectClaims(roomID, peerID))
+	_, err := uc.ReconnectRoom(context.Background(), mocks.NewMockConnection(ctrl), newReconnectClaims(roomID, peerID))
 	if !errors.Is(err, domain.ErrReservationExpired) {
 		t.Fatalf("err = %v, want ErrReservationExpired", err)
 	}
@@ -454,7 +430,7 @@ func TestReconnectRoom_SlotRevokedBySweepBetweenCheckAndReconnect(t *testing.T) 
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewReconnectRoomUseCase(peerFactory, registry, reservation, testReconnectTTL, logger, nil)
-	_, _, err := uc.ReconnectRoom(context.Background(), mocks.NewMockConnection(ctrl), newReconnectClaims(roomID, peerID))
+	_, err := uc.ReconnectRoom(context.Background(), mocks.NewMockConnection(ctrl), newReconnectClaims(roomID, peerID))
 	if !errors.Is(err, domain.ErrReservationNotReserved) {
 		t.Fatalf("err = %v, want ErrReservationNotReserved", err)
 	}

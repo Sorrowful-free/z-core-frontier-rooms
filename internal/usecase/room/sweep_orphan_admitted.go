@@ -14,7 +14,7 @@ import (
 const sweepKindOrphanAdmitted = "orphan_admitted"
 
 // SweepOrphanAdmittedUseCase — grace-expiry admitted-слотов без peer в room
-// (P20): слот без peer'а и lastSeen (AdmittedAt) + ReconnectTTL прошёл → Revoke.
+// (P20): слот без peer'а и lastSeen (AdmittedSlot.LastSeen) + ReconnectTTL прошёл → Revoke.
 type SweepOrphanAdmittedUseCase struct {
 	roomRegistry registry.RoomRegistry
 	reservation  reservation.Reservation
@@ -70,7 +70,7 @@ func (uc *SweepOrphanAdmittedUseCase) RunOnce(ctx context.Context) (int, error) 
 			if room.HasPeer(slot.PeerID) {
 				continue
 			}
-			if !graceExpired(slot.AdmittedAt, uc.reconnectTTL, now) {
+			if !graceExpired(slot.LastSeen, uc.reconnectTTL, now) {
 				continue
 			}
 

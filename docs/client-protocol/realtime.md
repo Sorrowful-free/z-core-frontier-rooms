@@ -67,7 +67,7 @@ hmac        32 bytes SHA-256 HMAC
 
 ## Reconnect (P20)
 
-Краткий разрыв транспорта **не** уничтожает идентичность: peer сразу исчезает из комнаты (остальные получают remove-патч и `0x80`), но слот reservation держит capacity и peerID в пределах grace-окна `RECONNECT_TTL` (серверный, default `30s`, от момента разрыва).
+Краткий разрыв транспорта **не** уничтожает идентичность: peer сразу исчезает из комнаты (остальные получают remove-патч и `0x80`), но слот reservation держит capacity и peerID в пределах grace-окна `RESERVATION_RECONNECT_TTL` (серверный, default `30s`, от момента разрыва).
 
 1. `POST /rooms/:id/tickets` возвращает `reconnect_token` — сохранить до разрыва (без expiry у токена; живёт, пока жив admitted-слот).
 2. Разрыв → сервер рассылает `0x80` остальным.

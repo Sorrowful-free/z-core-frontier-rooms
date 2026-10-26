@@ -31,7 +31,7 @@ version(1)=3 | roomID(8) | peerID(8) | issuedAt(8) | expiresAt(8) | hostID(2) | 
 version(1)=4 | roomID(8) | peerID(8) | hostID(2) | HMAC-SHA256(32)
 ```
 
-Фиксированный размер 51 байт; без `nickName` (ник при resume берётся из слота reservation) и без timestamps — expiry у токена нет, grace окно (`lastSeen + RECONNECT_TTL`) отсчитывает сервер по admitted-слоту. `Validate` ставит `claims.Kind = ClaimsKindReconnect` — admit-фасад разводит join/resume по Kind; `hostID` наследует привязку исходного тикета (strict binding admit сохраняется).
+Фиксированный размер 51 байт; без `nickName` (ник при resume берётся из слота reservation) и без timestamps — expiry у токена нет, grace окно (`lastSeen + RESERVATION_RECONNECT_TTL`) отсчитывает сервер по admitted-слоту. `Validate` ставит `claims.Kind = ClaimsKindReconnect` — admit-фасад разводит join/resume по Kind; `hostID` наследует привязку исходного тикета (strict binding admit сохраняется).
 
 Пароль комнаты при Issue не проверяется — его сверяет `VerifyRoomPassword` в `IssueTicketUseCase` до `Reserve`. Тикет одноразовый: повторный `Admit` на том же слоте отклоняется (`ErrReservationAlreadyAdmitted`); возврат после разрыва — reconnect-токеном v4.
 
