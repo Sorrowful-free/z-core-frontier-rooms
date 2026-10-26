@@ -12,7 +12,7 @@
 | [http.md](http.md) | Control plane: REST JSON, ticket, auth |
 | **[enet.md](enet.md)** | **Data plane: ENet UDP (основной)** |
 | [realtime.md](realtime.md) | Общий кадр; WebSocket для отладки |
-| [state-sync.md](state-sync.md) | Master, ticks, кто что шлёт, Replace |
+| [state-sync.md](state-sync.md) | Master, ticks, кто что шлёт, reconnect/Replace |
 | [errors.md](errors.md) | Wire OpCode ошибок и реакция клиента |
 | [../wire-state-codec.md](../wire-state-codec.md) | Бинарный layout payload (BE, maps) |
 

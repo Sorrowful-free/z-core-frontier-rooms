@@ -80,9 +80,23 @@ Reservation-ошибки на join мапятся в диапазон `0x70+` (�
 |-----|----------|
 | `0x71` | Комната полна |
 | `0x72`, `0x76` | Подождать TTL / другой nick / reconnect policy |
-| `0x74` | Новый ticket (истёк TTL) |
+| `0x74` | Новый join ticket (истёк TTL слота или grace на resume) |
 | `0x75` | Уже admitted — возможно duplicate join |
 | `0x77` | Переподключиться на `enet_port` из ответа issue ticket (тот же ticket, слот не потрачен) |
+
+### Resume-reject (reconnect_token v4)
+
+Resume идёт тем же admit-входом (`?token=` / первый ENet-пакет) — reject-кадры те же, причины под resume:
+
+| Hex | OpCode | Причина при resume |
+|-----|--------|--------------------|
+| `0x41` | `OpInvalidToken` | Битый/чужой `reconnect_token` (HMAC, формат, version) |
+| `0x43` | `OpRoomNotFound` | Комната уже удалена — resume невозможен, нужен новый join ticket |
+| `0x73` | `OpReservationNotReserved` | Слота нет / не `admitted` (sweep уже отозвал просроченный grace, чужой `peer_id`) |
+| `0x74` | `OpReservationExpired` | Grace просрочена: `lastSeen + RESERVATION_RECONNECT_TTL` прошёл. Дедлайн проверяется **до** refresh'а `lastSeen` — отклонённые попытки grace не продлевают |
+| `0x77` | `OpWrongHost` | `hostID` тикета v4 ≠ принявший ENet host (наследованная strict-привязка) |
+
+`0x42` `OpExpiredToken` на resume не возникает — у токена v4 нет timestamps, grace считает сервер по слоту. Остальные коды общих таблиц (`0x45`, `0x46`, `0x50`–`0x51`, `0x70`, `0x7F`) возможны на гонках — маппинг тот же.
 
 ---
 

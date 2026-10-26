@@ -91,14 +91,14 @@ peer_id u32
 
 Сервер **relay** — пересылает тот же payload (`0x07`) получателям; не интерпретирует `rpc_id` / values.
 
-## Replace (reconnect)
+## Reconnect (P20)
 
-Если peer с тем же `peer_id` из ticket уже в комнате (обрыв WS без leave), повторный join с тем же ticket выполняет **Replace** — старое соединение заменяется новым.
+Модель reconnect (P20): разрыв транспорта **удаляет** peer'а из комнаты обычным leave-путём — остальным уходит remove-патч и `0x80` `OpPeerDisconnected`; если ушёл master, election идёт сразу на leave. Идентичность при этом живёт: admitted-слот reservation держит capacity и `peer_id` в grace-окне `RESERVATION_RECONNECT_TTL` (серверный, default `30s`, от `lastSeen` слота — момента разрыва).
 
-- Успех: как обычный join (`0x01` full state).
-- Ошибка replace: join reject `0x45` `OpReplaceFailed`; старый peer **остаётся** в комнате.
-
-Для нового подключения после disconnect обычно нужен **новый** issue ticket (новый `peer_id`), если политика слотов не допускает повторный admit.
+- **Resume** — повторный admit с `reconnect_token` (v4) вместо join-тикета (`?token=` / первый ENet-пакет): тот же `peer_id`, nick — из слота (в токене его нет). Успех — как обычный join: вернувшемуся `0x01` FullState, остальным `0x81` `OpPeerReconnected`. Поток и reject-коды: [realtime.md](realtime.md#reconnect-p20), [errors.md](errors.md).
+- **Мастерство не возвращается:** election при disconnect уже отдал `is_master` другому — вернувшийся вступает обычным peer и становится master только по общим правилам выше (первый в опустевшей комнате / failover).
+- **Replace (newest-wins):** resume при **живом** старом conn вытесняет его — старое соединение получает разрыв; grace-дедлайн на этот путь не действует.
+- Ошибки: `0x45` `OpReplaceFailed` / `0x51` `OpPeerStartFailed` — как при join; просроченная grace — `0x74` `OpReservationExpired` (если sweep уже отозвал слот — `0x73`), дальше только новый issue ticket (новый `peer_id`).
 
 ## Рекомендуемая структура Godot
 

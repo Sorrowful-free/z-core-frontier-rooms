@@ -73,8 +73,11 @@ hmac        32 bytes SHA-256 HMAC
 2. Разрыв → сервер рассылает `0x80` остальным.
 3. Повторный admit тем же транспортом: WS `?token=<reconnect_token>` или первый ENet-пакет — вместо join-тикета.
 4. Успех: peer возвращается под **тем же peerID** и тем же nick'ом (nick из слота — в токене его нет), получает `0x01` FullState как обычный join; остальным — `0x81` с `peerID u64 BE`.
-5. Просроченный grace или чужой/битый токен → join-reject (те же коды `0x41`/`0x43`/`0x46`/`0x73`).
+5. Отказ — обычный join-reject (карта: [errors.md](errors.md#resume-reject-reconnect_token-v4)): `0x41` битый/чужой токен, `0x43` комната удалена, `0x73` слота нет/не admitted, `0x74` grace просрочена, `0x77` `hostID` v4 ≠ принявший host.
 6. Новейшее соединение побеждает: reconnect при живом старом conn вытесняет его (Replace).
+
+- **`0x81` без предшествующего `0x80` — норма** при Replace живого peer'а (двойной resume одним токеном / перехват соединения): разрыв старого conn идёт через identity-check teardown без broadcast'а `0x80`, остальные видят remove+add-патчи и `0x81`. Клиент обрабатывает `0x81` идемпотентно — peer становится live независимо от прежнего флага disconnected.
+- **Дедлайн grace enforce'ится на resume (P24):** resume по просроченному окну (peer не в комнате и `lastSeen + RESERVATION_RECONNECT_TTL` прошёл) отклоняется `0x74` `OpReservationExpired` сразу, без ожидания sweep; дедлайн проверяется **до** refresh'а `lastSeen` — отклонённые попытки grace не продлевают. При живом peer'е дедлайн не применяется — Replace (п. 6).
 
 **Token v4 (reconnect):** `version(1)=4 | roomID u64 | peerID u64 | hostID u16 | HMAC-SHA256(32)` — 51 байт, base64url как join-тикет; без nick и timestamps; `hostID` наследует привязку исходного тикета (strict binding ENet).
 
