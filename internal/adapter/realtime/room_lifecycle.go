@@ -78,21 +78,28 @@ func (r *Room) runLeaveLocked(peer realtime.Peer) error {
 	current, present := r.peers[peerID]
 	if present && current != peer {
 		r.mutex.Unlock()
-		return domain.ErrPeerStale
+		return fmt.Errorf("%w: %d", domain.ErrPeerStale, peerID)
 	}
-	// Декремент только по факту изъятия: повторный leave (оба caller'а
-	// проскочили pre-check до сериализации на loop'е) не должен
-	// дважды декрементить active_peers.
+	// Дедуп двойного teardown (P23) авторитетен на уровне реестра: peer
+	// уже изъят — повторный leave (оба caller'а проскочили pre-check
+	// Room.Leave до сериализации на loop'е) отклоняется тем же sentinel,
+	// что и pre-check — «peer не в комнате на момент применения» един на
+	// обоих уровнях. Отказ до delete, без вызова policy.OnLeave и без
+	// метрик: одиночный broadcast не должен зависеть от того, что
+	// конкретная policy вернёт для отсутствующей state-записи.
+	if !present {
+		r.mutex.Unlock()
+		return fmt.Errorf("%w: %d", domain.ErrPeerNotFound, peerID)
+	}
 	delete(r.peers, peerID)
 	r.mutex.Unlock()
 	// При ошибке OnLeave state-запись peer'а само-вычищается следующим
 	// prune-тиком refreshPeerPings (GetPeer → ErrPeerNotFound → stale).
 	err := r.policy.OnLeave(peer)
-	// Peer уже изъят из r.peers - leave считается и при ошибке policy.
-	if present {
-		r.metrics.PeerLeft()
-		r.metrics.AddActivePeers(-1)
-	}
+	// Peer уже изъят из r.peers - leave считается и при ошибке policy;
+	// метрики по факту изъятия (сюда доходим только при present).
+	r.metrics.PeerLeft()
+	r.metrics.AddActivePeers(-1)
 	return err
 }
 
