@@ -14,6 +14,7 @@ import (
 
 	domain "github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	events "github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
+	realtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -232,17 +233,17 @@ func (c *MockPeerPingCall) DoAndReturn(f func() int64) *MockPeerPingCall {
 }
 
 // Start mocks base method.
-func (m *MockPeer) Start() error {
+func (m *MockPeer) Start(sink realtime.EventSink) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Start")
+	ret := m.ctrl.Call(m, "Start", sink)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Start indicates an expected call of Start.
-func (mr *MockPeerMockRecorder) Start() *MockPeerStartCall {
+func (mr *MockPeerMockRecorder) Start(sink any) *MockPeerStartCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Start", reflect.TypeOf((*MockPeer)(nil).Start))
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Start", reflect.TypeOf((*MockPeer)(nil).Start), sink)
 	return &MockPeerStartCall{Call: call}
 }
 
@@ -258,13 +259,13 @@ func (c *MockPeerStartCall) Return(arg0 error) *MockPeerStartCall {
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockPeerStartCall) Do(f func() error) *MockPeerStartCall {
+func (c *MockPeerStartCall) Do(f func(realtime.EventSink) error) *MockPeerStartCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockPeerStartCall) DoAndReturn(f func() error) *MockPeerStartCall {
+func (c *MockPeerStartCall) DoAndReturn(f func(realtime.EventSink) error) *MockPeerStartCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

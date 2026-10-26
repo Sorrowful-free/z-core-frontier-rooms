@@ -367,3 +367,7 @@ func (r *Room) tryDeliver(ev events.RoomEvent) error {
 		return domain.ErrQueueFull
 	}
 }
+
+// Room реализует EventSink: Deliver — входная точка mailbox'а incoming
+// для read-loop'ов peer'ов (P26).
+var _ realtime.EventSink = (*Room)(nil)

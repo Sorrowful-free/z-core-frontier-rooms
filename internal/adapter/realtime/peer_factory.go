@@ -24,7 +24,7 @@ func NewPeerFactory(logger logging.Logger, outboundQueue int, m portmetrics.Metr
 	}
 }
 
-func (f *PeerFactory) CreatePeer(ctx context.Context, id domain.PeerID, nickName string, connection transport.Connection, room realtime.Room, logger logging.Logger) (realtime.Peer, error) {
+func (f *PeerFactory) CreatePeer(ctx context.Context, id domain.PeerID, nickName string, connection transport.Connection, logger logging.Logger) (realtime.Peer, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -32,7 +32,7 @@ func (f *PeerFactory) CreatePeer(ctx context.Context, id domain.PeerID, nickName
 	if logger == nil {
 		logger = f.logger
 	}
-	peer := NewPeer(ctx, id, nickName, connection, room, f.outboundQueue, logger)
+	peer := NewPeer(ctx, id, nickName, connection, f.outboundQueue, logger)
 	peer.metrics = f.metrics
 	return peer, nil
 }

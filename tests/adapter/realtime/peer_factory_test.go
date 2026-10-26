@@ -14,15 +14,6 @@ func TestPeerFactory_CreatePeerSetsNickName(t *testing.T) {
 
 	logger := stdlib.New("peer-factory-test")
 	factory := adapterrealtime.NewPeerFactory(logger, 0, nil)
-	room := adapterrealtime.NewRoom(
-		context.Background(),
-		domain.RoomID(1),
-		nil,
-		4,
-		nil,
-		0,
-		logger,
-	)
 
 	const nickName = "hero"
 	peer, err := factory.CreatePeer(
@@ -30,7 +21,6 @@ func TestPeerFactory_CreatePeerSetsNickName(t *testing.T) {
 		domain.PeerID(5),
 		nickName,
 		nil,
-		room,
 		logger,
 	)
 	if err != nil {

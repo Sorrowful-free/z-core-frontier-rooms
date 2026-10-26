@@ -63,9 +63,11 @@ func New(id domain.PeerID, nick string, opts ...Option) *Peer {
 
 func (p *Peer) GetID() domain.PeerID { return p.id }
 func (p *Peer) GetNickName() string  { return p.nick }
-func (p *Peer) Start() error         { return nil }
-func (p *Peer) Ping() int64          { p.mu.Lock(); defer p.mu.Unlock(); return p.ping }
-func (p *Peer) IsAlive() bool        { p.mu.Lock(); defer p.mu.Unlock(); return p.alive }
+
+// Start — no-op: fake не гоняет read/write loop'ы, sink игнорируется.
+func (p *Peer) Start(portrealtime.EventSink) error { return nil }
+func (p *Peer) Ping() int64                        { p.mu.Lock(); defer p.mu.Unlock(); return p.ping }
+func (p *Peer) IsAlive() bool                      { p.mu.Lock(); defer p.mu.Unlock(); return p.alive }
 
 // Stop помечает peer мёртвым: дальнейший Deliver отклоняется ErrPeerDead —
 // повторяет поведение продового peer («peer stopped»).

@@ -28,7 +28,6 @@ func TestPeer_Deliver_DropsWhenOutboundFull(t *testing.T) {
 		domain.PeerID(1),
 		"nick",
 		nil,
-		nil,
 		1,
 		logger,
 	)
@@ -59,7 +58,6 @@ func TestPeer_Deliver_ReturnsErrorWhenStopped(t *testing.T) {
 		domain.PeerID(2),
 		"nick",
 		noopConnection{},
-		nil,
 		4,
 		logger,
 	)

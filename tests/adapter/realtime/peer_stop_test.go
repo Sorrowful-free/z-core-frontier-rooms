@@ -41,18 +41,17 @@ func TestPeer_Stop_UnblocksReceive(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	conn, closeCh := newBlockingConn(t, ctrl)
 
-	// nil room безопасен: входящая горутина получает только ошибку из Receive.
 	peer := adapterrealtime.NewPeer(
 		context.Background(),
 		domain.PeerID(1),
 		"nick",
 		conn,
-		nil,
 		8,
 		queueTestLogger{},
 	)
 
-	if err := peer.Start(); err != nil {
+	// nil sink безопасен: входящая горутина получает только ошибку из Receive.
+	if err := peer.Start(nil); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 
@@ -82,17 +81,16 @@ func TestPeer_Stop_ConcurrentDeliver_NoPanic(t *testing.T) {
 	conn, _ := newBlockingConn(t, ctrl)
 	conn.EXPECT().Send(gomock.Any()).Return(nil).AnyTimes()
 
-	// nil room безопасен: входящая горутина получает только ошибку из Receive.
 	peer := adapterrealtime.NewPeer(
 		context.Background(),
 		domain.PeerID(1),
 		"nick",
 		conn,
-		nil,
 		8,
 		queueTestLogger{},
 	)
-	if err := peer.Start(); err != nil {
+	// nil sink безопасен: входящая горутина получает только ошибку из Receive.
+	if err := peer.Start(nil); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 

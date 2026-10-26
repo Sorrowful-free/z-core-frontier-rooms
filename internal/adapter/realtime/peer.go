@@ -18,7 +18,6 @@ type Peer struct {
 	id         domain.PeerID
 	nickName   string
 	connection transport.Connection
-	room       realtime.Room
 	outbound   chan events.PeerEvent
 	logger     logging.Logger
 	metrics    portmetrics.Metrics
@@ -29,7 +28,7 @@ type Peer struct {
 	wg       sync.WaitGroup
 }
 
-func NewPeer(ctx context.Context, id domain.PeerID, nickName string, connection transport.Connection, room realtime.Room, outboundQueue int, logger logging.Logger) *Peer {
+func NewPeer(ctx context.Context, id domain.PeerID, nickName string, connection transport.Connection, outboundQueue int, logger logging.Logger) *Peer {
 	ctx, cancel := context.WithCancel(ctx)
 	if outboundQueue < 0 {
 		outboundQueue = 0
@@ -38,7 +37,6 @@ func NewPeer(ctx context.Context, id domain.PeerID, nickName string, connection 
 		id:         id,
 		nickName:   nickName,
 		connection: connection,
-		room:       room,
 		outbound:   make(chan events.PeerEvent, outboundQueue),
 		logger:     logger,
 		// Умолчание Noop (прямое конструирование в тестах); продовый
@@ -65,9 +63,9 @@ func (p *Peer) IsAlive() bool {
 	return p.connection.IsAlive()
 }
 
-func (p *Peer) Start() error {
+func (p *Peer) Start(sink realtime.EventSink) error {
 	p.wg.Add(2)
-	go processIncomingEvents(p)
+	go processIncomingEvents(p, sink)
 	go processOutgoingEvents(p)
 	return nil
 }
@@ -87,14 +85,14 @@ func (p *Peer) Deliver(peerEvent events.PeerEvent) error {
 	return p.tryDeliver(peerEvent)
 }
 
-func processIncomingEvents(peer *Peer) {
+func processIncomingEvents(peer *Peer, sink realtime.EventSink) {
 	defer peer.wg.Done()
 	for {
 		frame, err := peer.connection.Receive()
 		if err != nil {
 			return
 		}
-		if err := peer.room.Deliver(events.RoomEvent{
+		if err := sink.Deliver(events.RoomEvent{
 			PeerID: peer.id,
 			Frame:  frame,
 		}); err != nil {

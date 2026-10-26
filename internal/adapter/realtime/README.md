@@ -46,6 +46,8 @@ Runtime комнаты: `Room`, `Peer`, фабрики.
 ## Peer
 
 - `NickName` задаётся в `NewPeer` из ticket (`JoinRoom` → `claims.NickName`)
+- Комнату peer **не хранит** (P26): входная точка mailbox'а `incoming` — узкий порт `port/realtime.EventSink` (`Deliver(RoomEvent)`), передаётся параметром в `Start(sink)` и живёт только в замыкании read-горутины. Контракт Start-after-join (`Start` только после успешного `Join`/`Replace`) — caller-side инвариант, зафиксирован в порту.
+- ctx жизни peer'а — отдельный аргумент `NewPeer`/`CreatePeer` (caller передаёт `room.Context()`); конструкции peer'а комната не нужна.
 - I/O через `transport.Connection`
 - `outbound` — буфер `PeerOutboundQueueSize` (default 128); полный → `domain.ErrQueueFull` (room loop не стопорится)
 - `Ping()` для refresh в policy patch tick

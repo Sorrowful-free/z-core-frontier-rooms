@@ -9,5 +9,8 @@ import (
 )
 
 type PeerFactory interface {
-	CreatePeer(ctx context.Context, id domain.PeerID, nickName string, connection transport.Connection, room Room, logger logging.Logger) (Peer, error)
+	// CreatePeer конструирует peer'а поверх connection; ctx — жизненный
+	// цикл peer'а (caller передаёт room.Context()), комната конструкции
+	// не нужна — входная точка mailbox'а приходит в Peer.Start (P26).
+	CreatePeer(ctx context.Context, id domain.PeerID, nickName string, connection transport.Connection, logger logging.Logger) (Peer, error)
 }

@@ -53,7 +53,7 @@ func placePeer(
 	logger logging.Logger,
 	raceReplace bool,
 ) (PeerSession, error) {
-	peer, err := peerFactory.CreatePeer(room.Context(), peerID, nickName, connection, room, logger)
+	peer, err := peerFactory.CreatePeer(room.Context(), peerID, nickName, connection, logger)
 	if err != nil {
 		return PeerSession{}, err
 	}
@@ -78,7 +78,7 @@ func placePeer(
 		logger.Info("peer replaced after join race", "peerID", peerID)
 	}
 
-	if err := peer.Start(); err != nil {
+	if err := peer.Start(room); err != nil {
 		if leaveErr := room.Leave(peer); leaveErr != nil {
 			logger.Error("place peer: rollback leave failed", "error", leaveErr, "peerID", peerID)
 		}
