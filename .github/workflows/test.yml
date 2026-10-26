@@ -121,6 +121,27 @@ jobs:
           CGO_ENABLED: "1"
         run: go test -race -v -tags enet -run '^TestE2E_LiveMatch_Mixed$' -count=1 -timeout 300s ./tests/integration/
 
+  e2e-enet-reconnect:
+    name: E2E reconnect (ENet)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Install ENet dependencies
+        run: sudo apt-get update && sudo apt-get install -y gcc pkg-config libenet-dev
+
+      - name: Run e2e scenario
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race -v -tags enet -run '^TestE2E_ENetReconnect' -count=1 -timeout 120s ./tests/integration/
+
   enet:
     name: ENet smoke (cgo)
     runs-on: ubuntu-latest

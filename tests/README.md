@@ -29,6 +29,9 @@ tests/
   delivery/http/        — REST JSON (app.Test поверх testutil/env)
   delivery/ws/          — WS join lifecycle (реальный listener + fasthttp/websocket)
   integration/          — сквозные сценарии: room lifecycle create→issue→2×WS join→disconnect→leave;
+                          reconnect (P20): WS разрыв → 0x80 → resume v4 → 0x81 + resync;
+                          ENet (tag enet): базовый reconnect, grace-expiry 0x74 (P24),
+                          strict host binding 0x77 на v4-токене;
                           e2e live match (-short skip): общий драйвер + клиенты WS и ENet —
                           WS (~60s): 4 клиента, host dropout → idle evict → 2 миграции master;
                           ENet (~115s, tag enet): то же, dropout = молчание libenet → peer timeout;
@@ -177,7 +180,7 @@ go test -fuzz=FuzzRoomStateDecode -fuzztime=30s ./tests/adapter/realtime/codec/
 | `tests/adapter/transport/enet` | `EnetConfig.Validate` (defaults + граничные значения) |
 | `tests/delivery/admin` | `GET /metrics` happy path; падающий `Gatherer` → 500 с контекстом (P19b) |
 | `tests/delivery/enet` | stub-Listen чистый выход (без тега); e2e под `-tags enet` + cgo: bind-failure → `Err`, `Stop` ждёт loop, admit-timeout disconnect, join-reject доезжает (`DisconnectLater`) |
-| `tests/integration` | room lifecycle: create (host) → issue (joiner) → оба join по WS → 2 peers → joiner disconnect → 1 peer (host); e2e live match (`runLiveMatch` поверх `matchClient`): silent host → evict → master→slave, clean leave master-2 → master-3, slaves видят entities от 2+ мастеров и input друг друга; транспорты: WS (`TestE2E_LiveMatch_HostMigration`, ~60s, idle sweep evict), 4×ENet (`TestE2E_LiveMatch_ENet`, ~115s, libenet peer timeout ~10s, bound 70s), mixed ENet host + WS/ENet slaves (`TestE2E_LiveMatch_Mixed`, ~115s) — оба под `-tags enet` |
+| `tests/integration` | room lifecycle: create (host) → issue (joiner) → оба join по WS → 2 peers → joiner disconnect → 1 peer (host); reconnect: WS `TestIntegration_Reconnect_WS` (0x80 → resume v4 → 0x81, nick из слота), ENet `TestE2E_ENetReconnect*` под `-tags enet` (базовый, expired→0x74, wrong-host→0x77, слот не тратится); e2e live match (`runLiveMatch` поверх `matchClient`): silent host → evict → master→slave, clean leave master-2 → master-3, slaves видят entities от 2+ мастеров и input друг друга; транспорты: WS (`TestE2E_LiveMatch_HostMigration`, ~60s, idle sweep evict), 4×ENet (`TestE2E_LiveMatch_ENet`, ~115s, libenet peer timeout ~10s, bound 70s), mixed ENet host + WS/ENet slaves (`TestE2E_LiveMatch_Mixed`, ~115s) — оба под `-tags enet` |
 
 После изменения `internal/port/*` интерфейсов:
 

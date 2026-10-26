@@ -43,6 +43,17 @@ callsites в `join_room.go`/`reconnect_room.go`.
   и `.cursor/rules/join-error-opcodes.mdc` (в зоне правил — отдельной
   строкой, не правя семантику таблиц).
 
+### 4b. Отложенное (из code-review P22 — зафиксировано, не в скоупе P25 без ок)
+
+- `enetWireClient` (tests/integration/reconnect_e2e_enet_test.go)
+  дублирует помп `enetClient` (~140 строк eventLoop/disconnect/stop):
+  matchClientBase.handleFrame проглатывает 0x7x/0x8x opcodes в логи,
+  поэтому пришлось копировать вместо реюза. Кандидат на вынос общего
+  tagged-базового `enetPump` (HostLoop + Call/Do + admit + graceful
+  disconnect) — отдельный рефактор существующего клиента: переносить
+  `enetClient` на общий базис осторожно (не ломать match-машинерию).
+  Если берём — правки только в tests/, tagged → enet-verify обязателен.
+
 ### 4. Env prefix + stale-mark comment
 
 - `RECONNECT_TTL` → `RESERVATION_RECONNECT_TTL` (консистентно с

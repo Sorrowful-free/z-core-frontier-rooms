@@ -72,9 +72,10 @@ type options struct {
 	httpLimits        httplimitsadapter.HTTPLimitsConfig
 	transport         adaptertransport.TransportConfig
 	idleSweepInterval time.Duration
-	metrics           bool     // WithMetrics: реальный adapter/metrics + admin app
-	enet              bool     // выставляется tagged-опцией WithEnet (env_enet.go)
-	enetPorts         []uint16 // 0-элемент = auto (свободный порт)
+	reconnectTTL      time.Duration // reconnect grace admitted-слотов (P20/P24)
+	metrics           bool          // WithMetrics: реальный adapter/metrics + admin app
+	enet              bool          // выставляется tagged-опцией WithEnet (env_enet.go)
+	enetPorts         []uint16      // 0-элемент = auto (свободный порт)
 }
 
 // Option переопределяет дефолтный конфиг env (auth Disabled, limits zero, transport zero).
@@ -122,6 +123,18 @@ func WithIdleSweep(interval time.Duration) Option {
 	}
 }
 
+// WithReconnectTTL задаёт reconnect grace admitted-слотов без peer в room
+// (P20/P24): deadline-гейт resume в ReconnectRoomUseCase считает expiry от
+// lastSeen disconnect'а + TTL. Без опции — продовый дефолт
+// (adapterreservation.DefaultReconnectTTL). Ноль — любой resume !HasPeer
+// expired. Orphan sweep в env не поднят, так что просроченная grace живёт
+// до явного resume — ветка 0x74 детерминирована, sweep-опция не нужна.
+func WithReconnectTTL(ttl time.Duration) Option {
+	return func(o *options) {
+		o.reconnectTTL = ttl
+	}
+}
+
 // New собирает полное окружение и регистрирует cleanup
 // (закрытие listener'а, shutdown app, shutdown registry — чтобы не висели горутины комнат/peer'ов).
 func New(t *testing.T, opts ...Option) *Env {
@@ -136,6 +149,7 @@ func New(t *testing.T, opts ...Option) *Env {
 			MaxIncomingFrameBytes: adaptertransport.DefaultMaxIncomingFrameBytes,
 			WSWriteDeadline:       adaptertransport.DefaultWSWriteDeadline,
 		},
+		reconnectTTL: adapterreservation.DefaultReconnectTTL,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -179,7 +193,7 @@ func New(t *testing.T, opts ...Option) *Env {
 	deleteUC := useroom.NewDeleteUseCase(registry, reservation, leaveUC, logger)
 	getListUC := useroom.NewGetListUseCase(registry, logger)
 	joinUC := useroom.NewJoinRoomUseCase(peerFactory, registry, reservation, logger)
-	reconnectUC := useroom.NewReconnectRoomUseCase(peerFactory, registry, reservation, adapterreservation.DefaultReconnectTTL, logger, m)
+	reconnectUC := useroom.NewReconnectRoomUseCase(peerFactory, registry, reservation, cfg.reconnectTTL, logger, m)
 	admitUC := useroom.NewAdmitPeerUseCase(admission, joinUC, reconnectUC, logger)
 
 	var enetHandler *deliveryenet.RoomsHandler
