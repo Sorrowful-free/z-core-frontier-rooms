@@ -28,6 +28,18 @@
 - Лимиты по умолчанию душат прогон: `MAX_ROOMS=500`,
   `HTTP_CREATE_RATE_PER_MIN=30`, `HTTP_ISSUE_RATE_PER_MIN=60`
   (per-IP!) — для 1000 комнат × 4 клиента нужен env-пресет.
+- `POST /rooms` принимает `policy` (P29): `state` (дефолт,
+  master-миграция) | `authoritative-host` (уход хоста = смерть
+  комнаты: оставшимся `0x82 OpRoomClosed` + disconnect, слоты
+  ревокаются). Неизвестное значение → `400 invalid_policy`.
+- Reconnect-credential — отдельный kind=2 тикета (P28, строгие kind:
+  join=1, reconnect=2); клиенту тикет opaque — join-флоу loadgen'а
+  не меняется, reconnect идёт тем же `?token=` с reconnect-токеном
+  из ticket-ответа.
+- P30 (drain-aware close) идёт параллельной веткой: до его мержа
+  0x82 на WS — best-effort. Loadgen считает фактически полученные
+  `0x82` (метрика `room_closed_received`) — наблюдение в отчёте,
+  НЕ pass/fail: промахи до P30 — известный baseline, после — регресс.
 - Сервер уже отдаёт Prometheus на `ADMIN_LISTEN_ADDR` → `GET /metrics`:
   `rooms_active_rooms`, `rooms_active_peers`,
   `rooms_queue_drops_total{queue}`, `rooms_room_tick_seconds{kind}`,
@@ -70,6 +82,15 @@ host:                     docker:
   - `LOADGEN_TRANSPORT_MIX="ws:70,enet:30"` — доля клиентов на
     транспорт; без `-tags enet` enet-доля фейлится на dial (метрика
     `dial_errors{transport=enet}`).
+  - `LOADGEN_POLICY_MIX="state:80,auth:20"` — доля комнат, создаваемых
+    с `policy=authoritative-host` (P29). У auth-комнат host-клиент в
+    sustain-фазе делает **одноразовый abrupt disconnect** в случайный
+    момент (без reconnect — хоста нет, комната мертва); остальные
+    клиенты комнаты ожидают `0x82` до обрыва (счётчик
+    `room_closed_received` vs `auth_rooms_died`) и завершаются —
+    комнаты больше нет. Проверяет closeRoom/drain на масштабе и
+    drain-complete по смерти хоста (комната исчезает из
+    `rooms_active_rooms` + слотов).
   - `LOADGEN_MODE=state|occupancy` — в state: все шлют `PatchInput`
     (`LOADGEN_INPUT_HZ`, default 20), host — `PatchEntities`
     (`LOADGEN_ENTITIES_HZ`, default 20); occupancy — только жить.
@@ -111,7 +132,8 @@ host:                     docker:
 - `report.json` по завершении (путь `LOADGEN_REPORT`, default
   `/out/report.json`): join success rate, dial/join latency p50/p95/p99,
   frames in/out per client & total, PatchState received rate, errors
-  by type/opcode, reconnect attempts/success, evictions observed.
+  by type/opcode, reconnect attempts/success, evictions observed,
+  `room_closed_received`/`auth_rooms_died` (0x82-доставка — см. P30).
 - Live-прогресс на stdout раз в `LOADGEN_LOG_EVERY` (default 10s):
   rooms up, clients up, msg rates, error counters.
 - Server scrape: orchestrator (host-скрипт) снимает `GET /metrics`
@@ -158,44 +180,100 @@ ADMISSION_SECRET=<32+ bytes, генерится оркестратором>
   drain (close all) → poll-drain → report. Graceful: ctx-cancel
   на SIGINT — отчёт всё равно пишется (partial).
 
-## Скоуп правок (фиксированный)
+## Инкременты
+
+План большой — исполнение тремя инкрементами; каждый — отдельный заход
+со своей верификацией. Скоуп правок ниже разбит по инкрементам;
+зафиксированный скоуп override (ai-companion) — сумма трёх списков.
+
+### Inc 1 — host-only core (WS, без Docker/cgo)
+
+Всё, что гоняется на хосте без docker и без `-tags enet`:
 
 - `cmd/loadgen/main.go` — entrypoint, env-конфиг, запуск fleet.
-- `internal/loadgen/` — новые файлы: `config.go`, `client.go` (+ `client_enet.go`
-  под `//go:build enet && cgo` + `client_enet_stub.go`), `peer.go`,
-  `fleet.go`, `metrics.go`, `report.go`, `netem.md`-примечания в README.
-- `internal/loadgen/README.md` — пакетная документация (env-индекс
-  loadgen, профили, режимы).
+- `internal/loadgen/` — `config.go`, `client.go` (интерфейс `DataConn` +
+  WS-реализация на `fasthttp/websocket`), `peer.go`, `fleet.go`,
+  `metrics.go`, `report.go`.
+- `internal/loadgen/README.md` — пакетная документация (расширять по
+  инкрементам).
+- `.env.loadtest` — пресет (в `.gitignore`-проверку: без секретов —
+  secret генерится рантайм).
+- `scripts/loadtest-run.sh` — оркестратор в **host-режиме**: поднимает
+  `cmd/rooms` с preset-env (`go run` / бинарь), гоняет `go run
+  ./cmd/loadgen`, снимает `/metrics` до/после, складывает report.
+- Фичи inc 1: `ROOM_MIX`, `POLICY_MIX` (+ host-kill auth-комнат,
+  счётчик `room_closed_received`), `TRANSPORT_MIX` (ws-only; enet-доля
+  → `dial_errors`), `INPUT_HZ`/`ENTITIES_HZ`, `RAMP`, `DURATION`,
+  `DRAIN_TIMEOUT`, `RECONNECT_RATE`/`RECONNECT_EVERY` (WS resume по
+  `?token=` reconnect-токеном), `report.json`, live-прогресс, server
+  metrics snapshot.
+
+Верификация inc 1:
+
+- `go build ./...`, `~/go/bin/golangci-lint run ./...` — 0.
+- Smoke на хосте (без docker): оркестратор поднимает rooms с
+  `.env.loadtest`, loadgen `LOADGEN_ROOMS=4
+  LOADGEN_ROOM_MIX="4/4:100" LOADGEN_POLICY_MIX="state:50,auth:50"
+  LOADGEN_TRANSPORT_MIX="ws:100" LOADGEN_DURATION=30s
+  LOADGEN_RECONNECT_RATE=0.2` → `report.json` существует и валиден,
+  `drain_complete: true`, `join_success ≥ rooms×occupancy`,
+  `auth_rooms_died ≥ 1`, `room_closed_received` засчитан
+  (промахи ок — pre-P30 baseline, см. Контекст).
+
+### Inc 2 — Docker + netem
+
 - `deploy/loadgen/Dockerfile` — FROM zcore-rooms-dev + `tc`/`iproute2`,
   entrypoint с netem.
 - `deploy/loadgen/docker-compose.loadgen.yml` — сервис loadgen
   (cap_add: NET_ADMIN), опц. сервер как сервис.
-- `scripts/loadtest-run.sh` — оркестратор на хосте: пресет-env,
-  build `--network=host`, запуск, /metrics snapshots, сбор report.
-- `.env.loadtest` — пресет (в `.gitignore`-проверку: без секретов —
-  secret генерится рантайм).
-- `docs/plans/P27-loadgen.md` — этот файл.
+- `scripts/loadtest-run.sh` — docker-режим: build `--network=host`,
+  запуск контейнера, сбор report из `/out`.
+- `internal/loadgen/README.md` — профили `bad`/`ugly`, `NETEM_SHARE`.
 
-Вне скоупа: правки production-кода сервера, правки `tests/` (кроме
-опциональных тестов loadgen по запросу), изменения CI-workflow.
+Верификация inc 2:
+
+- `docker build --network=host` — образ собирается.
+- Контейнерный прогон с `bad`/`ugly` пресетами → `report.json`;
+  доли `NETEM_SHARE` статистически совпадают ±5% (по метрикам клиентов).
+
+### Inc 3 — ENet-клиент
+
+- `internal/loadgen/client_enet.go` (`//go:build enet && cgo`) +
+  `client_enet_stub.go` (без тега → dial error).
+- Распределение по `ENET_LISTEN_PORTS` (round-robin по `enet_port`
+  из ticket-ответа); `TRANSPORT_MIX` enet-доля.
+- `internal/loadgen/README.md` — enet-секция.
+
+Верификация inc 3:
+
+- `./scripts/enet-verify.sh build` + `vet` — tagged-код компилится.
+- Smoke внутри `zcore-rooms-dev`: `TRANSPORT_MIX="ws:70,enet:30"` →
+  `dial_errors{transport=enet}=0`, join_success по обоим транспортам.
+
+Вне скоупа (всех инкрементов): правки production-кода сервера, правки
+`tests/` (кроме опциональных тестов loadgen по запросу), изменения
+CI-workflow.
 
 ## Открытые детали реализации (не блокируют план)
 
-- Точный механизм netem-шардинга per-client (fwmark vs port-ranges).
+- Точный механизм netem-шардинга per-client (fwmark vs port-ranges) —
+  inc 2.
 - PatchInput/PatchEntities payload — минимально валидные по codec
   (подсмотреть в `match_e2e_client_test.go`).
 - Распределение ENet-клиентов по `ENET_LISTEN_PORTS` (round-robin
-  по ответному `enet_port`).
+  по ответному `enet_port`) — inc 3.
 
-## Верификация (для сабагента)
+## Верификация
+
+По инкрементам — см. раздел «Инкременты». Финальный прогон после inc 3:
 
 - `go build ./...` — 0 ошибок.
 - `./scripts/enet-verify.sh build` **и** `vet` — tagged-код компилится
   (обязательно: `client_enet.go` под тегом).
 - `~/go/bin/golangci-lint run ./...` — 0 issues.
-- Smoke-прогон: сервер с `.env.loadtest` + loadgen
-  `LOADGEN_ROOMS=4 LOADGEN_ROOM_MIX="4/4:100" LOADGEN_DURATION=30s
-  LOADGEN_TRANSPORT_MIX="ws:100"` → `report.json` существует,
-  `drain_complete: true`, `join_success ≥ rooms×occupancy`.
-- Дым-тест отчёта: JSON валиден, поля `server_metrics` и
+- Полный smoke: сервер с `.env.loadtest` + контейнер loadgen
+  `LOADGEN_ROOMS=10 LOADGEN_ROOM_MIX="4/4:70,8/6:30"
+  LOADGEN_POLICY_MIX="state:80,auth:20" LOADGEN_TRANSPORT_MIX="ws:70,enet:30"
+  LOADGEN_DURATION=60s` → `report.json` валиден, `drain_complete: true`,
+  `join_success ≥ rooms×occupancy`, поля `server_metrics` и
   `client_metrics` присутствуют.
