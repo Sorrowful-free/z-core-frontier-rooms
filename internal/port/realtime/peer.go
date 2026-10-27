@@ -23,12 +23,19 @@ type Peer interface {
 	Start(sink EventSink) error
 
 	// Stop — реальное завершение обеих горутин, не fire-and-forget:
-	// cancel → conn.Close → read-loop выходит по ошибке Receive,
-	// write-loop по ctx.Done, wg.Wait их ждёт. Порядок: Stop после
-	// изъятия peer'а из комнаты (Leave/Replace/rollback) — остановленный
-	// peer в реестре комнаты = zombie до idle-sweep. Fallback: conn
-	// умер сам (сеть) → read-loop выходит по ошибке Receive без Stop;
-	// write-loop висит на ctx.Done до Stop от evict-пути.
+	// cancel → drain outbound (write-loop сливает закоммиченные кадры,
+	// bounded по drain-таймауту) → conn.Close → read-loop выходит по
+	// ошибке Receive, wg.Wait ждёт обеих. Контракт: кадры, чей Deliver
+	// закоммитил до начала Stop, получают попытку Send до Close;
+	// Deliver, гонящийся со Stop (прошёл ctx-проверку, enqueue после
+	// наблюдения пустой очереди write-loop'ом), — unspecified, кадр
+	// может быть потерян. Порядок: Stop после изъятия peer'а из комнаты
+	// (Leave/Replace/rollback) — остановленный peer в реестре комнаты =
+	// zombie до idle-sweep. Fallback: conn умер сам (сеть) → read-loop
+	// выходит по ошибке Receive без Stop; write-loop висит на ctx.Done
+	// до Stop от evict-пути. Stop ожидается после Start: до Start
+	// write-loop не запущен — drain-ожидание пропускается, соединение
+	// просто закрывается.
 	Stop() error
 
 	Deliver(peerEvent events.PeerEvent) error

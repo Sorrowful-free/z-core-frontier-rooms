@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"context"
+	"time"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
@@ -13,13 +14,15 @@ import (
 type PeerFactory struct {
 	logger        logging.Logger
 	outboundQueue int
+	drainTimeout  time.Duration
 	metrics       portmetrics.Metrics
 }
 
-func NewPeerFactory(logger logging.Logger, outboundQueue int, m portmetrics.Metrics) *PeerFactory {
+func NewPeerFactory(logger logging.Logger, outboundQueue int, drainTimeout time.Duration, m portmetrics.Metrics) *PeerFactory {
 	return &PeerFactory{
 		logger:        logger,
 		outboundQueue: outboundQueue,
+		drainTimeout:  drainTimeout,
 		metrics:       portmetrics.OrNoop(m),
 	}
 }
@@ -34,5 +37,6 @@ func (f *PeerFactory) CreatePeer(ctx context.Context, id domain.PeerID, nickName
 	}
 	peer := NewPeer(ctx, id, nickName, connection, f.outboundQueue, logger)
 	peer.metrics = f.metrics
+	peer.drainTimeout = f.drainTimeout
 	return peer, nil
 }

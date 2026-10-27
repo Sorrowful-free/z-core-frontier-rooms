@@ -175,10 +175,12 @@ func (r *Room) Leave(peer realtime.Peer) error {
 		done: make(chan error, 1),
 	}); err != nil {
 		// Sentinel-отказы (ErrPeerNotFound — дедуп P23, ErrPeerStale —
-		// вытеснение P20) — ожидаемые гонки teardown, до policy не
-		// доходят: их логируют caller'ы со своим контекстом, здесь Error
-		// был бы ложным «policy on leave failed».
-		if !errors.Is(err, domain.ErrPeerNotFound) && !errors.Is(err, domain.ErrPeerStale) {
+		// вытеснение P20, ErrRoomShouldClose — заказанный policy сигнал
+		// на teardown P29/P30) — ожидаемые гонки/переходы teardown, не
+		// сбои leave: первые два отклоняются до policy, третий намеренно
+		// ей порождён и обрабатывается usecase'ом (closeRoom пишет свой
+		// Info «room closed by policy») — Error тут ложный.
+		if !errors.Is(err, domain.ErrPeerNotFound) && !errors.Is(err, domain.ErrPeerStale) && !errors.Is(err, domain.ErrRoomShouldClose) {
 			r.logger.Error("room leave: policy on leave failed", "error", err, "roomID", r.id, "peerID", peerID)
 		}
 		return err

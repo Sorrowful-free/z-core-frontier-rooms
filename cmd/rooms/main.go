@@ -94,7 +94,7 @@ func run() error {
 				cfg.Transport.RoomIncomingQueueSize, m),
 		},
 	)
-	peerFactory := realtime.NewPeerFactory(zaplog.NewFrom(z, "peer factory"), cfg.Transport.PeerOutboundQueueSize, m)
+	peerFactory := realtime.NewPeerFactory(zaplog.NewFrom(z, "peer factory"), cfg.Transport.PeerOutboundQueueSize, cfg.Transport.PeerCloseDrainTimeout, m)
 
 	roomRegistry := registry.NewRoomRegistry(appCtx, roomFactory, zaplog.NewFrom(z, "rooms registry"), m)
 

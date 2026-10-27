@@ -15,8 +15,11 @@
 | `PeerIdleTimeout` | 30s | `TRANSPORT_PEER_IDLE_TIMEOUT` (`0` — механизм отключён; отрицательные — ошибка Validate) |
 | `PeerIdleSweepInterval` | 10s | `TRANSPORT_PEER_IDLE_SWEEP_INTERVAL` (`0` — sweep не стартует; отрицательные — ошибка Validate) |
 | `WSWriteDeadline` | 10s | `TRANSPORT_WS_WRITE_DEADLINE` (`0` — без дедлайна; отрицательные — ошибка Validate) |
+| `PeerCloseDrainTimeout` | 1s | `TRANSPORT_PEER_CLOSE_DRAIN_TIMEOUT` (`0` — drain выключен, `peer.Stop` не ждёт write-loop; отрицательные — ошибка Validate) |
 
 `MaxIncomingFrameBytes=0` — **без лимита** входящего кадра (опасно, явный opt-in; см. `adapter/config/README.md`).
+
+`PeerCloseDrainTimeout` — потолок drain-aware close peer'а (P30, см. `adapter/realtime/README.md`): `peer.Stop` ждёт слива `outbound` write-loop'ом не дольше этого бюджета, затем `conn.Close`; `0` — механизм выключен (как `PeerIdleTimeout <= 0`), Stop идёт на close сразу.
 
 **Переполнение:** `room.incoming`, `peer.outbound` и ENet session — **drop** кадра + warn (room loop / host loop / peer read не блокируются).
 

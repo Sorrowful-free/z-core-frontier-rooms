@@ -90,6 +90,7 @@
 | `TRANSPORT_PEER_IDLE_TIMEOUT` | нет | `30s` | Окно живости `IsAlive` (WS lastSeen); `0` — отключить idle eviction (отрицательные — ошибка Validate) |
 | `TRANSPORT_PEER_IDLE_SWEEP_INTERVAL` | нет | `10s` | Период фонового sweep idle peer'ов; `0` — отключить (отрицательные — ошибка Validate) |
 | `TRANSPORT_WS_WRITE_DEADLINE` | нет | `10s` | Дедлайн записи WS-кадра (`SetWriteDeadline` перед `WriteMessage`); `0` — без дедлайна (отрицательные — ошибка Validate) |
+| `TRANSPORT_PEER_CLOSE_DRAIN_TIMEOUT` | нет | `1s` | Потолок drain'а `peer.outbound` при `peer.Stop` (P30): закоммиченные до Stop кадры получают `Send` до `conn.Close`; `0` — drain выключен (отрицательные — ошибка Validate) |
 
 `TRANSPORT_MAX_INCOMING_FRAME_BYTES=0` / `MaxIncomingFrameBytes=0` — **unlimited входящий кадр**: ни `SetReadLimit` (WS), ни проверка размера пакета (ENet) не применяются. Опасно (один клиент может сожрать память гигантским кадром) — только как явный opt-in, не для prod-дефолта.
 

@@ -331,6 +331,60 @@ func TestLoadFromEnv_TransportWSWriteDeadline(t *testing.T) {
 	}
 }
 
+// P30: потолок drain'а peer.outbound при Stop — «Send до Close».
+func TestLoadFromEnv_TransportPeerCloseDrainTimeout(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	t.Setenv("TRANSPORT_PEER_CLOSE_DRAIN_TIMEOUT", "500ms")
+
+	cfg, err := appconfig.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv: %v", err)
+	}
+	if cfg.Transport.PeerCloseDrainTimeout != 500*time.Millisecond {
+		t.Fatalf("peer close drain timeout = %v, want 500ms", cfg.Transport.PeerCloseDrainTimeout)
+	}
+
+	// 0 — drain выключен (валидно, семантика «механизм off»).
+	t.Setenv("TRANSPORT_PEER_CLOSE_DRAIN_TIMEOUT", "0")
+	cfg, err = appconfig.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv (0): %v", err)
+	}
+	if cfg.Transport.PeerCloseDrainTimeout != 0 {
+		t.Fatalf("peer close drain timeout = %v, want 0", cfg.Transport.PeerCloseDrainTimeout)
+	}
+}
+
+func TestLoadFromEnv_TransportPeerCloseDrainTimeoutInvalid(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+
+	t.Setenv("TRANSPORT_PEER_CLOSE_DRAIN_TIMEOUT", "not-a-duration")
+	if _, err := appconfig.LoadFromEnv(); err == nil {
+		t.Fatal("expected error for invalid TRANSPORT_PEER_CLOSE_DRAIN_TIMEOUT")
+	}
+
+	t.Setenv("TRANSPORT_PEER_CLOSE_DRAIN_TIMEOUT", "-1s")
+	if _, err := appconfig.LoadFromEnv(); err == nil {
+		t.Fatal("expected error for negative TRANSPORT_PEER_CLOSE_DRAIN_TIMEOUT")
+	}
+}
+
+func TestLoadFromEnv_TransportPeerCloseDrainTimeoutDefault(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	t.Setenv("TRANSPORT_PEER_CLOSE_DRAIN_TIMEOUT", "")
+
+	cfg, err := appconfig.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv: %v", err)
+	}
+	if cfg.Transport.PeerCloseDrainTimeout != adaptertransport.DefaultPeerCloseDrainTimeout {
+		t.Fatalf("peer close drain timeout = %v, want default %v", cfg.Transport.PeerCloseDrainTimeout, adaptertransport.DefaultPeerCloseDrainTimeout)
+	}
+}
+
 func TestLoadFromEnv_EnetDefaults(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", validSecret())
 	setHTTPAuthDisabled(t)

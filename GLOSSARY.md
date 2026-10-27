@@ -59,3 +59,7 @@ _Avoid_: failover host, master handoff
 **Master election semantics**:
 Правила выбора master в `StateRoomPolicy`: stale-кандидаты (`ErrPeerNotFound` от `GetPeer` — peer в state, но не в room) пропускаются, выборы идут среди живых; все stale → пустые выборы (`PeerIDInvalid`, не ошибка); прочие ошибки `GetPeer` фейлят выборы; `IsMaster`-флаги пишутся в state только после успешной проверки избранного peer (validate-first) — state не рекламирует master, которого нет у policy.
 _Avoid_: quorum, leader election
+
+**Peer drain** (drain-aware close, P30):
+Слив `peer.outbound` при `Peer.Stop` до закрытия соединения: по отмене ctx write-loop дочитывает закоммиченные кадры и вызывает `Send`, `Stop` ждёт слива в пределах `TRANSPORT_PEER_CLOSE_DRAIN_TIMEOUT` (`0` — выключен) и только затем `conn.Close`. Гарантия — «`Send` до `Close`», не «клиент получил». Не путать с **grace window**: grace — уровень reservation (воскрешение peerID после разрыва), drain — транспортный flush последних кадров на прощание.
+_Avoid_: graceful disconnect (это про ENet `DisconnectLater`), send flush, linger

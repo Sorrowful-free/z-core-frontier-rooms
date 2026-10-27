@@ -20,6 +20,12 @@ const (
 
 	// DefaultWSWriteDeadline — дедлайн записи WS-кадра (Send).
 	DefaultWSWriteDeadline = 10 * time.Second
+
+	// DefaultPeerCloseDrainTimeout — потолок drain'а peer.outbound при
+	// Stop: закоммиченные до Stop кадры получают попытку Send до
+	// conn.Close (P30). Дубль-партнёр realtime.defaultPeerCloseDrainTimeout
+	// (дефолт прямого NewPeer в тестах) — держать равными.
+	DefaultPeerCloseDrainTimeout = 1 * time.Second
 )
 
 // TransportConfig — лимиты data plane (WS + ENet).
@@ -38,6 +44,8 @@ type TransportConfig struct {
 	PeerIdleSweepInterval time.Duration
 	// WSWriteDeadline — дедлайн записи WS-кадра (SetWriteDeadline перед WriteMessage); 0 — без дедлайна.
 	WSWriteDeadline time.Duration
+	// PeerCloseDrainTimeout — потолок drain'а peer.outbound при peer.Stop (P30); 0 — drain отключён (Stop не ждёт write-loop).
+	PeerCloseDrainTimeout time.Duration
 }
 
 // Validate проверяет допустимость значений.
@@ -62,6 +70,9 @@ func (c TransportConfig) Validate() error {
 	}
 	if c.WSWriteDeadline < 0 {
 		return fmt.Errorf("transport config: ws write deadline must be >= 0")
+	}
+	if c.PeerCloseDrainTimeout < 0 {
+		return fmt.Errorf("transport config: peer close drain timeout must be >= 0")
 	}
 	return nil
 }

@@ -3,7 +3,7 @@ package room
 import (
 	"context"
 	"errors"
-	"runtime"
+	"sync"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
@@ -27,10 +27,12 @@ import (
 //     (ws waiter / ENet EventDisconnect → DisconnectPeer); когда комната уже
 //     снята с реестра, колбэк упирается в ErrRoomNotFound и не нагоняет
 //     grace-mark / OpPeerDisconnected поверх умирающей комнаты.
-//   - Stop последним: Deliver коммитит кадр в write-loop получателя ещё до
-//     conn.Close (на ENet порядок гарантирован жёстко — DisconnectLater в
-//     той же FIFO-очередь host loop'а; на WS Send и Close идут из разных
-//     горутин, unregister-шаги дают write-loop'у окно на флеш).
+//   - Stop последним: drain-aware peer.Stop (P30) гарантирует порядок
+//     «Send закоммиченного кадра до conn.Close» — write-loop сливает
+//     outbound в пределах drain-таймаута до закрытия соединения (на ENet
+//     SendBytes и DisconnectLater в одной FIFO-очереди host loop'а,
+//     порядок строгий де-юре; на WS — Send вызван до Close, досыл
+//     буфера — ядро).
 func closeRoom(
 	ctx context.Context,
 	room realtime.Room,
@@ -50,14 +52,10 @@ func closeRoom(
 			resultErr = errors.Join(resultErr, err)
 		}
 	}
-	// Deliver коммитит кадр в select-case припаркованного write-loop'а
-	// (handoff), но сам conn.Send выполняется на его горутине — conn.Close
-	// из нашего пути (peer.Stop ниже, либо read-loop по «room stopped»)
-	// может обогнать запись. Уступаем квант, чтобы разбуженный write-loop
-	// успел записать кадр на сокет до teardown'а. На ENet порядок гарантирован
-	// жёстко (DisconnectLater в той же FIFO-очереди host loop'а), так что это
-	// best-effort для WS; drain-aware close — уровень peer'а, не usecase.
-	runtime.Gosched()
+	// Окно на флеш кадра больше не нужно: drain-aware peer.Stop (P30)
+	// вызывает conn.Close только после того, как write-loop слил
+	// закоммиченный до Stop outbound (bounded по drain-таймауту) — порядок
+	// «Send 0x82 до Close» гарантирован на уровне peer'а, не scheduling-приёмом.
 
 	if err := roomRegistry.DeleteRoom(ctx, roomID); err != nil {
 		if errors.Is(err, domain.ErrRoomNotFound) {
@@ -74,12 +72,24 @@ func closeRoom(
 		resultErr = errors.Join(resultErr, err)
 	}
 
+	// Stop'ы — параллельно: drain-aware Stop (P30) ждёт writeDone до
+	// drain-таймаута на заблокированном Send; серийный цикл дал бы
+	// O(N×timeout) teardown (capacity до 127).
+	var stopWG sync.WaitGroup
+	var stopMu sync.Mutex
 	for _, peer := range peers {
-		if err := peer.Stop(); err != nil {
-			logger.Error("close room: peer stop failed", "error", err, "roomID", roomID, "peerID", peer.GetID())
-			resultErr = errors.Join(resultErr, err)
-		}
+		stopWG.Add(1)
+		go func() {
+			defer stopWG.Done()
+			if err := peer.Stop(); err != nil {
+				logger.Error("close room: peer stop failed", "error", err, "roomID", roomID, "peerID", peer.GetID())
+				stopMu.Lock()
+				resultErr = errors.Join(resultErr, err)
+				stopMu.Unlock()
+			}
+		}()
 	}
+	stopWG.Wait()
 
 	if resultErr != nil {
 		return resultErr

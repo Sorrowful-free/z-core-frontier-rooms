@@ -53,6 +53,12 @@ Runtime комнаты: `Room`, `Peer`, фабрики.
 - `Ping()` для refresh в policy patch tick
 - `IsAlive()` — делегирует в `transport.Connection`; `false` → peer подлежит idle eviction ([ADR 0001](../../../docs/adr/0001-idle-peer-eviction.md))
 
+### Peer Stop / drain (P30)
+
+`Peer.Stop()` — не fire-and-forget: `cancel` → **drain** `outbound` → `conn.Close` → `wg.Wait`. По отмене ctx write-loop переходит в drain-фазу: дочитывает `outbound` до пустоты (`select`+`default`), вызывая `Send` для каждого остатка, и замыкает `writeDone`. `Stop` ждёт `writeDone` не дольше `drainTimeout`, по дедлайну идёт на force `conn.Close` (прерывает и заблокированный `Send` — read-loop висеть до close нельзя, поэтому ждать весь `wg` до `conn.Close` было бы deadlock'ом). `drainTimeout = 0` — drain выключен.
+
+Контракт: кадры, чей `Deliver` закоммитил **до** начала `Stop`, получают попытку `Send` до `Close`; `Deliver`, гонящийся со `Stop` (прошёл ctx-проверку, но enqueue после наблюдения пустой очереди write-loop'ом), — **unspecified**. Гарантия — «`Send` вызван до `Close`», не «клиент получил»: после нормального close() ядро досылает буфер, на ENet `SendBytes` оказывается в FIFO host loop'а до `DisconnectLater` — порядок строгий де-юре. Значение приходит от `PeerFactory` (`TransportConfig.PeerCloseDrainTimeout`); у `NewPeer` — пакетный дефолт 1s (сигнатура стабильна для white-box тестов, тот же паттерн, что `metrics`).
+
 ## Policy
 
 Контракт: `port/realtime/policy.RoomPolicy`.  

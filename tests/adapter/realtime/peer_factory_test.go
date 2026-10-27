@@ -13,7 +13,7 @@ func TestPeerFactory_CreatePeerSetsNickName(t *testing.T) {
 	t.Parallel()
 
 	logger := stdlib.New("peer-factory-test")
-	factory := adapterrealtime.NewPeerFactory(logger, 0, nil)
+	factory := adapterrealtime.NewPeerFactory(logger, 0, 0, nil)
 
 	const nickName = "hero"
 	peer, err := factory.CreatePeer(

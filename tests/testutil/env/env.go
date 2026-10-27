@@ -148,6 +148,9 @@ func New(t *testing.T, opts ...Option) *Env {
 			EnetIncomingQueueSize: adaptertransport.DefaultEnetIncomingQueueSize,
 			MaxIncomingFrameBytes: adaptertransport.DefaultMaxIncomingFrameBytes,
 			WSWriteDeadline:       adaptertransport.DefaultWSWriteDeadline,
+			// Drain-дефолт как у прода: teardown-тесты (0x82 до close, P30)
+			// опираются на гарантию «Send до Close».
+			PeerCloseDrainTimeout: adaptertransport.DefaultPeerCloseDrainTimeout,
 		},
 		reconnectTTL: adapterreservation.DefaultReconnectTTL,
 	}
@@ -182,7 +185,7 @@ func New(t *testing.T, opts ...Option) *Env {
 				logger, statepolicy.NewAuthoritativeHostPolicyFactory(logger, m), cfg.transport.RoomIncomingQueueSize, m),
 		},
 	)
-	peerFactory := adapterrealtime.NewPeerFactory(logger, cfg.transport.PeerOutboundQueueSize, m)
+	peerFactory := adapterrealtime.NewPeerFactory(logger, cfg.transport.PeerOutboundQueueSize, cfg.transport.PeerCloseDrainTimeout, m)
 
 	registry := adapterregistry.NewRoomRegistry(context.Background(), roomFactory, logger, m)
 	reservation := adapterreservation.NewReservation(logger, m)
