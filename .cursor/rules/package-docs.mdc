@@ -33,7 +33,7 @@ alwaysApply: true
 | HTTP API key, `HTTPAuthConfig` | `internal/adapter/httpauth/README.md`, `internal/delivery/http/README.md` |
 | HTTP limits, `HTTPLimitsConfig`, `port/httplimits.Limits` | `internal/adapter/httplimits/README.md`, `internal/port/httplimits`, `internal/delivery/http/README.md` |
 | `ErrRoomsLimitReached` | `internal/domain/README.md`, `internal/delivery/http/README.md` |
-| Ticket layout (kind/поля), Claims, ValidateNickName, `AdmissionConfig` | `internal/adapter/admission/README.md`, `internal/domain/README.md`, `docs/client-protocol/{realtime,enet,http,errors,state-sync}.md`, `GLOSSARY.md` |
+| Ticket layout (kind/поля), Claims, ValidateNickName, `AdmissionConfig` | `internal/adapter/admission/README.md`, `internal/domain/README.md`, `docs/client-protocol/{realtime,enet,http,errors,state-sync}.md`, `docs/architecture.md`, `GLOSSARY.md` |
 | Reservation слоты | `internal/adapter/reservation/README.md` |
 | Room, Peer, lifecycle, Replace | `internal/adapter/realtime/README.md` |
 | StateRoomPolicy, master, ticks | `internal/adapter/realtime/policy/state/README.md`, `docs/client-protocol/state-sync.md` |
