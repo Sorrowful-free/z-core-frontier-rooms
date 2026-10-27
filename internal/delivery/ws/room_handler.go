@@ -80,8 +80,8 @@ func (h *RoomsHandler) handleConnect(c *websocket.Conn) {
 	}
 
 	// Единый admit-вход (P20): join-ticket и reconnect-токен разводит фасад
-	// по claims.Kind; HostIDAny — на WS strict binding не проверяется.
-	session, err := h.admitPeerUseCase.Admit(h.ctx, connection, token, domain.HostIDAny)
+	// по claims.Kind; HostIDUnbound — на WS strict binding не проверяется.
+	session, err := h.admitPeerUseCase.Admit(h.ctx, connection, token, domain.HostIDUnbound)
 	if err != nil {
 		h.sendJoinReject(connection, err)
 		h.logger.Error("websocket admit failed", "error", err, "op", deliveryerrors.JoinRejectOpCode(err))

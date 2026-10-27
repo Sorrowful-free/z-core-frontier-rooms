@@ -469,7 +469,7 @@ func (e *Env) IssueTicketPort(t *testing.T, roomID domain.RoomID, nick string) (
 	return token, port
 }
 
-// IssueTicketReconnect - то же, что IssueTicketPort, плюс reconnect-токен v4
+// IssueTicketReconnect - то же, что IssueTicketPort, плюс reconnect-токен
 // (P20): credential resume под тем же peerID после разрыва.
 func (e *Env) IssueTicketReconnect(t *testing.T, roomID domain.RoomID, nick string) (joinToken, reconnectToken string, enetPort uint16) {
 	t.Helper()

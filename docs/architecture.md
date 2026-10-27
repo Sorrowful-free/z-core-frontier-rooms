@@ -22,7 +22,7 @@ domain/                   — типы, события, sentinel-ошибки (�
 ## Типичный поток
 
 ```text
-IssueTicket (HTTP) → ticket v3 с nick_name (+ hostID при ENet sharding, P18)
+IssueTicket (HTTP) → join-ticket с nick_name (+ hostID при ENet sharding, P18)
 JoinRoom (WS/ENet)  → Validate → Admit → Peer → Room.Join/Replace → Start
 LeaveRoom           → Room.Leave → Peer.Stop → Revoke
 ```

@@ -2,9 +2,6 @@ package admission_test
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/binary"
 	"errors"
 	"math"
 	"testing"
@@ -28,7 +25,7 @@ func TestIssueValidateRoundTrip(t *testing.T) {
 	a := admission.NewAdmission(testAdmissionConfig("test-secret", time.Hour))
 
 	const nickName = "player"
-	token, err := a.Issue(ctx, domain.RoomID(1), domain.PeerID(2), nickName, domain.HostIDAny)
+	token, err := a.Issue(ctx, domain.RoomID(1), domain.PeerID(2), nickName, domain.HostIDUnbound)
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -40,12 +37,12 @@ func TestIssueValidateRoundTrip(t *testing.T) {
 	if claims.RoomID != 1 || claims.PeerID != 2 || claims.NickName != nickName {
 		t.Fatalf("claims = %+v", claims)
 	}
-	if claims.HostID != domain.HostIDAny {
-		t.Fatalf("claims.HostID = %d, want HostIDAny", claims.HostID)
+	if claims.HostID != domain.HostIDUnbound {
+		t.Fatalf("claims.HostID = %d, want HostIDUnbound", claims.HostID)
 	}
 }
 
-// P18: hostID в ticket v3 - roundtrip; HostIDAny - без привязки.
+// P18: hostID в join-ticket'е - roundtrip; HostIDUnbound - без привязки.
 func TestIssueValidateHostID(t *testing.T) {
 	t.Parallel()
 
@@ -65,51 +62,6 @@ func TestIssueValidateHostID(t *testing.T) {
 	}
 }
 
-// P18 backward compat: ticket v2 (без hostID) валиден, claims.HostID = HostIDAny.
-func TestValidateTicketV2WithoutHostID(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	a := admission.NewAdmission(testAdmissionConfig("test-secret", time.Hour))
-
-	token := issueTicketV2(t, domain.RoomID(1), domain.PeerID(2), "player")
-	claims, err := a.Validate(ctx, token)
-	if err != nil {
-		t.Fatalf("Validate v2: %v", err)
-	}
-	if claims.RoomID != 1 || claims.PeerID != 2 || claims.NickName != "player" {
-		t.Fatalf("claims = %+v", claims)
-	}
-	if claims.HostID != domain.HostIDAny {
-		t.Fatalf("claims.HostID = %d, want HostIDAny", claims.HostID)
-	}
-}
-
-// issueTicketV2 строит legacy ticket v2 (version | roomID | peerID | issuedAt |
-// expiresAt | nickLen | nick | HMAC) тем же секретом - эмуляция тикета,
-// выписанного до P18.
-func issueTicketV2(t *testing.T, roomID domain.RoomID, peerID domain.PeerID, nickName string) []byte {
-	t.Helper()
-
-	secret := []byte("test-secret")
-	nickLen := len(nickName)
-	payloadSize := 1 + 8 + 8 + 8 + 8 + 1 + nickLen
-	buf := make([]byte, payloadSize+32)
-	buf[0] = 2
-	binary.BigEndian.PutUint64(buf[1:9], uint64(roomID))
-	binary.BigEndian.PutUint64(buf[9:17], uint64(peerID))
-	now := time.Now()
-	binary.BigEndian.PutUint64(buf[17:25], uint64(now.Unix()))
-	binary.BigEndian.PutUint64(buf[25:33], uint64(now.Add(time.Hour).Unix()))
-	buf[33] = byte(nickLen)
-	copy(buf[34:34+nickLen], nickName)
-
-	mac := hmac.New(sha256.New, secret)
-	_, _ = mac.Write(buf[:payloadSize])
-	copy(buf[payloadSize:], mac.Sum(nil))
-	return buf
-}
-
 func TestValidateInvalidToken(t *testing.T) {
 	t.Parallel()
 
@@ -126,7 +78,7 @@ func TestValidateExpiredToken(t *testing.T) {
 	ctx := context.Background()
 	a := admission.NewAdmission(testAdmissionConfig("secret", time.Millisecond))
 
-	token, err := a.Issue(ctx, domain.RoomID(1), domain.PeerID(1), "player", domain.HostIDAny)
+	token, err := a.Issue(ctx, domain.RoomID(1), domain.PeerID(1), "player", domain.HostIDUnbound)
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -145,7 +97,7 @@ func TestIssueValidateMaxUint32IDs(t *testing.T) {
 	ctx := context.Background()
 	a := admission.NewAdmission(testAdmissionConfig("test-secret", time.Hour))
 
-	token, err := a.Issue(ctx, domain.RoomID(math.MaxUint32), domain.PeerID(math.MaxUint32), "player", domain.HostIDAny)
+	token, err := a.Issue(ctx, domain.RoomID(math.MaxUint32), domain.PeerID(math.MaxUint32), "player", domain.HostIDUnbound)
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -163,7 +115,7 @@ func TestIssueInvalidNickName(t *testing.T) {
 	t.Parallel()
 
 	a := admission.NewAdmission(testAdmissionConfig("secret", time.Hour))
-	_, err := a.Issue(context.Background(), domain.RoomID(1), domain.PeerID(1), "", domain.HostIDAny)
+	_, err := a.Issue(context.Background(), domain.RoomID(1), domain.PeerID(1), "", domain.HostIDUnbound)
 	if !errors.Is(err, domain.ErrInvalidNickName) {
 		t.Fatalf("err = %v, want ErrInvalidNickName", err)
 	}
@@ -173,13 +125,13 @@ func TestIssueInvalidCredentials(t *testing.T) {
 	t.Parallel()
 
 	a := admission.NewAdmission(testAdmissionConfig("secret", time.Hour))
-	_, err := a.Issue(context.Background(), domain.RoomIDInvalid, domain.PeerID(1), "player", domain.HostIDAny)
+	_, err := a.Issue(context.Background(), domain.RoomIDInvalid, domain.PeerID(1), "player", domain.HostIDUnbound)
 	if !errors.Is(err, domain.ErrInvalidCredentials) {
 		t.Fatalf("err = %v, want ErrInvalidCredentials", err)
 	}
 }
 
-// P20: reconnect-токен v4 — roundtrip, Kind=reconnect, без expiry и nick.
+// P20: reconnect-токен (kind=2) — roundtrip, Kind=reconnect, без expiry и nick.
 func TestIssueReconnectValidateRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -193,8 +145,8 @@ func TestIssueReconnectValidateRoundTrip(t *testing.T) {
 	if len(token) != 51 {
 		t.Fatalf("token len = %d, want 51", len(token))
 	}
-	if token[0] != 4 {
-		t.Fatalf("token version = %d, want 4", token[0])
+	if token[0] != 2 {
+		t.Fatalf("token kind = %d, want 2", token[0])
 	}
 
 	claims, err := a.Validate(ctx, token)
@@ -219,7 +171,7 @@ func TestIssueJoinClaimsKind(t *testing.T) {
 	ctx := context.Background()
 	a := admission.NewAdmission(testAdmissionConfig("test-secret", time.Hour))
 
-	token, err := a.Issue(ctx, domain.RoomID(1), domain.PeerID(2), "player", domain.HostIDAny)
+	token, err := a.Issue(ctx, domain.RoomID(1), domain.PeerID(2), "player", domain.HostIDUnbound)
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -232,14 +184,14 @@ func TestIssueJoinClaimsKind(t *testing.T) {
 	}
 }
 
-// P20: v4 не несёт expiry — токен живёт, пока жив peerID (grace серверное).
+// P20: reconnect-токен не несёт expiry — живёт, пока жив peerID (grace серверное).
 func TestReconnectTokenNoExpiry(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 	a := admission.NewAdmission(testAdmissionConfig("test-secret", time.Millisecond))
 
-	token, err := a.IssueReconnect(ctx, domain.RoomID(1), domain.PeerID(2), domain.HostIDAny)
+	token, err := a.IssueReconnect(ctx, domain.RoomID(1), domain.PeerID(2), domain.HostIDUnbound)
 	if err != nil {
 		t.Fatalf("IssueReconnect: %v", err)
 	}
@@ -253,7 +205,7 @@ func TestIssueReconnectInvalidCredentials(t *testing.T) {
 	t.Parallel()
 
 	a := admission.NewAdmission(testAdmissionConfig("test-secret", time.Hour))
-	_, err := a.IssueReconnect(context.Background(), domain.RoomIDInvalid, domain.PeerID(1), domain.HostIDAny)
+	_, err := a.IssueReconnect(context.Background(), domain.RoomIDInvalid, domain.PeerID(1), domain.HostIDUnbound)
 	if !errors.Is(err, domain.ErrInvalidCredentials) {
 		t.Fatalf("err = %v, want ErrInvalidCredentials", err)
 	}
@@ -266,7 +218,7 @@ func TestValidateReconnectTampered(t *testing.T) {
 	a := admission.NewAdmission(testAdmissionConfig("test-secret", time.Hour))
 	other := admission.NewAdmission(testAdmissionConfig("other-secret-32-bytes-padded-here!!", time.Hour))
 
-	token, err := a.IssueReconnect(ctx, domain.RoomID(1), domain.PeerID(2), domain.HostIDAny)
+	token, err := a.IssueReconnect(ctx, domain.RoomID(1), domain.PeerID(2), domain.HostIDUnbound)
 	if err != nil {
 		t.Fatalf("IssueReconnect: %v", err)
 	}

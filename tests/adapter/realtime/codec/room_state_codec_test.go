@@ -137,19 +137,6 @@ func TestRoomStateCodec_decodePatch_truncatedPeerNick(t *testing.T) {
 	}
 }
 
-func TestRoomStateCodec_decodePatch_legacyPasswordFlag(t *testing.T) {
-	t.Parallel()
-
-	c := newRoomCodec()
-	// Старый wire layout: flags 0x02 = password string "abc".
-	// В новом layout 0x02 = peers map patch — легаси-байты разбираются как
-	// added_count u16 = 0x0361 > RoomStateMaxPeers → ошибка.
-	legacy := []byte{0x02, 0x03, 'a', 'b', 'c'}
-	if _, err := c.DecodePatch(legacy); err == nil {
-		t.Fatal("expected error decoding legacy password-flag payload")
-	}
-}
-
 func TestRoomStateCodec_patch_addPeer(t *testing.T) {
 	t.Parallel()
 

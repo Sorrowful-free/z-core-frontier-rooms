@@ -13,8 +13,8 @@ const (
 // ReservationConfig — reconnect grace admitted-слотов без peer в room (P20).
 type ReservationConfig struct {
 	// ReconnectTTL — grace от lastSeen слота до revoke orphan;
-	// 0 — сразу при sweep. Заменяет OrphanAdmittedTTL: при едином timestamp
-	// lastSeen роли TTL слота и grace сливаются.
+	// 0 — сразу при sweep. Единый timestamp lastSeen обслуживает и
+	// TTL слота, и grace после разрыва.
 	ReconnectTTL time.Duration
 	// OrphanSweepInterval — период sweep; 0 — отключить фоновый sweep.
 	OrphanSweepInterval time.Duration

@@ -334,7 +334,7 @@ func TestLoadFromEnv_TransportWSWriteDeadline(t *testing.T) {
 func TestLoadFromEnv_EnetDefaults(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", validSecret())
 	setHTTPAuthDisabled(t)
-	for _, k := range []string{"ENET_LISTEN_PORT", "ENET_LISTEN_PORTS", "ENET_PEER_LIMIT", "ENET_ADMIT_TIMEOUT"} {
+	for _, k := range []string{"ENET_LISTEN_PORTS", "ENET_PEER_LIMIT", "ENET_ADMIT_TIMEOUT"} {
 		t.Setenv(k, "")
 	}
 
@@ -357,7 +357,7 @@ func TestLoadFromEnv_EnetDefaults(t *testing.T) {
 func TestLoadFromEnv_EnetOverrides(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", validSecret())
 	setHTTPAuthDisabled(t)
-	t.Setenv("ENET_LISTEN_PORT", "8899")
+	t.Setenv("ENET_LISTEN_PORTS", "8899")
 	t.Setenv("ENET_PEER_LIMIT", "16")
 	t.Setenv("ENET_ADMIT_TIMEOUT", "3s")
 
@@ -376,11 +376,10 @@ func TestLoadFromEnv_EnetOverrides(t *testing.T) {
 	}
 }
 
-// P18: ENET_LISTEN_PORTS CSV (несколько host'ов); ENET_LISTEN_PORT побеждает.
+// P18: ENET_LISTEN_PORTS CSV (несколько host'ов).
 func TestLoadFromEnv_EnetListenPorts(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", validSecret())
 	setHTTPAuthDisabled(t)
-	t.Setenv("ENET_LISTEN_PORT", "")
 	t.Setenv("ENET_LISTEN_PORTS", "7777, 7778,7779")
 
 	cfg, err := appconfig.LoadFromEnv()
@@ -398,31 +397,11 @@ func TestLoadFromEnv_EnetListenPorts(t *testing.T) {
 	}
 }
 
-// P18: single ENET_LISTEN_PORT - backward-compat alias, побеждает CSV.
-func TestLoadFromEnv_EnetListenPortWinsOverPorts(t *testing.T) {
-	t.Setenv("ADMISSION_SECRET", validSecret())
-	setHTTPAuthDisabled(t)
-	t.Setenv("ENET_LISTEN_PORT", "8899")
-	t.Setenv("ENET_LISTEN_PORTS", "7777,7778")
-
-	cfg, err := appconfig.LoadFromEnv()
-	if err != nil {
-		t.Fatalf("LoadFromEnv: %v", err)
-	}
-	if len(cfg.Enet.ListenPorts) != 1 || cfg.Enet.ListenPorts[0] != 8899 {
-		t.Fatalf("enet listen ports = %v, want [8899]", cfg.Enet.ListenPorts)
-	}
-}
-
 func TestLoadFromEnv_EnetInvalid(t *testing.T) {
 	cases := []struct {
 		name string
 		env  map[string]string
 	}{
-		{"port zero", map[string]string{"ENET_LISTEN_PORT": "0"}},
-		{"port overflow", map[string]string{"ENET_LISTEN_PORT": "70000"}},
-		{"port negative", map[string]string{"ENET_LISTEN_PORT": "-1"}},
-		{"port not a number", map[string]string{"ENET_LISTEN_PORT": "abc"}},
 		{"ports zero element", map[string]string{"ENET_LISTEN_PORTS": "7777,0"}},
 		{"ports overflow element", map[string]string{"ENET_LISTEN_PORTS": "70000"}},
 		{"ports not a number", map[string]string{"ENET_LISTEN_PORTS": "7777,abc"}},

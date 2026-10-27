@@ -150,7 +150,7 @@ func TestReconnectRoom_SlotNotAdmitted(t *testing.T) {
 	}
 }
 
-// Гонка double-resume одного v4-токена: HasPeer ещё false, но победивший
+// Гонка double-resume одного reconnect-токена: HasPeer ещё false, но победивший
 // resume уже вставил peer'а — Join возвращает ErrPeerAlreadyInRoom
 // (обёрнут ErrJoinDenied lifecycle'ом). Проигравший дожимает Replace
 // (newest-wins): объект победителя останавливает old.Stop() внутри

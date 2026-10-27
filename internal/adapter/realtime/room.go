@@ -224,7 +224,7 @@ func (r *Room) Replace(peer realtime.Peer) error {
 		if rollbackErr != nil {
 			// Старый peer вытеснен необратимо (rollback не вернул его в
 			// r.peers): teardown обязателен, иначе conn и goroutine'ы живут
-			// вне комнаты - утечка и ghost-input (triple-resume v4, P20).
+			// вне комнаты - утечка и ghost-input (triple-resume, P20).
 			stopErr := old.Stop()
 			return fmt.Errorf("%w: %w", domain.ErrReplaceFailed, errors.Join(err, rollbackErr, stopErr))
 		}

@@ -39,12 +39,12 @@ ValidateNickName → GetRoom → HasPeer? → VerifyRoomPassword
 
 Политика A: peer в room → `ErrPeerAlreadyInRoom`; слот held → `ErrTicketSlotHeld`.
 
-**Host sharding (P18):** если сконфигурирован `port/transport/enet.HostRegistry` (реализация - `delivery/enet.RoomsHandler`), use case выбирает host для ticket'а: least-loaded по живым peer'ам, round-robin tie-break. Выбранный `HostID` идёт в claims (strict binding admit), `Port` - в `IssueTicketResult.EnetPort` → HTTP `enet_port`. Без registry (`nil`) - `AssignHost` пропускается, ticket без привязки (`HostIDAny`), `EnetPort = 0` (поле в ответе опускается).
+**Host sharding (P18):** если сконфигурирован `port/transport/enet.HostRegistry` (реализация - `delivery/enet.RoomsHandler`), use case выбирает host для ticket'а: least-loaded по живым peer'ам, round-robin tie-break. Выбранный `HostID` идёт в claims (strict binding admit), `Port` - в `IssueTicketResult.EnetPort` → HTTP `enet_port`. Без registry (`nil`) - `AssignHost` пропускается, ticket без привязки (`HostIDUnbound`), `EnetPort = 0` (поле в ответе опускается).
 
 ## AdmitPeer (P20)
 
 ```text
-Validate(token) один раз → enetHostID strict binding (WS — HostIDAny, без проверки)
+Validate(token) один раз → enetHostID strict binding (WS — HostIDUnbound, без проверки)
 → claims.Kind: join → JoinRoom | reconnect → ReconnectRoom
 ```
 

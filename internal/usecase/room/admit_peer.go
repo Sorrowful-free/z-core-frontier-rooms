@@ -38,7 +38,7 @@ func NewAdmitPeerUseCase(
 // Admit валидирует token и направляет поток по claims.Kind.
 // enetHostID — host, принявший соединение (strict binding, P18): тикет с
 // claims.HostID обязан совпасть с ним, иначе ErrWrongHost до траты слота
-// reservation. domain.HostIDAny — admit не по ENet (WS): проверки нет.
+// reservation. domain.HostIDUnbound — admit не по ENet (WS): проверки нет.
 func (uc *AdmitPeerUseCase) Admit(
 	ctx context.Context,
 	connection transport.Connection,
@@ -54,7 +54,7 @@ func (uc *AdmitPeerUseCase) Admit(
 		return PeerSession{}, err
 	}
 
-	if enetHostID.IsValid() && claims.HostID != domain.HostIDAny && claims.HostID != enetHostID {
+	if enetHostID.IsValid() && claims.HostID != enetHostID {
 		uc.logging.Warn("admit peer: ticket bound to another host", "wantHostID", claims.HostID, "hostID", enetHostID)
 		return PeerSession{}, domain.ErrWrongHost
 	}

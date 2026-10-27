@@ -170,7 +170,7 @@ func TestHTTP_CreateReturnsTicket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode token: %v", err)
 	}
-	wantTokenLen := 36 + len(nickName) + 32 // ticket v3: hostID u16 (P18)
+	wantTokenLen := 36 + len(nickName) + 32 // join-ticket: fixed 36 (hostID u16, P18) + MAC
 	if len(raw) != wantTokenLen {
 		t.Fatalf("token len = %d, want %d", len(raw), wantTokenLen)
 	}
@@ -221,7 +221,7 @@ func TestHTTP_IssueTicketForJoiner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode token: %v", err)
 	}
-	wantTokenLen := 36 + len(joinerNick) + 32 // ticket v3: hostID u16 (P18)
+	wantTokenLen := 36 + len(joinerNick) + 32 // join-ticket: fixed 36 (hostID u16, P18) + MAC
 	if len(raw) != wantTokenLen {
 		t.Fatalf("token len = %d, want %d", len(raw), wantTokenLen)
 	}

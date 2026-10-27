@@ -234,7 +234,7 @@ func TestLeave_AfterReplace_StalePeer(t *testing.T) {
 }
 
 // P20: двойной фейл Replace — join(new) упал и rollback join(old) тоже
-// упал (третий гоночный resume того же v4-токена занял слот). Старый peer
+// упал (третий гоночный resume того же reconnect-токена занял слот). Старый peer
 // вытеснен необратимо и обязан быть остановлен: иначе conn+goroutine'ы
 // живут вне r.peers (утечка + ghost input).
 func TestReplace_DoubleJoinFailureStopsOldPeer(t *testing.T) {

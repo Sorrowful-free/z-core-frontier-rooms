@@ -19,8 +19,8 @@ import (
 // peer'а под тем же peerID в пределах grace admitted-слота. Отличия от
 // join-потока: reservation.Admit не вызывается (слот уже admitted — атомарная
 // проверка и refresh lastSeen в reservation.Reconnect), слот не ревокается
-// ни при каком фейле (peer в grace), nick берётся из слота — в токене v4
-// его нет. Grace-дедлайн (P24) проверяется до refresh'а по read-only
+// ни при каком фейле (peer в grace), nick берётся из слота — в
+// reconnect-токене его нет. Grace-дедлайн (P24) проверяется до refresh'а по read-only
 // SlotDetails — см. ReconnectRoom. Гонка double-resume одного токена
 // дожимается Replace (newest-wins, Q10) — см. placePeer.
 type ReconnectRoomUseCase struct {

@@ -10,7 +10,7 @@ UDP host (отдельный порт от Fiber). Build tag `enet` + CGO.
 
 | Параметр | Значение | Env |
 |----------|----------|-----|
-| Порты | `[7777]` (CSV - N host'ов/shard'ов) | `ENET_LISTEN_PORTS` (alias `ENET_LISTEN_PORT`, побеждает) |
+| Порты | `[7777]` (CSV - N host'ов/shard'ов) | `ENET_LISTEN_PORTS` |
 | Peer limit | `64` **на host** | `ENET_PEER_LIMIT` |
 | Channel limit | `2` | — |
 | Service timeout | `10ms` | — |
@@ -29,7 +29,7 @@ UDP host (отдельный порт от Fiber). Build tag `enet` + CGO.
 На каждый порт из `cfg.ListenPorts` - отдельный `enetHost` (`id` = `domain.HostID` = индекс+1) со своим `HostLoop` и run-горутиной. Комната транспорт-агностична: её peer'ы могут сидеть на разных host'ах.
 
 - **Балансировка:** `RoomsHandler` реализует `port/transport/enet.HostRegistry` - `AssignHost` выбирает least-loaded host по живым peer'ам (`enetHost.peers` инкрементится на `EventConnect`, декрементится в `sess.close`), round-robin tie-break. `IssueTicketUseCase` кладёт `HostID` в claims и `enet_port` в HTTP-ответ.
-- **Strict binding:** admit-фасад (`AdmitPeerUseCase`) сравнивает `claims.HostID` с `host.id` до траты слота - на чужом host'е join-reject `ErrWrongHost` → `OpWrongHost` (`0x77`) + disconnect; `HostIDAny` (ticket v2 / выписан без registry) admit'ится на любом host'е. Reconnect-токен v4 наследует привязку исходного тикета (P20).
+- **Strict binding:** admit-фасад (`AdmitPeerUseCase`) сравнивает `claims.HostID` с `host.id` до траты слота - на чужом host'е join-reject `ErrWrongHost` → `OpWrongHost` (`0x77`) + disconnect; `HostIDUnbound` (ticket без привязки — выписан без `HostRegistry`, WS-only) на ENet-admit отклоняется тем же `OpWrongHost`. Reconnect-токен (kind `2`) наследует привязку исходного тикета (P20).
 - **Peer→host привязка:** у каждого host'а своя `EnetConnectionFactory` (`WithLoop` на его `HostLoop` - `EnetConnection.Ping`/операции peer'а диспатчатся в правильный executor).
 - **Fail-fast:** первый упавший run (bind failure) отменяет общий ctx mux'а; `Err()` = первая ошибка.
 

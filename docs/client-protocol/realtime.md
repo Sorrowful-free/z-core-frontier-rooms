@@ -7,26 +7,27 @@
 | **ENet UDP** | Основной (Godot) | **[enet.md](enet.md)** |
 | WebSocket | Быстрая отладка / smoke-test | ниже |
 
-Ticket v2, формат кадра и игровой цикл после join **одинаковы**; отличается только способ передачи ticket при connect.
+Формат ticket'а, кадра и игровой цикл после join **одинаковы**; отличается только способ передачи ticket при connect.
 
 ---
 
-## Ticket v2 (бинарный)
+## Join-ticket (kind `1`, бинарный)
 
-Клиент **не генерирует** ticket — только получает из HTTP.
+Клиент **не генерирует** ticket — только получает из HTTP. Первый байт credential'а — `kind`: `1` = join-ticket, `2` = reconnect-токен.
 
 ```text
-version     u8   = 2
+kind        u8   = 1
 room_id     u64 BE
 peer_id     u64 BE
 issued_at   u64 BE
 expires_at  u64 BE
+host_id     u16 BE  (0 = без привязки; на ENet-admit → reject 0x77)
 nick_len    u8
 nick        UTF-8 bytes (1…64)
 hmac        32 bytes SHA-256 HMAC
 ```
 
-Размер: `66 + len(nick)` … `130` байт.
+Размер: `68 + len(nick)` … `132` байт.
 
 | Транспорт | Как передать ticket |
 |-----------|---------------------|
@@ -47,7 +48,7 @@ hmac        32 bytes SHA-256 HMAC
 
 | OpCode | Назначение |
 |--------|------------|
-| `0x01`–`0x07` | State / input / RPC — [wire-state-codec.md](../wire-state-codec.md), [state-sync.md](state-sync.md). **Breaking (P6d):** `password` удалён из state payload |
+| `0x01`–`0x07` | State / input / RPC — [wire-state-codec.md](../wire-state-codec.md), [state-sync.md](state-sync.md) |
 | `0x40`–`0x5F` | Join reject — [errors.md](errors.md) |
 | `0x60`–`0x6F` | In-room error (соединение живо) |
 | `0x70`–`0x7F` | Reservation reject (при join) |
@@ -73,13 +74,13 @@ hmac        32 bytes SHA-256 HMAC
 2. Разрыв → сервер рассылает `0x80` остальным.
 3. Повторный admit тем же транспортом: WS `?token=<reconnect_token>` или первый ENet-пакет — вместо join-тикета.
 4. Успех: peer возвращается под **тем же peerID** и тем же nick'ом (nick из слота — в токене его нет), получает `0x01` FullState как обычный join; остальным — `0x81` с `peerID u64 BE`.
-5. Отказ — обычный join-reject (карта: [errors.md](errors.md#resume-reject-reconnect_token-v4)): `0x41` битый/чужой токен, `0x43` комната удалена, `0x73` слота нет/не admitted, `0x74` grace просрочена, `0x77` `hostID` v4 ≠ принявший host.
+5. Отказ — обычный join-reject (карта: [errors.md](errors.md#resume-reject-reconnect_token)): `0x41` битый/чужой токен, `0x43` комната удалена, `0x73` слота нет/не admitted, `0x74` grace просрочена, `0x77` `host_id` токена ≠ принявший host.
 6. Новейшее соединение побеждает: reconnect при живом старом conn вытесняет его (Replace).
 
 - **`0x81` без предшествующего `0x80` — норма** при Replace живого peer'а (двойной resume одним токеном / перехват соединения): разрыв старого conn идёт через identity-check teardown без broadcast'а `0x80`, остальные видят remove+add-патчи и `0x81`. Клиент обрабатывает `0x81` идемпотентно — peer становится live независимо от прежнего флага disconnected.
 - **Дедлайн grace enforce'ится на resume (P24):** resume по просроченному окну (peer не в комнате и `lastSeen + RESERVATION_RECONNECT_TTL` прошёл) отклоняется `0x74` `OpReservationExpired` сразу, без ожидания sweep; дедлайн проверяется **до** refresh'а `lastSeen` — отклонённые попытки grace не продлевают. При живом peer'е дедлайн не применяется — Replace (п. 6).
 
-**Token v4 (reconnect):** `version(1)=4 | roomID u64 | peerID u64 | hostID u16 | HMAC-SHA256(32)` — 51 байт, base64url как join-тикет; без nick и timestamps; `hostID` наследует привязку исходного тикета (strict binding ENet).
+**Reconnect-токен (kind `2`):** `kind(1)=2 | room_id u64 | peer_id u64 | host_id u16 | HMAC-SHA256(32)` — 51 байт, base64url как join-тикет; без nick и timestamps; `host_id` наследует привязку исходного тикета (strict binding ENet).
 
 ---
 

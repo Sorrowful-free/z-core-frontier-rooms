@@ -49,10 +49,10 @@ func TestIssueTicket_Success(t *testing.T) {
 		Reserve(gomock.Any(), roomID, peerID, testNickName, gomock.Any()).
 		Return(nil)
 	admission.EXPECT().
-		Issue(gomock.Any(), roomID, peerID, testNickName, domain.HostIDAny).
+		Issue(gomock.Any(), roomID, peerID, testNickName, domain.HostIDUnbound).
 		Return(wantToken, nil)
 	admission.EXPECT().
-		IssueReconnect(gomock.Any(), roomID, peerID, domain.HostIDAny).
+		IssueReconnect(gomock.Any(), roomID, peerID, domain.HostIDUnbound).
 		Return([]byte("reconnect-bytes"), nil)
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 	expectIssueTicketRoomSummary(room, roomID)
@@ -275,10 +275,10 @@ func TestIssueTicket_OrphanAdmittedCleanup(t *testing.T) {
 			Return(nil),
 	)
 	admission.EXPECT().
-		Issue(gomock.Any(), roomID, peerID, testNickName, domain.HostIDAny).
+		Issue(gomock.Any(), roomID, peerID, testNickName, domain.HostIDUnbound).
 		Return(wantToken, nil)
 	admission.EXPECT().
-		IssueReconnect(gomock.Any(), roomID, peerID, domain.HostIDAny).
+		IssueReconnect(gomock.Any(), roomID, peerID, domain.HostIDUnbound).
 		Return([]byte("reconnect-bytes"), nil)
 	logger.EXPECT().Warn(gomock.Any(), gomock.Any()).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()

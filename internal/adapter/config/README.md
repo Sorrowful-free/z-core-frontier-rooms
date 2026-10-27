@@ -64,8 +64,6 @@
 
 Валидация — `reservation.ReservationConfig.Validate()`.
 
-**Миграция (P20):** `RESERVATION_ORPHAN_ADMITTED_TTL` больше не читается — единый TTL слота это `RESERVATION_RECONNECT_TTL` (`ReservationConfig.ReconnectTTL`; до P25 — `RECONNECT_TTL`) от `lastSeen` admitted-слота: disconnect (`MarkDisconnected`) и resume (`Reconnect`) обновляют один timestamp, роли TTL сливаются. Заданный `RESERVATION_ORPHAN_ADMITTED_TTL` молча ни на что не влияет — перенесите значение в `RESERVATION_RECONNECT_TTL`.
-
 ## Env (enet listener)
 
 Часть `LoadFromEnv()` → `Config.Enet` (тип `transport/enet.EnetConfig`).
@@ -73,7 +71,6 @@
 | Переменная | Обязательна | Default | Описание |
 |------------|-------------|---------|----------|
 | `ENET_LISTEN_PORTS` | нет | `7777` | CSV UDP-портов ENet host'ов (shard'ов, P18): `7777,7778,...`; один HostLoop на порт; 1–65535, без дублей |
-| `ENET_LISTEN_PORT` | нет | - | Single-port alias: если задан, побеждает `ENET_LISTEN_PORTS` (backward compat) |
 | `ENET_PEER_LIMIT` | нет | `64` | Макс. одновременных ENet peers **на host** |
 | `ENET_ADMIT_TIMEOUT` | нет | `10s` | Deadline connect→admit; просроченный peer отключается |
 | `ENET_SERVICE_TIMEOUT_MS` | нет | `1` | Бюджет host.Service итерации = потолок latency очереди команд HostLoop; >0 |

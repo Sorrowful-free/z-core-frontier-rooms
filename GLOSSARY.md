@@ -21,11 +21,11 @@ _Avoid_: Connected, Active, Online
 _Avoid_: LastActivity, heartbeat timestamp
 
 **ENet host / HostID** (shard):
-Один ENet host процесса: свой UDP-порт из `EnetConfig.ListenPorts` и свой `HostLoop`. `domain.HostID` - индекс+1 в списке портов; попадает в claims ticket'а для strict binding admit (P18). Комната транспорт-агностична: её peer'ы могут сидеть на разных host'ах.
+Один ENet host процесса: свой UDP-порт из `EnetConfig.ListenPorts` и свой `HostLoop`. `domain.HostID` - индекс+1 в списке портов; попадает в claims ticket'а для strict binding admit (P18). `HostIDUnbound` (`0`) - ticket без привязки (выписан без HostRegistry, WS-only) → reject `OpWrongHost` на ENet-admit. Комната транспорт-агностична: её peer'ы могут сидеть на разных host'ах.
 _Avoid_: shard index, node, listener id
 
 **Orphan admitted**:
-Слот reservation в состоянии `admitted`, для которого в комнате нет живого peer'а (клиент получил ticket и зашёл, но peer ушёл/умер без revoke). Вычищается фоновым `SweepOrphanAdmittedUseCase` после `lastSeen + RESERVATION_RECONNECT_TTL` (P20; прежний `OrphanAdmittedTTL` заменён) или точечным revoke+reserve в `IssueTicket` при повторном issue того же peer'а.
+Слот reservation в состоянии `admitted`, для которого в комнате нет живого peer'а (клиент получил ticket и зашёл, но peer ушёл/умер без revoke). Вычищается фоновым `SweepOrphanAdmittedUseCase` после `lastSeen + RESERVATION_RECONNECT_TTL` (P20) или точечным revoke+reserve в `IssueTicket` при повторном issue того же peer'а.
 _Avoid_: stale slot, dangling slot, orphan reservation
 
 **Grace window** (окно реконнекта):
@@ -33,8 +33,8 @@ _Avoid_: stale slot, dangling slot, orphan reservation
 _Avoid_: reconnect TTL от issue тикета, suspended peer, offline peer
 
 **Reconnect token**:
-HMAC-credential (ticket v4) для resume под тем же peerID: `ver | roomID | peerID | hostID | MAC` — без nickName и expiry, grace — серверное состояние на слоте. Отличен от join-тикета по версии/типу в claims; одноразовый входной тикет и reconnect-credential — разные сущности.
-_Avoid_: resume ticket (это термин про peerID в v3), session token
+HMAC-credential (kind `2`) для resume под тем же peerID: `kind | roomID | peerID | hostID | MAC` — без nickName и expiry, grace — серверное состояние на слоте. Отличен от join-тикета (kind `1`) по kind-байту credential'а и `Claims.Kind` в claims; одноразовый входной тикет и reconnect-credential — разные сущности.
+_Avoid_: resume ticket (это термин про peerID в join-ticket'е), session token
 
 **Ghost input**:
 Входной кадр (input/RPC/state) от peer'а, которого уже нет в комнате (zombie или удалённый без вычистки из state). Policy отклоняет такие кадры проверкой членства (`ErrPeerNotFound`), иначе state получал бы записи от несуществующего peer'а.

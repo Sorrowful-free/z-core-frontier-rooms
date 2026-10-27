@@ -26,9 +26,9 @@ func (p PeerID) IsValid() bool {
 type HostID uint16
 
 const (
-	// HostIDAny - отсутствие привязки к host'у: ticket без hostID в claims
-	// проходит admit на любом host'е (backward compat со старыми тикетами).
-	HostIDAny HostID = 0
+	// HostIDUnbound - отсутствие привязки к host'у: ticket выписан без
+	// HostRegistry (WS-only deploy); на ENet-admit отклоняется (ErrWrongHost).
+	HostIDUnbound HostID = 0
 )
 
 func (h HostID) IsValid() bool {

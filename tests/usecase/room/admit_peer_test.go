@@ -48,7 +48,7 @@ func TestAdmitPeer_ValidateError(t *testing.T) {
 		Return(domain.Claims{}, domain.ErrInvalidToken)
 
 	uc := newAdmitUseCase(admission, registry, peerFactory, reservation, logger)
-	session, err := uc.Admit(context.Background(), mocks.NewMockConnection(ctrl), []byte("token"), domain.HostIDAny)
+	session, err := uc.Admit(context.Background(), mocks.NewMockConnection(ctrl), []byte("token"), domain.HostIDUnbound)
 	if !errors.Is(err, domain.ErrInvalidToken) {
 		t.Fatalf("err = %v, want ErrInvalidToken", err)
 	}
@@ -77,7 +77,28 @@ func TestAdmitPeer_WrongHost(t *testing.T) {
 	}
 }
 
-// WS-admit (HostIDAny): host-bound ticket не проверяется — join-поток идёт дальше.
+// Ticket без привязки (HostIDUnbound) на ENet host'е → ErrWrongHost: unbound
+// допустим только при admit не по ENet (WS).
+func TestAdmitPeer_UnboundTicketRejectedOnEnet(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	admission, registry, peerFactory, reservation, logger := newAdmitFixture(ctrl)
+
+	claims := newTestClaims(domain.RoomID(1), domain.PeerID(2), "player")
+	claims.HostID = domain.HostIDUnbound
+
+	admission.EXPECT().Validate(gomock.Any(), gomock.Any()).Return(claims, nil)
+	logger.EXPECT().Warn(gomock.Any(), gomock.Any()).AnyTimes()
+
+	uc := newAdmitUseCase(admission, registry, peerFactory, reservation, logger)
+	_, err := uc.Admit(context.Background(), mocks.NewMockConnection(ctrl), []byte("t"), domain.HostID(1))
+	if !errors.Is(err, domain.ErrWrongHost) {
+		t.Fatalf("err = %v, want ErrWrongHost", err)
+	}
+}
+
+// WS-admit (HostIDUnbound): host-bound ticket не проверяется — join-поток идёт дальше.
 func TestAdmitPeer_WS_SkipsHostBinding(t *testing.T) {
 	t.Parallel()
 
@@ -106,7 +127,7 @@ func TestAdmitPeer_WS_SkipsHostBinding(t *testing.T) {
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := newAdmitUseCase(admission, registry, peerFactory, reservation, logger)
-	session, err := uc.Admit(context.Background(), conn, []byte("t"), domain.HostIDAny)
+	session, err := uc.Admit(context.Background(), conn, []byte("t"), domain.HostIDUnbound)
 	if err != nil {
 		t.Fatalf("Admit: %v", err)
 	}
@@ -151,7 +172,7 @@ func TestAdmitPeer_RoutesReconnectByKind(t *testing.T) {
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := newAdmitUseCase(admission, registry, peerFactory, reservation, logger)
-	session, err := uc.Admit(context.Background(), conn, []byte("t"), domain.HostIDAny)
+	session, err := uc.Admit(context.Background(), conn, []byte("t"), domain.HostIDUnbound)
 	if err != nil {
 		t.Fatalf("Admit: %v", err)
 	}

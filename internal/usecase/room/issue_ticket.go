@@ -26,7 +26,7 @@ import (
 //   - комната не в reservation store → ErrReservationNotFound.
 type IssueTicketResult struct {
 	Token []byte
-	// ReconnectToken - reconnect-токен v4 (P20): credential resume под тем же
+	// ReconnectToken - reconnect-токен (P20): credential resume под тем же
 	// peerID в пределах grace; hostID - та же привязка, что у join-ticket'а.
 	ReconnectToken []byte
 	Room           RoomSummary
@@ -41,7 +41,7 @@ type IssueTicketUseCase struct {
 	admission    admission.Admission
 	reservation  reservation.Reservation
 	// hostRegistry - балансировщик ENet host'ов (P18); nil - ticket'ы без
-	// привязки (claims.HostID = HostIDAny, admit на любом host'е).
+	// привязки (claims.HostID = HostIDUnbound, admit только по WS).
 	hostRegistry portenet.HostRegistry
 	logger       logging.Logger
 }

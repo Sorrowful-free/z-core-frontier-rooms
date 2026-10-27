@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	adapterreservation "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	benchutil "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/bench"
 )
@@ -40,38 +39,19 @@ func BenchmarkReservation_Reserve(b *testing.B) {
 func BenchmarkReservation_IssueJoinPath(b *testing.B) {
 	for _, rooms := range []int{1, 32, 128} {
 		b.Run(benchutil.RoomCountLabel(rooms), func(b *testing.B) {
-			benchmarkIssueJoinPath(b, rooms, false)
+			benchmarkIssueJoinPath(b, rooms)
 		})
 	}
 }
 
-func BenchmarkReservation_IssueJoinPath_LegacyGlobal(b *testing.B) {
-	for _, rooms := range []int{1, 32, 128} {
-		b.Run(benchutil.RoomCountLabel(rooms), func(b *testing.B) {
-			benchmarkIssueJoinPath(b, rooms, true)
-		})
-	}
-}
-
-func benchmarkIssueJoinPath(b *testing.B, roomCount int, legacy bool) {
+func benchmarkIssueJoinPath(b *testing.B, roomCount int) {
 	ctx := context.Background()
 	expires := time.Now().Add(time.Hour)
 
-	var (
-		modern *adapterreservation.Reservation
-		old    *legacyGlobalReservation
-	)
-	if legacy {
-		old = newLegacyGlobalReservation()
-		for id := domain.RoomID(1); id <= domain.RoomID(roomCount); id++ {
-			old.registerRoom(id, benchRoomCapacity)
-		}
-	} else {
-		modern = newTestReservation()
-		for id := domain.RoomID(1); id <= domain.RoomID(roomCount); id++ {
-			if err := modern.RegisterRoom(ctx, id, benchRoomCapacity, ""); err != nil {
-				b.Fatalf("RegisterRoom %d: %v", id, err)
-			}
+	res := newTestReservation()
+	for id := domain.RoomID(1); id <= domain.RoomID(roomCount); id++ {
+		if err := res.RegisterRoom(ctx, id, benchRoomCapacity, ""); err != nil {
+			b.Fatalf("RegisterRoom %d: %v", id, err)
 		}
 	}
 
@@ -82,26 +62,13 @@ func benchmarkIssueJoinPath(b *testing.B, roomCount int, legacy bool) {
 		roomID := domain.RoomID(n%uint64(roomCount) + 1)
 		peerID := domain.PeerID(n)
 
-		if legacy {
-			if err := old.reserve(roomID, peerID, expires); err != nil {
-				b.Fatalf("reserve: %v", err)
-			}
-			if err := old.admit(roomID, peerID); err != nil {
-				b.Fatalf("admit: %v", err)
-			}
-			if err := old.revoke(roomID, peerID); err != nil {
-				b.Fatalf("revoke: %v", err)
-			}
-			continue
-		}
-
-		if err := modern.Reserve(ctx, roomID, peerID, testNick(peerID), expires); err != nil {
+		if err := res.Reserve(ctx, roomID, peerID, testNick(peerID), expires); err != nil {
 			b.Fatalf("Reserve: %v", err)
 		}
-		if err := modern.Admit(ctx, roomID, peerID); err != nil {
+		if err := res.Admit(ctx, roomID, peerID); err != nil {
 			b.Fatalf("Admit: %v", err)
 		}
-		if err := modern.Revoke(ctx, roomID, peerID); err != nil {
+		if err := res.Revoke(ctx, roomID, peerID); err != nil {
 			b.Fatalf("Revoke: %v", err)
 		}
 	}
@@ -110,35 +77,19 @@ func benchmarkIssueJoinPath(b *testing.B, roomCount int, legacy bool) {
 func BenchmarkReservation_Reserve_ParallelSpread(b *testing.B) {
 	for _, rooms := range []int{32, 128} {
 		b.Run(benchutil.RoomCountLabel(rooms), func(b *testing.B) {
-			b.Run("per_room_lock", func(b *testing.B) {
-				benchmarkReserveParallelSpread(b, rooms, false)
-			})
-			b.Run("global_legacy", func(b *testing.B) {
-				benchmarkReserveParallelSpread(b, rooms, true)
-			})
+			benchmarkReserveParallelSpread(b, rooms)
 		})
 	}
 }
 
-func benchmarkReserveParallelSpread(b *testing.B, roomCount int, legacy bool) {
+func benchmarkReserveParallelSpread(b *testing.B, roomCount int) {
 	ctx := context.Background()
 	expires := time.Now().Add(time.Hour)
 
-	var (
-		modern *adapterreservation.Reservation
-		old    *legacyGlobalReservation
-	)
-	if legacy {
-		old = newLegacyGlobalReservation()
-		for id := domain.RoomID(1); id <= domain.RoomID(roomCount); id++ {
-			old.registerRoom(id, benchRoomCapacity)
-		}
-	} else {
-		modern = newTestReservation()
-		for id := domain.RoomID(1); id <= domain.RoomID(roomCount); id++ {
-			if err := modern.RegisterRoom(ctx, id, benchRoomCapacity, ""); err != nil {
-				b.Fatalf("RegisterRoom %d: %v", id, err)
-			}
+	res := newTestReservation()
+	for id := domain.RoomID(1); id <= domain.RoomID(roomCount); id++ {
+		if err := res.RegisterRoom(ctx, id, benchRoomCapacity, ""); err != nil {
+			b.Fatalf("RegisterRoom %d: %v", id, err)
 		}
 	}
 
@@ -151,20 +102,10 @@ func benchmarkReserveParallelSpread(b *testing.B, roomCount int, legacy bool) {
 			roomID := domain.RoomID((worker+n)%uint64(roomCount) + 1)
 			peerID := domain.PeerID(n)
 
-			if legacy {
-				if err := old.reserve(roomID, peerID, expires); err != nil {
-					panic(fmt.Sprintf("reserve: %v", err))
-				}
-				if err := old.revoke(roomID, peerID); err != nil {
-					panic(fmt.Sprintf("revoke: %v", err))
-				}
-				continue
-			}
-
-			if err := modern.Reserve(ctx, roomID, peerID, testNick(peerID), expires); err != nil {
+			if err := res.Reserve(ctx, roomID, peerID, testNick(peerID), expires); err != nil {
 				panic(fmt.Sprintf("Reserve: %v", err))
 			}
-			if err := modern.Revoke(ctx, roomID, peerID); err != nil {
+			if err := res.Revoke(ctx, roomID, peerID); err != nil {
 				panic(fmt.Sprintf("Revoke: %v", err))
 			}
 		}
@@ -176,28 +117,15 @@ func BenchmarkReservation_Reserve_ParallelSameRoom(b *testing.B) {
 	ctx := context.Background()
 	expires := time.Now().Add(time.Hour)
 
-	b.Run("per_room_lock", func(b *testing.B) {
-		res := newTestReservation()
-		if err := res.RegisterRoom(ctx, roomID, domain.MaxRoomCapacity, ""); err != nil {
-			b.Fatalf("RegisterRoom: %v", err)
+	res := newTestReservation()
+	if err := res.RegisterRoom(ctx, roomID, domain.MaxRoomCapacity, ""); err != nil {
+		b.Fatalf("RegisterRoom: %v", err)
+	}
+	runParallelReserveRevoke(b, func(peerID domain.PeerID) error {
+		if err := res.Reserve(ctx, roomID, peerID, testNick(peerID), expires); err != nil {
+			return err
 		}
-		runParallelReserveRevoke(b, func(peerID domain.PeerID) error {
-			if err := res.Reserve(ctx, roomID, peerID, testNick(peerID), expires); err != nil {
-				return err
-			}
-			return res.Revoke(ctx, roomID, peerID)
-		})
-	})
-
-	b.Run("global_legacy", func(b *testing.B) {
-		res := newLegacyGlobalReservation()
-		res.registerRoom(roomID, domain.MaxRoomCapacity)
-		runParallelReserveRevoke(b, func(peerID domain.PeerID) error {
-			if err := res.reserve(roomID, peerID, expires); err != nil {
-				return err
-			}
-			return res.revoke(roomID, peerID)
-		})
+		return res.Revoke(ctx, roomID, peerID)
 	})
 }
 

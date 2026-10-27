@@ -14,9 +14,7 @@ Authoritative room state на сервере (`StateRoomPolicy`). Клиент *
 | PatchInput | `0x06` | client → server | Любой peer |
 | Rpc | `0x07` | client → relay | Любой peer |
 
-Payload: [wire-state-codec.md](../wire-state-codec.md).
-
-**Breaking change (P6d, D2):** `password` удалён из Room full / Room patch; флаги patch сдвинуты (`peers = 2`, `inputs = 4`, `entities = 8`). Payload с лишними trailing bytes — ошибка на сервере.
+Payload: [wire-state-codec.md](../wire-state-codec.md). Payload с лишними trailing bytes — ошибка на сервере.
 
 ## Server → client
 
@@ -95,7 +93,7 @@ peer_id u32
 
 Модель reconnect (P20): разрыв транспорта **удаляет** peer'а из комнаты обычным leave-путём — остальным уходит remove-патч и `0x80` `OpPeerDisconnected`; если ушёл master, election идёт сразу на leave. Идентичность при этом живёт: admitted-слот reservation держит capacity и `peer_id` в grace-окне `RESERVATION_RECONNECT_TTL` (серверный, default `30s`, от `lastSeen` слота — момента разрыва).
 
-- **Resume** — повторный admit с `reconnect_token` (v4) вместо join-тикета (`?token=` / первый ENet-пакет): тот же `peer_id`, nick — из слота (в токене его нет). Успех — как обычный join: вернувшемуся `0x01` FullState, остальным `0x81` `OpPeerReconnected`. Поток и reject-коды: [realtime.md](realtime.md#reconnect-p20), [errors.md](errors.md).
+- **Resume** — повторный admit с `reconnect_token` (kind `2`) вместо join-тикета (`?token=` / первый ENet-пакет): тот же `peer_id`, nick — из слота (в токене его нет). Успех — как обычный join: вернувшемуся `0x01` FullState, остальным `0x81` `OpPeerReconnected`. Поток и reject-коды: [realtime.md](realtime.md#reconnect-p20), [errors.md](errors.md).
 - **Мастерство не возвращается:** election при disconnect уже отдал `is_master` другому — вернувшийся вступает обычным peer и становится master только по общим правилам выше (первый в опустевшей комнате / failover).
 - **Replace (newest-wins):** resume при **живом** старом conn вытесняет его — старое соединение получает разрыв; grace-дедлайн на этот путь не действует.
 - Ошибки: `0x45` `OpReplaceFailed` / `0x51` `OpPeerStartFailed` — как при join; просроченная grace — `0x74` `OpReservationExpired` (если sweep уже отозвал слот — `0x73`), дальше только новый issue ticket (новый `peer_id`).

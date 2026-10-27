@@ -37,7 +37,7 @@ Env — [adapter/httplimits/README.md](../../adapter/httplimits/README.md).
 
 `nick_name` обязателен при create и issue (`domain.ValidateNickName`). Ошибка: `400` / `invalid_nick_name`.
 
-`enet_port` (uint16, `omitempty`) - назначенный порт ENet host'а для этого ticket'а (P18 sharding; присутствует только при поднятом ENet listener'е и выборе host'а - иначе поле опускается). `reconnect_token` (string) - reconnect-токен v4 для resume под тем же peerID (P20).
+`enet_port` (uint16, `omitempty`) - назначенный порт ENet host'а для этого ticket'а (P18 sharding; присутствует только при поднятом ENet listener'е и выборе host'а - иначе поле опускается). `reconnect_token` (string) - reconnect-токен для resume под тем же peerID (P20).
 
 Пароль комнаты: если задан при create — нужен для IssueTicket и Delete.
 

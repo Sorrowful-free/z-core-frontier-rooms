@@ -20,7 +20,7 @@ type issueTicketRequest struct {
 
 type issueTicketResponse struct {
 	Token string `json:"token"`
-	// ReconnectToken - reconnect-токен v4 (P20): resume под тем же peerID
+	// ReconnectToken - reconnect-токен (P20): resume под тем же peerID
 	// в пределах grace-окна после разрыва.
 	ReconnectToken string `json:"reconnect_token"`
 	// EnetPort - UDP-порт назначенного ENet host'а (strict binding, P18);

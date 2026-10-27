@@ -196,20 +196,29 @@ func TestE2E_ENetHostSharding(t *testing.T) {
 	right.admit(t, misToken)
 	e.WaitPeerCount(t, roomID, 3)
 
-	// Backward compat: ticket без hostID (HostIDAny) admit'ится на любом host'е.
+	// Strict binding: ticket без привязки (HostIDUnbound — выписан в обход
+	// usecase, как при WS-only deploy) на ENet-admit отклоняется OpWrongHost
+	// на любом host'е; слот reservation не тратится.
 	ctx := context.Background()
 	peerID, err := e.Allocator.AllocatePeerID(ctx)
 	if err != nil {
 		t.Fatalf("allocate peer id: %v", err)
 	}
-	if err := e.Reservation.Reserve(ctx, roomID, peerID, "legacy", time.Now().Add(time.Hour)); err != nil {
-		t.Fatalf("reserve legacy slot: %v", err)
+	if err := e.Reservation.Reserve(ctx, roomID, peerID, "unbound", time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("reserve unbound slot: %v", err)
 	}
-	legacyToken, err := e.Admission.Issue(ctx, roomID, peerID, "legacy", domain.HostIDAny)
+	unboundToken, err := e.Admission.Issue(ctx, roomID, peerID, "unbound", domain.HostIDUnbound)
 	if err != nil {
-		t.Fatalf("issue legacy ticket: %v", err)
+		t.Fatalf("issue unbound ticket: %v", err)
 	}
-	legacy := newShardClient(t, otherEnetPort(t, ports, misPort))
-	legacy.admitRaw(t, legacyToken)
-	e.WaitPeerCount(t, roomID, 4)
+	unbound := newShardClient(t, ports[0])
+	unbound.admitRaw(t, unboundToken)
+	if op := domain.OpCode(unbound.waitFirstFrame(t, 5*time.Second)); op != domain.OpWrongHost {
+		t.Fatalf("reject frame op = %#x, want %#x (OpWrongHost)", byte(op), byte(domain.OpWrongHost))
+	}
+	unbound.waitDisconnect(t, 5*time.Second)
+	state, err := e.Reservation.State(ctx, roomID, peerID)
+	if err != nil || state != domain.ReservationSlotReserved {
+		t.Fatalf("reservation state = %v (err %v), want reserved (слот не потрачен)", state, err)
+	}
 }

@@ -296,7 +296,7 @@ func (r *Reservation) MarkDisconnected(ctx context.Context, roomID domain.RoomID
 
 // Reconnect — атомарный resume admitted-слота (P20): lastSeen
 // обновляется и слот с NickName возвращается — nick
-// для resume живёт только здесь (в токене v4 его нет, T4).
+// для resume живёт только здесь (в reconnect-токене его нет, T4).
 func (r *Reservation) Reconnect(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) (domain.AdmittedSlot, error) {
 	slot, err := r.touchAdmitted(ctx, roomID, peerID)
 	if err != nil {

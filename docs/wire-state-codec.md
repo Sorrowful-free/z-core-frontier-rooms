@@ -134,7 +134,7 @@ entities  map EntityID → entity payload
 
 Лимиты: peers/inputs **255**, entities **65535**.
 
-**Breaking change (P6d, D2):** поле `password` удалено из wire — пароль комнаты остаётся серверным секретом в `reservation` и никогда не сериализуется в state. Старый layout (`password string` после `capacity`) несовместим: нужен синхронный апдейт клиента.
+Пароль комнаты — серверный секрет в `reservation`, в state на wire не сериализуется.
 
 ## Room patch (`OpCodePatchState` = `0x02`)
 
@@ -151,8 +151,6 @@ flags u8
 Секция пишется/читается **только если** соответствующий bit в `flags`.
 
 Флаги: `RoomStateFlagsCapacity = 1`, `RoomStateFlagsPeers = 2`, `RoomStateFlagsInputs = 4`, `RoomStateFlagsEntities = 8`.
-
-**Breaking change (P6d, D2):** бывший `RoomStateFlagsPassword = 2` удалён, все флаги выше сдвинуты на бит (было `peers = 4`, `inputs = 8`, `entities = 16`). Payload со старым `0x02` разбирается как peers map patch и завершится ошибкой (см. тест `decodePatch_legacyPasswordFlag`).
 
 ## Entities standalone (`OpCodeFullEntities` = `0x03` / `OpCodePatchEntities` = `0x04`)
 

@@ -10,7 +10,7 @@
 | Параметр | Default | Примечание |
 |----------|---------|------------|
 | HTTP (ticket) | `:3000` | `HTTP_ADDR` |
-| ENet UDP | `7777` | `ENET_LISTEN_PORTS` (CSV: `7777,7778,...` = N host'ов/shard'ов); `ENET_LISTEN_PORT` - single-port alias, побеждает если задан |
+| ENet UDP | `7777` | `ENET_LISTEN_PORTS` (CSV: `7777,7778,...` = N host'ов/shard'ов) |
 | Peer limit | `64` | `ENET_PEER_LIMIT` - **на host** |
 | Admit deadline | `10s` | `ENET_ADMIT_TIMEOUT` — connect→первый пакет |
 | Build сервера | `-tags enet` + `CGO_ENABLED=1` | Без тега ENet host не поднимается |
@@ -61,26 +61,26 @@ sequenceDiagram
 
 ## Ticket: HTTP → первый UDP-пакет
 
-1. `POST /rooms/:id/tickets` → JSON `{"token":"<base64url>","reconnect_token":"<base64url>","enet_port":7777}` (`reconnect_token` — токен v4 для resume, см. [Reconnect](#reconnect-p20) ниже).
-2. Клиент **декодирует** base64url (`RawURLEncoding`, без padding) → `PackedByteArray` / `[]byte` ticket v3.
+1. `POST /rooms/:id/tickets` → JSON `{"token":"<base64url>","reconnect_token":"<base64url>","enet_port":7777}` (`reconnect_token` — reconnect-токен kind `2` для resume, см. [Reconnect](#reconnect-p20) ниже).
+2. Клиент **декодирует** base64url (`RawURLEncoding`, без padding) → `PackedByteArray` / `[]byte` join-ticket'а.
 3. Подключается на UDP-порт **`enet_port`** из ответа (если поле есть; без него - дефолтный порт сервера).
 4. **Первый** исходящий ENet-пакет после `EVENT_CONNECT` = **только** эти байты, **без** префикса OpCode.
 
-Формат ticket v3 (P18: `host_id` для strict binding):
+Формат join-ticket'а (kind `1`; P18: `host_id` для strict binding):
 
 ```text
-version     u8   = 3
+kind        u8   = 1
 room_id     u64 BE
 peer_id     u64 BE
 issued_at   u64 BE
 expires_at  u64 BE
-host_id     u16 BE  (0 = без привязки, admit на любом host'е)
+host_id     u16 BE  (0 = без привязки; на ENet-admit → reject 0x77)
 nick_len    u8
 nick        UTF-8 (1…64 bytes)
 hmac        32 bytes
 ```
 
-Размер: `68 + len(nick)` … `132` байт. Ticket v2 (version `2`, без `host_id`, `66 + len(nick)` … `130` байт) тоже принимается - такие тикеты не привязаны к host'у. Подробнее: [internal/adapter/admission/README.md](../../internal/adapter/admission/README.md).
+Размер: `68 + len(nick)` … `132` байт. Подробнее: [internal/adapter/admission/README.md](../../internal/adapter/admission/README.md).
 
 ### Отличие от WebSocket
 
@@ -129,8 +129,6 @@ Reject-кадр reliable и гарантированно доезжает: се�
 
 Ошибки: [errors.md](errors.md). Payload layout: [wire-state-codec.md](../wire-state-codec.md).
 
-**Breaking change (P6d):** `password` удалён из state payload; сервер отвергает кадры с trailing bytes после payload.
-
 ---
 
 ## Channel и reliable / unreliable
@@ -178,15 +176,15 @@ WS delivery не различает — для отладки всё implicit re
 
 ### Reconnect (P20)
 
-`POST /rooms` и `POST /rooms/:id/tickets` возвращают `reconnect_token` (base64url) — сохранить до разрыва; expiry у токена нет, credential живёт, пока жив admitted-слот. Первый пакет admit принимает **оба** вида тикета: join (v2/v3) и reconnect (v4) — для resume шлите сырые байты `reconnect_token` так же, как join-тикет (channel 0, reliable).
+`POST /rooms` и `POST /rooms/:id/tickets` возвращают `reconnect_token` (base64url) — сохранить до разрыва; expiry у токена нет, credential живёт, пока жив admitted-слот. Первый пакет admit принимает **оба** вида credential'а: join-ticket (kind `1`) и reconnect-токен (kind `2`) — для resume шлите сырые байты `reconnect_token` так же, как join-тикет (channel 0, reliable).
 
-Token v4 — фиксированная длина **51 байт**, без nick и timestamps:
+Reconnect-токен (kind `2`) — фиксированная длина **51 байт**, без nick и timestamps:
 
 ```text
-version     u8   = 4
+kind        u8   = 2
 room_id     u64 BE
 peer_id     u64 BE
-host_id     u16 BE  (привязка исходного ticket'а - strict binding действует и для v4: admit на другом host'е → reject 0x77)
+host_id     u16 BE  (привязка исходного ticket'а - strict binding действует и для reconnect: admit на другом host'е → reject 0x77)
 hmac        32 bytes
 ```
 
@@ -202,7 +200,7 @@ Godot 4 встроенно использует ENet для `ENetMultiplayerPeer
 
 Декодируйте `token` из JSON так же, как сервер кодирует в `tokenToResponse`: **base64.RawURLEncoding** (без `=` padding). В GDScript — своя функция или готовая URL-safe base64 decode; результат — `PackedByteArray`.
 
-Проверка: `ticket_bytes[0] == 3` (version byte; старые тикеты v2 тоже принимаются сервером; для resume первым пакетом вместо join-тикета идут байты `reconnect_token` — version byte `4`).
+Проверка: `ticket_bytes[0] == 1` (kind byte; для resume первым пакетом вместо join-тикета идут байты `reconnect_token` — kind byte `2`).
 
 ### 2. ENet host + connect
 

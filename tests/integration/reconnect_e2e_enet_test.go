@@ -23,14 +23,14 @@ import (
 // поверх семантики P20/P24 и WS-покрытия reconnect_test.go):
 //
 //	TestE2E_ENetReconnect          — разрыв → 0x80 OpPeerDisconnected у host'а →
-//	                                resume reconnect_token (v4) первым пакетом →
+//	                                resume reconnect_token первым пакетом →
 //	                                0x81 OpPeerReconnected у host'а + full state
 //	                                resync вернувшемуся, nick из слота.
 //	TestE2E_ENetReconnectExpired   — короткий ReconnectTTL: resume past grace →
 //	                                0x74 OpReservationExpired (deadline-гейт P24;
 //	                                orphan sweep в env не поднят → ветка
 //	                                детерминирована, 0x73 недостижим).
-//	TestE2E_ENetReconnectWrongHost — multi-host env: v4-токен наследует
+//	TestE2E_ENetReconnectWrongHost — multi-host env: reconnect-токен наследует
 //	                                claims.hostID join-тикета; resume-пакет на
 //	                                чужом host'е → 0x77 OpWrongHost, слот не
 //	                                тратится (correct-host resume после проходит).
@@ -47,7 +47,8 @@ type wireFrame struct {
 }
 
 // enetWireClient — in-test ENet-клиент для reconnect-сценариев: connect →
-// admit первым пакетом (произвольный raw-token: join v3 или reconnect v4) →
+// admit первым пакетом (произвольный raw-token: join-ticket или
+// reconnect-token) →
 // события Service в ленту frames → graceful disconnect → stop.
 type enetWireClient struct {
 	t    *testing.T
@@ -239,8 +240,8 @@ func (c *enetWireClient) waitOp(t *testing.T, op domain.OpCode, timeout time.Dur
 }
 
 // TestE2E_ENetReconnect — базовый сценарий P20 поверх ENet: разрыв →
-// OpPeerDisconnected у host'а → resume v4-токеном первым пакетом →
-// OpPeerReconnected + full state resync, nick из слота (в v4 его нет).
+// OpPeerDisconnected у host'а → resume reconnect-токеном первым пакетом →
+// OpPeerReconnected + full state resync, nick из слота (в токене его нет).
 func TestE2E_ENetReconnect(t *testing.T) {
 	t.Parallel()
 
@@ -269,7 +270,7 @@ func TestE2E_ENetReconnect(t *testing.T) {
 		t.Fatalf("OpPeerDisconnected payload = %x, want peerID %d", payload, joinerPeerID)
 	}
 
-	// Resume: reconnect_token (v4) первым пакетом на том же host'е → admit
+	// Resume: reconnect_token первым пакетом на том же host'е → admit
 	// успешен под тем же peerID; host'у OpPeerReconnected, вернувшемуся —
 	// full state.
 	resumed := newEnetWireClient(t, "joiner", reconnectToken, joinerPort)
@@ -286,7 +287,7 @@ func TestE2E_ENetReconnect(t *testing.T) {
 	}
 
 	// Full state resync: свой peer присутствует, nick — из admitted-слота
-	// reservation (в токене v4 nick'а нет).
+	// reservation (в reconnect-токене nick'а нет).
 	fullPayload := resumed.waitOp(t, state.OpCodeFullState, 10*time.Second)
 	full, err := codec.NewRoomStateCodec().Decode(fullPayload)
 	if err != nil {
@@ -344,7 +345,7 @@ func TestE2E_ENetReconnectExpired(t *testing.T) {
 	}
 }
 
-// TestE2E_ENetReconnectWrongHost — strict binding v4 (P18+P20): reconnect
+// TestE2E_ENetReconnectWrongHost — strict binding (P18+P20): reconnect
 // -токен наследует claims.hostID join-тикета. Resume-пакет, отправленный на
 // порт другого host'а mux'а, отклоняется 0x77 OpWrongHost ДО траты слота —
 // grace-слот остаётся admitted, resume на назначенном host'е после проходит.

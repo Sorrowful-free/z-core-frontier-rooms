@@ -24,7 +24,7 @@ func placePeerJoin(
 }
 
 // placePeerResume — хвост resume-потока (P20): ErrPeerAlreadyInRoom от
-// Join — это проигрыш гонки double-resume одного v4-токена, победитель
+// Join — это проигрыш гонки double-resume одного reconnect-токена, победитель
 // уже вставил peer'а; дожимаем Replace — newest-wins (Q10), вытесненный
 // объект остановит old.Stop() внутри Replace.
 func placePeerResume(

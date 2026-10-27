@@ -48,7 +48,7 @@ func waitOp(t *testing.T, conn *fwebsocket.Conn, op domain.OpCode, timeout time.
 
 // TestIntegration_Reconnect_WS — P20: разрыв → OpPeerDisconnected → resume
 // reconnect-токеном под тем же peerID → OpPeerReconnected; nick восстанавливается
-// из слота (в токене v4 его нет), повторный join-тикет остаётся одноразовым.
+// из слота (в reconnect-токене его нет), повторный join-тикет остаётся одноразовым.
 func TestIntegration_Reconnect_WS(t *testing.T) {
 	t.Parallel()
 
