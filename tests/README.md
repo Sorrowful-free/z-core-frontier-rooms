@@ -29,9 +29,9 @@ tests/
   delivery/http/        — REST JSON (app.Test поверх testutil/env)
   delivery/ws/          — WS join lifecycle (реальный listener + fasthttp/websocket)
   integration/          — сквозные сценарии: room lifecycle create→issue→2×WS join→disconnect→leave;
-                          reconnect (P20): WS разрыв → 0x80 → resume v4 → 0x81 + resync;
+                          reconnect (P20): WS разрыв → 0x80 → resume → 0x81 + resync;
                           ENet (tag enet): базовый reconnect, grace-expiry 0x74 (P24),
-                          strict host binding 0x77 на v4-токене;
+                          strict host binding 0x77;
                           e2e live match (-short skip): общий драйвер + клиенты WS и ENet —
                           WS (~60s): 4 клиента, host dropout → idle evict → 2 миграции master;
                           ENet (~115s, tag enet): то же, dropout = молчание libenet → peer timeout;
@@ -99,16 +99,6 @@ go test -bench=BenchmarkReservation -benchmem -count=1 ./tests/adapter/reservati
 
 Сравнение до/после (локально): `go install golang.org/x/perf/cmd/benchstat@latest`, затем `-count=10` и `benchstat`.
 
-Reservation (per-room lock vs legacy global mutex в одном прогоне):
-
-```bash
-go test -bench=BenchmarkReservation_Reserve_ParallelSpread -benchmem -count=10 ./tests/adapter/reservation/... > bench.txt
-go install golang.org/x/perf/cmd/benchstat@latest
-benchstat bench.txt
-```
-
-Смотреть sub-bench `per_room_lock` vs `global_legacy` при `rooms=32` / `rooms=128`.
-
 ### Tiers
 
 | Tier | Пакет | Что измеряется |
@@ -116,31 +106,11 @@ benchstat bench.txt
 | A — CPU | `tests/domain`, `tests/domain/state`, `tests/adapter/realtime/codec` | `DecodeIncomingFrame`, `MakePatch`/`ApplyPatch`/`Clone`, wire encode/decode |
 | B — policy | `tests/adapter/realtime/policy/state` | `OnTickPatchState`, `OnMessage` PatchInput (без сети) |
 | C — room | `tests/adapter/realtime` | `Room.Send` broadcast, `Deliver`, `Join` |
-| D — reservation | `tests/adapter/reservation` | `Reserve` / issue-join path; parallel spread `per_room_lock` vs `global_legacy` |
+| D — reservation | `tests/adapter/reservation` | `Reserve` / issue-join path; parallel spread |
 
 Фикстуры комнаты с N peers: [`tests/testutil/bench/room_state.go`](testutil/bench/room_state.go) (`BuildRoomState`).
 
 **Не в скоупе:** CI regression (benchstat baseline), нагрузочные soak-тесты, ENet/WS e2e perf.
-
-### Файлы бенчмарков
-
-| Шаг | Файл | Benchmark |
-|-----|------|-----------|
-| bench-01 | `tests/domain/frame_wire_bench_test.go` | `BenchmarkDecodeIncomingFrame` |
-| bench-02…03 | `tests/domain/state/room_state_bench_test.go` | `BenchmarkRoomState_MakePatch` (0/8/64), `ApplyPatch`, `Clone` (8/64) |
-| bench-04…05 | `tests/adapter/realtime/codec/room_state_codec_bench_test.go` | `BenchmarkRoomStateCodec_*` (peers 0/8/64; patch ping + add_entity) |
-| bench-06 | `tests/adapter/realtime/codec/input_state_codec_bench_test.go` | `BenchmarkInputStateCodec_EncodePatch/DecodePatch` |
-| bench-06b | `tests/adapter/realtime/codec/rpc_state_codec_bench_test.go` | `BenchmarkRpcStateCodec_Encode/Decode` |
-| bench-06c | `tests/adapter/realtime/codec/entities_state_codec_bench_test.go` | `BenchmarkEntitiesStateCodec_Encode/Decode/EncodePatch` |
-| bench-07 | `tests/adapter/realtime/policy/state/harness_bench_test.go` | harness для bench |
-| bench-08…09 | `tests/adapter/realtime/policy/state/tick_bench_test.go` | `BenchmarkOnTickPatchState`, `NoChanges` (8/64 peers) |
-| bench-10 | `tests/adapter/realtime/policy/state/message_bench_test.go` | `BenchmarkOnMessage_PatchInput` |
-| bench-10b | `tests/adapter/realtime/policy/state/message_bench_test.go` | `BenchmarkOnMessage_PatchEntities` (`add_entity` / `update_value`) |
-| bench-11 | `tests/adapter/realtime/room_send_bench_test.go` | `BenchmarkRoom_Send_Broadcast` (8/32/64 peers) |
-| bench-12 | `tests/adapter/realtime/room_deliver_bench_test.go` | `BenchmarkRoom_Deliver` (`queue_empty` / `queue_full`) |
-| bench-12b | см. bench-12 | sub-bench `queue_full` |
-| bench-13 | `tests/adapter/realtime/room_join_bench_test.go` | `BenchmarkRoom_Join` |
-| bench-14 | `tests/adapter/reservation/reservation_bench_test.go` | `BenchmarkReservation_Reserve`, `IssueJoinPath`, `Reserve_ParallelSpread`, `Reserve_ParallelSameRoom` |
 
 ## Фаззинг
 
@@ -158,29 +128,9 @@ go test -fuzz=FuzzRoomStateDecode -fuzztime=30s ./tests/adapter/realtime/codec/
 
 ## Покрытие по пакетам
 
-| Пакет | Сценарии |
-|-------|----------|
-| `tests/delivery/errors` | `JoinRejectOpCode`, `ReservationRejectOpCode`, делегирование reservation в join, `InRoomErrorOpCode`, диапазоны `Is*OpCode` |
-| `tests/adapter/config` | `LoadFromEnv`: admission + HTTP API key / disabled; transport idle envs (`TRANSPORT_PEER_IDLE_TIMEOUT`, `TRANSPORT_PEER_IDLE_SWEEP_INTERVAL`) и enet envs (`ENET_LISTEN_PORTS` CSV / `ENET_LISTEN_PORT` alias + precedence, `ENET_PEER_LIMIT`, `ENET_ADMIT_TIMEOUT`) - defaults, custom, invalid, negative, дубли портов |
-| `tests/adapter/httpauth` | `HTTPAuthConfig.Validate` |
-| `tests/adapter/httplimits` | `HTTPLimitsConfig.Validate`, `Limits` rate + max rooms |
-| `tests/adapter/admission` | `AdmissionConfig.Validate`; round-trip ticket v3 (+ hostID в claims) + NickName, legacy v2 → `HostIDAny`, invalid nick, invalid/expired token, invalid credentials |
-| `tests/adapter/realtime` | `OnJoin` → `room.Send` без deadlock; откат map при `ErrJoinDenied`; Replace rollback policy; `PeerFactory` nick; concurrent `Deliver`/`Join`/`Leave` + `Stop` без паники; `Deliver` → `ErrQueueFull` / stopped; `Send` с `ExcludePeerID` не доставляет отправителю; `Peer.Stop` разблокирует `Receive` через `Close`; metrics (P19b): первый `master_elections` на join, re-election на уходе мастера, двойной `Leave` не декрементит `active_peers`/`peer_leaves` повторно |
-| `tests/adapter/realtime/policy/state` | join/full/patch/master; `NewStateRoomPolicy` zero intervals → defaults; `PatchEntities` add/update/reject non-master; malformed payload → `ErrInRoomInvalidPayload` + wire mapping (все 5 in-room opcodes + вложенный patch-input); send-failure проброс из `OnJoin`/tick/broadcast (`testutil/peer` SetDeliverErr); nil-master recovery (tick-перевыбор + ленивый на RPC→master) |
-| `tests/domain` | `ValidateNickName` |
-| `tests/domain/state` | atomic `ApplyPatch` rollback на entity/component |
-| `tests/adapter/realtime/codec` | Round-trip `InputStateCodec`, `RpcStateCodec`, `RoomStateCodec` (full + patch); fuzz всех Decode/DecodePatch |
-| `tests/adapter/registry` | `GetRoom` → `ErrRoomNotFound`; `Shutdown`; `DeleteRoom` при concurrent `Deliver` без паники; `CreateRoom` ×2 с одним id — один победитель, проигравшая комната остановлена; `GetList` не блокируется медленным `Stop` |
-| `tests/adapter/reservation` | Reserve → Admit → Revoke; expiry sweep; идемпотентный `Revoke`; `State` (none / reserved / admitted); concurrent ops по разным комнатам; metrics (P19b): expired-slot в `Admit` → `reservation_ops{revoke}` + `reservation_active_slots`, lazy sweep на `Reserve` → revoke по удалённым |
-| `tests/adapter/metrics` | новые сигналы P19b через `Gather()`: queue-depth gauges, tick summary, `peer_send_errors`, `enet_host_peers`, host-loop latency summary, `reservation_active_slots`, `sweep_runs_total`, http histogram; `Noop`/`OrNoop` |
-| `tests/adapter/identity` | первый ID = 1; независимые room/peer; ctx cancel; wrap `MaxUint32` → 1; уникальность под конкуренцией |
-| `tests/usecase/room` | **Create** — success, rooms limit, ctx cancel, registry rollback + `errors.Join` на unregister; **Delete** — success, kick peers, room not found; **GetList**; **IssueTicket** — success, room/peer errors, slot held, orphan admitted cleanup, issue+revoke join; **JoinRoom** — validate error, room not found после validate, success, admit/join/revoke откаты, `errors.Join` при fail Revoke; **LeaveRoom** — success, not found, revoke idempotent; **EvictIdlePeers** — `RunOnce`: zombie peer evicted, alive skipped, per-peer error tolerated; **sweeps** — `SweepHandle.Stop` ждёт in-flight `RunOnce`, bad room пропускается (orphan sweep), nil-handle при `interval <= 0` |
-| `tests/delivery/http` | API key; rate limit 429 (create/issue/delete/list); rooms limit 503; create → list → delete; issue ticket; 409/404/400; `invalid_capacity` (0 и >127) |
-| `tests/delivery/ws` | невалидный token → `OpInvalidToken` frame + close; missing token → `OpEmptyToken`; malformed base64 → `OpInvalidToken`; issue ticket → join → peer в `Registry` → disconnect → leave |
-| `tests/adapter/transport/enet` | `EnetConfig.Validate` (defaults + граничные значения) |
-| `tests/delivery/admin` | `GET /metrics` happy path; падающий `Gatherer` → 500 с контекстом (P19b) |
-| `tests/delivery/enet` | stub-Listen чистый выход (без тега); e2e под `-tags enet` + cgo: bind-failure → `Err`, `Stop` ждёт loop, admit-timeout disconnect, join-reject доезжает (`DisconnectLater`) |
-| `tests/integration` | room lifecycle: create (host) → issue (joiner) → оба join по WS → 2 peers → joiner disconnect → 1 peer (host); reconnect: WS `TestIntegration_Reconnect_WS` (0x80 → resume v4 → 0x81, nick из слота), ENet `TestE2E_ENetReconnect*` под `-tags enet` (базовый, expired→0x74, wrong-host→0x77, слот не тратится); e2e live match (`runLiveMatch` поверх `matchClient`): silent host → evict → master→slave, clean leave master-2 → master-3, slaves видят entities от 2+ мастеров и input друг друга; транспорты: WS (`TestE2E_LiveMatch_HostMigration`, ~60s, idle sweep evict), 4×ENet (`TestE2E_LiveMatch_ENet`, ~115s, libenet peer timeout ~10s, bound 70s), mixed ENet host + WS/ENet slaves (`TestE2E_LiveMatch_Mixed`, ~115s) — оба под `-tags enet` |
+Инвентарь сценариев намеренно не дублируется: он протухает при каждом
+изменении тестов. Что покрывает пакет — смотрите его `*_test.go`; навигация
+— по дереву каталогов выше (зеркалит слои приложения).
 
 После изменения `internal/port/*` интерфейсов:
 
