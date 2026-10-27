@@ -74,7 +74,7 @@
    «комната удалена»: per-peer ошибки teardown не превращаются в 5xx
    — после `closeRoom`-ошибки повторный `GetRoom` → `ErrRoomNotFound`
    = цель достигнута → Warn + 204.
-7. **HTTP leave — `DELETE /rooms/:id/peers/:peerID`** (решение по
+7. **HTTP leave — `DELETE /rooms/:id/peers/:peerID`** _(superseded P32: self-leave `POST /rooms/:id/leave` по reconnect-токену, kick удалён)_ (решение по
    факту ревью): `LeaveRoomUseCase` был дотянут до провода — живой
    доменный путь (явный уход клиента) на том же control-plane, что
    join. Self-leave = свой peerID; с API-key можно выгнать чужого
