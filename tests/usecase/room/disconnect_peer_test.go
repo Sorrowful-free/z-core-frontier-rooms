@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	useroom "github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/mocks"
 	"go.uber.org/mock/gomock"
@@ -231,5 +233,57 @@ func TestDisconnectPeer_LeaveFails_StillStopsAndBroadcasts(t *testing.T) {
 	err := uc.DisconnectPeer(context.Background(), useroom.PeerSession{RoomID: roomID, PeerID: peerID, Peer: peer})
 	if !errors.Is(err, leaveErr) {
 		t.Fatalf("err = %v, want errors.Is leaveErr", err)
+	}
+}
+
+// P29: разрыв master'а в authoritative-host комнате — комната умирает сразу:
+// grace/broadcast OpPeerDisconnected пропускаются, оставшимся — OpRoomClosed
+// и disconnect, комната unregister'ится, слоты ревокаются UnregisterRoom.
+func TestDisconnectPeer_RoomShouldClose_ClosesRoom(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	registry := mocks.NewMockRoomRegistry(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
+	logger := mocks.NewMockLogger(ctrl)
+	room := mocks.NewMockRoom(ctrl)
+	master := mocks.NewMockPeer(ctrl)
+	survivor := mocks.NewMockPeer(ctrl)
+
+	const (
+		roomID     = domain.RoomID(1)
+		masterID   = domain.PeerID(2)
+		survivorID = domain.PeerID(3)
+	)
+
+	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
+	room.EXPECT().GetPeer(masterID).Return(master, nil)
+	reservation.EXPECT().MarkDisconnected(gomock.Any(), roomID, masterID).Return(nil)
+	room.EXPECT().Leave(master).Return(domain.ErrRoomShouldClose)
+	master.EXPECT().Stop().Return(nil)
+
+	room.EXPECT().GetID().Return(roomID).AnyTimes()
+	room.EXPECT().GetPeers().Return([]realtime.Peer{survivor})
+	survivor.EXPECT().GetID().Return(survivorID).AnyTimes()
+	survivor.EXPECT().Deliver(gomock.Any()).DoAndReturn(func(ev events.PeerEvent) error {
+		if ev.Frame.OpCode != domain.OpRoomClosed {
+			t.Fatalf("delivered opcode = %#x, want OpRoomClosed (0x82)", ev.Frame.OpCode)
+		}
+		if len(ev.Frame.Payload) != 0 {
+			t.Fatalf("OpRoomClosed payload = %x, want empty", ev.Frame.Payload)
+		}
+		return nil
+	})
+	survivor.EXPECT().Stop().Return(nil)
+	registry.EXPECT().DeleteRoom(gomock.Any(), roomID).Return(nil)
+	reservation.EXPECT().UnregisterRoom(gomock.Any(), roomID).Return(nil)
+	// room.Send (OpPeerDisconnected) не ожидается — gomock упадёт на вызове.
+	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
+	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
+
+	uc := useroom.NewDisconnectPeerUseCase(registry, reservation, logger)
+	err := uc.DisconnectPeer(context.Background(), useroom.PeerSession{RoomID: roomID, PeerID: masterID, Peer: master})
+	if err != nil {
+		t.Fatalf("DisconnectPeer: %v", err)
 	}
 }

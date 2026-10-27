@@ -48,6 +48,14 @@ _Avoid_: election gap, missing master
 Отдельный Fiber-инстанс вне публичного API (`ADMIN_LISTEN_ADDR`, пустой дефолт = выключен): служебные endpoint'ы процесса, сейчас `GET /metrics` (prometheus exposition, P19). Не путать с REST control plane на `HTTP_ADDR` — там auth + rate limits, тут голая телеметрия для scrape.
 _Avoid_: metrics port, health server, internal API
 
+**Authoritative host** (room policy `authoritative-host`, P29):
+Политика комнаты при которой master-peer — единственный «хост» матча: его уход (leave И disconnect, grace не применяется) убивает комнату целиком — оставшимся `OpRoomClosed` (`0x82`) + disconnect, слоты ревокаются. Антоним — дефолтный `state` с master-миграцией.
+_Avoid_: host-pinned, dedicated host, listen server flag
+
+**Host migration** (master migration):
+Перевыборы master'а при его уходе (`electAndAssign`, min ping → min PeerID) — есть только при полиси `state`; в `authoritative-host` миграции нет, комната умирает.
+_Avoid_: failover host, master handoff
+
 **Master election semantics**:
 Правила выбора master в `StateRoomPolicy`: stale-кандидаты (`ErrPeerNotFound` от `GetPeer` — peer в state, но не в room) пропускаются, выборы идут среди живых; все stale → пустые выборы (`PeerIDInvalid`, не ошибка); прочие ошибки `GetPeer` фейлят выборы; `IsMaster`-флаги пишутся в state только после успешной проверки избранного peer (validate-first) — state не рекламирует master, которого нет у policy.
 _Avoid_: quorum, leader election

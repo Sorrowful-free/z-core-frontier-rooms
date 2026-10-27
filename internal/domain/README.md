@@ -26,7 +26,10 @@
 | `room_errors.go` | In-room (`ErrNotMaster`, …), control (`ErrRoomsLimitReached`, …), `ErrQueueFull` |
 | `reservation_error.go` | Слоты (`ErrReservationFull`, …) |
 
-Wire OpCode: `opcodes.go` (join `0x40+`, in-room `0x60+`, reservation `0x70+`, room notifications `0x80+` — `OpPeerDisconnected`/`OpPeerReconnected`, payload `peerID u64 BE`, P20).  
+`RoomPolicyKind` (`room_policy.go`, P29) — политика комнаты из `POST /rooms`: `state` (дефолт) / `authoritative-host` (уход хоста убивает комнату); `ParseRoomPolicyKind` валидирует (`""`→`state`, иначе `ErrInvalidPolicy`).
+
+Wire OpCode: `opcodes.go` (join `0x40+`, in-room `0x60+`, reservation `0x70+`, room notifications `0x80+` — `OpPeerDisconnected`/`OpPeerReconnected`, payload `peerID u64 BE`, P20; `OpRoomClosed` `0x82`, payload пустой + disconnect, P29).  
+Sentinels lifecycle: `ErrPeerStale` — leave пришёл с peer-объектом, вытесненным `Replace`/resume (P20, stale teardown); `ErrRoomShouldClose` — policy просит закрыть комнату (P29), internal-only, в teardown превращает usecase.  
 Sentinels lifecycle: `ErrPeerStale` — leave пришёл с peer-объектом, вытесненным `Replace`/resume (P20, stale teardown).  
 In-room маппинг: `InRoomErrorOpCode` в `room_errors.go` (вызывается из adapter/realtime и delivery/errors).  
 Join/reservation маппинг и `Send*` — `internal/delivery/errors`.

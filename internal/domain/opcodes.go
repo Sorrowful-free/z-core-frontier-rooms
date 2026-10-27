@@ -8,8 +8,9 @@ import "encoding/binary"
 //   0x50–0x5F — внутренние ошибки сервера при join
 //   0x60–0x6F — ошибки внутри комнаты (после admit)
 //   0x70–0x7F — ошибки reservation (бронь / admit слота)
-//   0x80+ — room notifications (не ошибки, P20): peer в grace / вернулся;
-//   payload — peerID u64 BE.
+//   0x80+ — room notifications (не ошибки, P20): peer в grace / вернулся,
+//   payload — peerID u64 BE; 0x82 OpRoomClosed (P29) — комната закрыта
+//   сервером, payload пустой, за кадром следует disconnect.
 // Payload для кодов ошибок (join, reservation, in-room): пустой.
 
 const (
@@ -49,6 +50,10 @@ const (
 	// peer ушёл в grace (может вернуться) / воскрес под тем же peerID (P20).
 	OpPeerDisconnected OpCode = 0x80
 	OpPeerReconnected  OpCode = 0x81
+	// OpRoomClosed - комната закрыта сервером (P29: authoritative-host, ушёл
+	// хост). Payload пустой; после кадра соединение закрывается. Рассылает
+	// usecase через peer.Deliver оставшимся peer'ам до их disconnect.
+	OpRoomClosed OpCode = 0x82
 )
 
 // NewPeerNotificationFrame — кадр room-notification (0x80+): payload —

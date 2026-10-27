@@ -30,7 +30,7 @@ Env — [adapter/httplimits/README.md](../../adapter/httplimits/README.md).
 
 | Метод | Путь | Use case | Успех | Body запроса | Body ответа |
 |-------|------|----------|-------|--------------|-------------|
-| `POST` | `/rooms` | Create | `201` | `capacity`, `nick_name`, `password?`, `attributes?` | `token`, `reconnect_token`, `enet_port?`, `room` (как list) |
+| `POST` | `/rooms` | Create | `201` | `capacity`, `nick_name`, `password?`, `attributes?`, `policy?` | `token`, `reconnect_token`, `enet_port?`, `room` (как list) |
 | `GET` | `/rooms` | GetList | `200` | — | `rooms[]` |
 | `DELETE` | `/rooms/:id` | Delete | `204` | `password?` | — |
 | `POST` | `/rooms/:id/tickets` | IssueTicket | `201` | `nick_name`, `password` | `token`, `reconnect_token`, `enet_port?`, `room` (как create/list) |
@@ -45,7 +45,7 @@ Env — [adapter/httplimits/README.md](../../adapter/httplimits/README.md).
 
 `{"code":"…","message":"…"}` — маппинг в `errors.go` (`room_not_found`, `ticket_slot_held`, `invalid_nick_name`, `invalid_capacity`, …).
 
-`POST /rooms`: `capacity` ≤ 0 или > `domain.MaxRoomCapacity` (127) → `400` / `invalid_capacity`.
+`POST /rooms`: `capacity` ≤ 0 или > `domain.MaxRoomCapacity` (127) → `400` / `invalid_capacity`. `policy` (P29): `state` (дефолт, master-миграция) или `authoritative-host` (уход хоста = смерть комнаты, `OpRoomClosed` `0x82`); неизвестное значение → `400` / `invalid_policy`.
 
 ## Файлы
 

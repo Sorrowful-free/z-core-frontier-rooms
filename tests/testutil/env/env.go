@@ -175,8 +175,13 @@ func New(t *testing.T, opts ...Option) *Env {
 	logger := stdlib.New("test-env")
 	// Продовая фабрика policy (та же сборка, что cmd/rooms): metrics
 	// попадает в master-машину полем внутри фабрики.
-	roomPolicyFactory := statepolicy.NewStateRoomPolicyFactory(logger, m)
-	roomFactory := adapterrealtime.NewRoomFactory(logger, roomPolicyFactory, cfg.transport.RoomIncomingQueueSize, m)
+	roomFactory := adapterrealtime.NewKindRoomFactory(
+		adapterrealtime.NewRoomFactory(logger, statepolicy.NewStateRoomPolicyFactory(logger, m), cfg.transport.RoomIncomingQueueSize, m),
+		map[domain.RoomPolicyKind]portrealtime.RoomFactory{
+			domain.RoomPolicyKindAuthoritativeHost: adapterrealtime.NewRoomFactory(
+				logger, statepolicy.NewAuthoritativeHostPolicyFactory(logger, m), cfg.transport.RoomIncomingQueueSize, m),
+		},
+	)
 	peerFactory := adapterrealtime.NewPeerFactory(logger, cfg.transport.PeerOutboundQueueSize, m)
 
 	registry := adapterregistry.NewRoomRegistry(context.Background(), roomFactory, logger, m)
@@ -427,11 +432,28 @@ func (e *Env) CreateRoom(t *testing.T, nick string) (domain.RoomID, string) {
 // (P18: ответ issue несёт enet_port; 0 - env без ENet listener'а).
 func (e *Env) CreateRoomPort(t *testing.T, nick string) (domain.RoomID, string, uint16) {
 	t.Helper()
-
-	resp, body := e.Do(t, http.MethodPost, "/rooms", map[string]any{
+	return e.createRoomPost(t, map[string]any{
 		"capacity":  4,
 		"nick_name": nick,
 	})
+}
+
+// CreateRoomWithPolicy — то же, что CreateRoom, с явным полем "policy"
+// в теле (P29: "state" / "authoritative-host").
+func (e *Env) CreateRoomWithPolicy(t *testing.T, nick, policy string) (domain.RoomID, string) {
+	t.Helper()
+	roomID, token, _ := e.createRoomPost(t, map[string]any{
+		"capacity":  4,
+		"nick_name": nick,
+		"policy":    policy,
+	})
+	return roomID, token
+}
+
+func (e *Env) createRoomPost(t *testing.T, payload map[string]any) (domain.RoomID, string, uint16) {
+	t.Helper()
+
+	resp, body := e.Do(t, http.MethodPost, "/rooms", payload)
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create room status = %d, body = %s", resp.StatusCode, body)
 	}

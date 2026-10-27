@@ -17,7 +17,13 @@ var (
 	ErrRoomAlreadyExists     = errors.New("room already exists")
 	ErrRoomsLimitReached     = errors.New("rooms limit reached")
 	ErrInvalidRoomCapacity   = errors.New("invalid room capacity")
-	ErrQueueFull             = errors.New("queue full")
+	ErrInvalidPolicy         = errors.New("invalid room policy")
+	// ErrRoomShouldClose — policy просит закрыть комнату (P29, authoritative-
+	// host: ушёл master). Внутренний sentinel: usecase превращает его в
+	// teardown (OpRoomClosed оставшимся → disconnect всех → unregister +
+	// revoke); на wire сам по себе не мапится.
+	ErrRoomShouldClose = errors.New("room should close")
+	ErrQueueFull       = errors.New("queue full")
 )
 
 // InRoomErrorOpCode maps in-room errors to wire OpCode (0x60–0x6F, empty payload).

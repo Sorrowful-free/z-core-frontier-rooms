@@ -1,6 +1,11 @@
 # adapter/realtime/policy/state
 
-`StateRoomPolicy` - authoritative state комнаты.
+`StateRoomPolicy` - authoritative state комнаты. `AuthoritativeHostPolicy`
+(P29, kind `authoritative-host`) - обёртка над ней без master-миграции: уход
+master'а отвечает `domain.ErrRoomShouldClose` (комната умирает, teardown —
+в usecase), уход non-master - обычный путь. Dispatch по kind - вне пакета:
+`KindRoomFactory` (adapter/realtime) выбирает leaf-фабрику комнаты, у каждой
+своя policy factory (`StateRoomPolicyFactory` / `AuthoritativeHostPolicyFactory`).
 
 ## Интерфейс RoomPolicy
 
@@ -31,3 +36,4 @@
 | `client_state_room_policy.go` | master messages |
 | `master_machine.go` | машина master-эпизодов: события триггеров, переходы, election |
 | `state_room_policy_factory.go` | DI defaults |
+| `authoritative_host_policy.go` | `AuthoritativeHostPolicy` + её фабрика (P29) |

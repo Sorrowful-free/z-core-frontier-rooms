@@ -58,6 +58,16 @@ func (uc *LeaveRoomUseCase) LeaveRoom(ctx context.Context, roomID domain.RoomID,
 		uc.logging.Debug("leave room: stale peer object", "roomID", roomID, "peerID", peerID)
 		return nil
 	}
+	if errors.Is(leaveErr, domain.ErrRoomShouldClose) {
+		// Authoritative-host (P29): ушедший master убивает комнату — teardown
+		// (OpRoomClosed оставшимся → disconnect всех → unregister) ревокает и
+		// слот ушедшего, отдельный Revoke не нужен.
+		stopErr := peer.Stop()
+		if stopErr != nil {
+			uc.logging.Error("leave room: peer stop failed", "error", stopErr, "roomID", roomID, "peerID", peerID)
+		}
+		return errors.Join(stopErr, closeRoom(ctx, room, uc.roomRegistry, uc.reservation, uc.logging))
+	}
 	if leaveErr != nil {
 		uc.logging.Error("leave room: room leave failed", "error", leaveErr, "roomID", roomID, "peerID", peerID)
 	}

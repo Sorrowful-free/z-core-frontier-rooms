@@ -39,7 +39,7 @@ func TestRoom_Leave_ConcurrentDoubleLeave_RegistryDedup(t *testing.T) {
 	// Комната с продовым wiring метрик: RoomFactory вливает metrics полем,
 	// policy подставляется spy-стаб через статическую фабрику.
 	factory := adapterrealtime.NewRoomFactory(stdlib.New("test"), staticPolicyFactory{policy: policy}, 8, m)
-	room, err := factory.CreateRoom(context.Background(), domain.RoomID(7), 8, nil)
+	room, err := factory.CreateRoom(context.Background(), domain.RoomID(7), 8, nil, domain.RoomPolicyKindState)
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

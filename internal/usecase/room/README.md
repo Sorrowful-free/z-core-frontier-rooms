@@ -14,7 +14,8 @@
 | `join_room.go` | Data | Admit → CreatePeer(nick) → Join/Replace → Start → `PeerSession` |
 | `reconnect_room.go` | Data | Resume (P20/P24): `reservation.SlotDetails` → deadline-гейт (`ErrReservationExpired`) → `reservation.Reconnect` → CreatePeer(nick из слота) → Join/Replace → Start → `OpPeerReconnected` |
 | `disconnect_peer.go` | Data | Разрыв в grace (P20): `GetPeer` identity-check → `MarkDisconnected` → Leave → Stop → `OpPeerDisconnected` |
-| `leave_room.go` | Data | Leave → Stop → Revoke (явный leave / rollback) |
+| `leave_room.go` | Data | Leave → Stop → Revoke (явный leave / rollback); `ErrRoomShouldClose` → `closeRoom` |
+| `close_room.go` | Data | Teardown по запросу policy (P29): `OpRoomClosed` оставшимся → `DeleteRoom` → `UnregisterRoom` → `Stop` всех |
 | `peer_session.go` | Data | `PeerSession{RoomID, PeerID, Peer}` — session-handle до teardown (P20) |
 | `place_peer.go` | Data | Общий хвост admit-потоков (P20): CreatePeer → HasPeer?Replace:Join (resume дожимает `ErrPeerAlreadyInRoom` гонки через Replace) → Start + rollback → `PeerSession` |
 | `sweep_orphan_admitted.go` | Background | grace-expiry: admitted без peer в room и `lastSeen + ReconnectTTL` прошёл → Revoke |
@@ -86,6 +87,8 @@ GetPeer(session.PeerID) — stale teardown (peer вытеснен Replace / уж
 ## LeaveRoom
 
 `GetPeer` → `Leave` → `Stop` → `Revoke`. Идемпотентно: комната или peer уже сняты → `Revoke` + `nil`; слот reservation отсутствует → `nil`. `room.Leave` изымает peer из комнаты даже при ошибке политики — `Stop` и `Revoke` выполняются всегда, ошибки возвращаются через `errors.Join`.
+
+**`ErrRoomShouldClose` (P29):** в `LeaveRoom` и `DisconnectPeer` sentinel от policy → `closeRoom`: `OpRoomClosed` (`0x82`) оставшимся через `peer.Deliver` → `registry.DeleteRoom` → `reservation.UnregisterRoom` (ревокает и слот ушедшего) → `Stop` всех. Grace/reconnect не применяется. Порядок: Deliver до DeleteRoom (peer живёт на `room.Context()`), Stop последним (conn close не должен обгонять кадр; на ENet порядок жёсткий — `DisconnectLater` в той же FIFO).
 
 ## Delete
 

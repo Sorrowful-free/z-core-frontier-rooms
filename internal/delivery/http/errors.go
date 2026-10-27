@@ -12,6 +12,7 @@ const (
 	codeInvalidRoomID              = "invalid_room_id"
 	codeInvalidPeerID              = "invalid_peer_id"
 	codeInvalidCapacity            = "invalid_capacity"
+	codeInvalidPolicy              = "invalid_policy"
 	codeInvalidNickName            = "invalid_nick_name"
 	codeRoomNotFound               = "room_not_found"
 	codeRoomAlreadyExists          = "room_already_exists"
@@ -78,6 +79,8 @@ func statusAndCodeFromError(err error) (int, string) {
 		return fiber.StatusBadRequest, codeInvalidNickName
 	case errors.Is(err, domain.ErrInvalidRoomCapacity):
 		return fiber.StatusBadRequest, codeInvalidCapacity
+	case errors.Is(err, domain.ErrInvalidPolicy):
+		return fiber.StatusBadRequest, codeInvalidPolicy
 	case errors.Is(err, domain.ErrRoomsLimitReached):
 		return fiber.StatusServiceUnavailable, codeRoomsLimitReached
 	default:

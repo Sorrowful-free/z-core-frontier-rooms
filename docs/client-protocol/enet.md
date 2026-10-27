@@ -124,6 +124,7 @@ Reject-кадр reliable и гарантированно доезжает: се�
 | `0x70`–`0x7F` | Reservation reject (при admit) |
 | `0x80` `OpPeerDisconnected` | Peer ушёл в reconnect grace — payload `peer_id u64` BE (P20) |
 | `0x81` `OpPeerReconnected` | Peer вернулся под тем же peerID — payload `peer_id u64` BE (P20) |
+| `0x82` `OpRoomClosed` | Комната закрыта сервером (P29, `authoritative-host`: ушёл хост) — payload пустой, за кадром graceful disconnect |
 
 Лимит длины пакета = `MaxIncomingFrameBytes` (OpCode + payload). Превышение → **disconnect** без wire-ошибки.
 
@@ -173,6 +174,7 @@ WS delivery не различает — для отладки всё implicit re
 - Oversized frame / invalid frame после admit → `DisconnectPeer` + graceful disconnect; queued outbound-фреймы доезжают до разрыва.
 - Переполнение входной очереди ENet на сервере → **drop** кадра (warn в логах), соединение не рвётся.
 - Idle/zombie соединение (`!IsAlive`, peer sweep) → тот же `DisconnectPeer`, то же grace-окно.
+- Комната `authoritative-host` (P29): разрыв **хоста** (leave/disconnect/idle evict — тот же leave-путь) убивает комнату без grace и перевыборов — оставшимся `0x82 OpRoomClosed` + graceful disconnect (`DisconnectLater` дожидается кадр), слоты reservation ревокаются.
 
 ### Reconnect (P20)
 

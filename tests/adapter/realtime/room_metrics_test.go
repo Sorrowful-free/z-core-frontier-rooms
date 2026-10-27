@@ -22,7 +22,7 @@ func newMetricsRoom(t *testing.T, m *metricsadapter.Metrics) realtime.Room {
 	logger := stdlib.New("test")
 	policyFactory := statepolicy.NewStateRoomPolicyFactory(logger, m)
 	factory := adapterrealtime.NewRoomFactory(logger, policyFactory, 0, m)
-	room, err := factory.CreateRoom(context.Background(), domain.RoomID(1), 8, nil)
+	room, err := factory.CreateRoom(context.Background(), domain.RoomID(1), 8, nil, domain.RoomPolicyKindState)
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

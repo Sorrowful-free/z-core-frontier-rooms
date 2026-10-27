@@ -43,7 +43,7 @@ Graceful shutdown: по ctx/Stop host loop закрывает все сесси�
 
 `NewRoomsHandler` принимает `port/metrics.Metrics` (nil-safe): reject-кадры admit считаются в `rooms_join_rejects_total{opcode}` только при успешном send (включая `OpWrongHost` `0x77`; ошибка send - Warn-лог), drop переполненной очереди ENet-сессии — `rooms_queue_drops_total{queue="enet_incoming"}`, живые сессии на host'е — `rooms_enet_host_peers{host}` (то же число, что least-loaded счётчик), ожидание команд в очереди `HostLoop` (enqueue → exec) — `rooms_enet_host_loop_queue_latency_seconds` (агрегировано по host'ам). `NewHostLoop` принимает `Metrics` последним параметром (nil-safe).
 
-Disconnect везде graceful (`DisconnectLater` в `EnetConnection.Close`): queued reliable-пакеты — включая join reject — уходят до разрыва. `DisconnectNow` не используется.
+Disconnect везде graceful (`DisconnectLater` в `EnetConnection.Close`): queued reliable-пакеты — включая join reject — уходят до разрыва. `DisconnectNow` не используется. Тот же механизм гарантирует доставку `OpRoomClosed` (`0x82`) при смерти комнаты `authoritative-host` (P29): кадр и disconnect в одной FIFO host loop'а.
 
 ## Сериализация libenet
 

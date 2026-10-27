@@ -27,7 +27,9 @@ import (
 	deliveryenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/enet"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/http"
 	deliveryws "github.com/Sorrowful-free/z-core-frontier-rooms/internal/delivery/ws"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	portmetrics "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/metrics"
+	portrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
 	fibzap "github.com/gofiber/contrib/v3/zap"
 	"github.com/gofiber/fiber/v3"
@@ -78,9 +80,20 @@ func run() error {
 		Fields: []string{"ip", "latency", "status", "method", "path"},
 	}))
 
-	roomPolicyFactory := statepolicy.NewStateRoomPolicyFactory(zaplog.NewFrom(z, "rooms policy factory"), m)
-
-	roomFactory := realtime.NewRoomFactory(zaplog.NewFrom(z, "rooms factory"), roomPolicyFactory, cfg.Transport.RoomIncomingQueueSize, m)
+	// P29: dispatch по policy kind на leaf-фабрики комнат — у каждой своя
+	// policy factory (state = дефолт, authoritative-host).
+	roomFactory := realtime.NewKindRoomFactory(
+		realtime.NewRoomFactory(
+			zaplog.NewFrom(z, "rooms factory"),
+			statepolicy.NewStateRoomPolicyFactory(zaplog.NewFrom(z, "rooms policy factory"), m),
+			cfg.Transport.RoomIncomingQueueSize, m),
+		map[domain.RoomPolicyKind]portrealtime.RoomFactory{
+			domain.RoomPolicyKindAuthoritativeHost: realtime.NewRoomFactory(
+				zaplog.NewFrom(z, "rooms factory"),
+				statepolicy.NewAuthoritativeHostPolicyFactory(zaplog.NewFrom(z, "auth host policy factory"), m),
+				cfg.Transport.RoomIncomingQueueSize, m),
+		},
+	)
 	peerFactory := realtime.NewPeerFactory(zaplog.NewFrom(z, "peer factory"), cfg.Transport.PeerOutboundQueueSize, m)
 
 	roomRegistry := registry.NewRoomRegistry(appCtx, roomFactory, zaplog.NewFrom(z, "rooms registry"), m)

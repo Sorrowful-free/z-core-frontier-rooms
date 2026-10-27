@@ -48,6 +48,7 @@ X-API-Key: <HTTP_API_KEY>
 | `nick_name` | string | Обязательно; см. [Правила nick_name](#правила-nick_name) |
 | `password` | string | Опционально; если задан — нужен при join через `/tickets` и delete |
 | `attributes` | object | Опционально; произвольный JSON-словарь (название карты, режим и т.п.); возвращается в create/list |
+| `policy` | string | Опционально; room policy (P29): `state` — дефолт, master-миграция при уходе хоста; `authoritative-host` — уход хоста убивает комнату (оставшимся `0x82 OpRoomClosed` + disconnect). Неизвестное значение → `400` `invalid_policy` |
 
 ID комнаты выдаёт сервер — в запросе поля `id` нет.
 
@@ -75,7 +76,7 @@ ID комнаты выдаёт сервер — в запросе поля `id` 
 
 `enet_port` - назначенный UDP-порт ENet host'а (P18, привязка тикета к host'у/shard'у). Поле присутствует, только если на сервере поднят ENet listener.
 
-**Ошибки:** `400` `invalid_capacity`, `400` `invalid_nick_name`, `503` `rooms_limit_reached`, `429` `rate_limited`, а также ошибки issue ticket (`401` `invalid_credentials`, `409` `reservation_full` и т.д.) — при сбое issue созданная комната откатывается.
+**Ошибки:** `400` `invalid_capacity`, `400` `invalid_nick_name`, `400` `invalid_policy`, `503` `rooms_limit_reached`, `429` `rate_limited`, а также ошибки issue ticket (`401` `invalid_credentials`, `409` `reservation_full` и т.д.) — при сбое issue созданная комната откатывается.
 
 ---
 

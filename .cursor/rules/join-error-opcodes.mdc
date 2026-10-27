@@ -16,7 +16,7 @@ alwaysApply: false
 | `reservation_reject.go` | `0x70–0x7F` | `ReservationRejectOpCode`, `SendReservationReject` |
 | `join_reject.go` (in-room) | `0x60–0x6F` | обёртка `InRoomErrorOpCode`, `SendInRoomError` |
 | `join_reject.go` / `reservation_reject.go` | — | `IsJoinRejectOpCode`, `IsInRoomErrorOpCode` / `IsReservationRejectOpCode` |
-| `domain/opcodes.go` + `NewPeerNotificationFrame` | `0x80+` | Room notifications — рассылает **usecase** через `room.Send` (не delivery/errors): `OpPeerDisconnected`/`OpPeerReconnected`, payload `peerID u64 BE` (P20) |
+| `domain/opcodes.go` + `NewPeerNotificationFrame` | `0x80+` | Room notifications — рассылает **usecase** через `room.Send` (не delivery/errors): `OpPeerDisconnected`/`OpPeerReconnected`, payload `peerID u64 BE` (P20); `OpRoomClosed` `0x82` (P29) — комната закрыта сервером (authoritative-host: ушёл хост), payload пустой, за кадром disconnect; шлётся `peer.Deliver` из usecase teardown |
 
 Домен: `opcodes.go`, `join_errors.go`, `reservation_error.go`, `room_errors.go` (`InRoomErrorOpCode`).
 

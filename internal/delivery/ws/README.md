@@ -13,7 +13,7 @@ Ticket по-прежнему в query (контракт клиента). Стр�
 1. Декодировать base64url из query → сырые байты credential'а (join-ticket / reconnect-токен)
 2. `AdmitPeerUseCase.Admit(..., HostIDUnbound)` — фасад валидирует token один раз и разводит join/resume по `claims.Kind` (P20)
 3. Цикл `connection.Receive` → `room.Deliver`
-4. При disconnect → `DisconnectPeer` с `PeerSession` из admit (P20: `MarkDisconnected` → `Leave` → `Stop` → `OpPeerDisconnected`; grace-окно `RESERVATION_RECONNECT_TTL`)
+4. При disconnect → `DisconnectPeer` с `PeerSession` из admit (P20: `MarkDisconnected` → `Leave` → `Stop` → `OpPeerDisconnected`; grace-окно `RESERVATION_RECONNECT_TTL`; в комнате `authoritative-host` разрыв хоста → `ErrRoomShouldClose` → teardown: выжившим `0x82 OpRoomClosed` + close, P29)
 
 Ошибка join: один кадр OpCode (`delivery/errors.SendJoinReject`) → close WS.
 

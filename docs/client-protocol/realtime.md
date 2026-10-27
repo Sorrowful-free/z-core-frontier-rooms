@@ -52,7 +52,7 @@ hmac        32 bytes SHA-256 HMAC
 | `0x40`–`0x5F` | Join reject — [errors.md](errors.md) |
 | `0x60`–`0x6F` | In-room error (соединение живо) |
 | `0x70`–`0x7F` | Reservation reject (при join) |
-| `0x80`–`0x81` | Room notifications `OpPeerDisconnected`/`OpPeerReconnected` (payload `peerID u64 BE`) — [errors.md](errors.md#room-notifications-0x80-не-ошибки-p20) |
+| `0x80`–`0x82` | Room notifications `OpPeerDisconnected`/`OpPeerReconnected` (payload `peerID u64 BE`), `OpRoomClosed` `0x82` (комната закрыта, payload пустой, дальше disconnect; P29) — [errors.md](errors.md#room-notifications-0x80-не-ошибки-p20) |
 
 **Лимит:** `TRANSPORT_MAX_INCOMING_FRAME_BYTES` (env, default 262144).
 

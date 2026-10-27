@@ -26,11 +26,13 @@ func NewRoomFactory(logger logging.Logger, policyFactory policy.RoomPolicyFactor
 	}
 }
 
-func (f *RoomFactory) CreateRoom(ctx context.Context, id domain.RoomID, capacity int, attributes domain.RoomAttributes) (realtime.Room, error) {
+func (f *RoomFactory) CreateRoom(ctx context.Context, id domain.RoomID, capacity int, attributes domain.RoomAttributes, policyKind domain.RoomPolicyKind) (realtime.Room, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
+	// policyKind на этом уровне не нужен: конкретная policy привязана к
+	// фабрике при сборке — dispatch по kind делает KindRoomFactory (P29).
 	policy := f.policyFactory.CreateRoomPolicy()
 	room := NewRoom(ctx, id, policy, capacity, attributes, f.incomingQueue, f.logger)
 	// Метрики вливаются фабрикой полем: сигнатура NewRoom держится

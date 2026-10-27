@@ -94,6 +94,15 @@ func (uc *DisconnectPeerUseCase) DisconnectPeer(ctx context.Context, session Pee
 	case errors.Is(leaveErr, domain.ErrPeerNotFound):
 		uc.logging.Warn("disconnect peer: peer already left", "roomID", session.RoomID, "peerID", session.PeerID)
 		return nil
+	case errors.Is(leaveErr, domain.ErrRoomShouldClose):
+		// Authoritative-host (P29): разрыв master'а убивает комнату сразу —
+		// grace-окно хосту не применяется; оставшимся уходит OpRoomClosed и
+		// разрыв, слоты (включая только что помеченный) ревокает teardown.
+		stopErr := session.Peer.Stop()
+		if stopErr != nil {
+			uc.logging.Error("disconnect peer: peer stop failed", "error", stopErr, "roomID", session.RoomID, "peerID", session.PeerID)
+		}
+		return errors.Join(stopErr, closeRoom(ctx, room, uc.roomRegistry, uc.reservation, uc.logging))
 	case leaveErr != nil:
 		uc.logging.Error("disconnect peer: room leave failed", "error", leaveErr, "roomID", session.RoomID, "peerID", session.PeerID)
 	}

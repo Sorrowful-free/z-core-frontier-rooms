@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	useroom "github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/mocks"
 	"go.uber.org/mock/gomock"
@@ -242,5 +244,54 @@ func TestLeaveRoom_StopAndRevokeFail_ErrorsJoined(t *testing.T) {
 	}
 	if !errors.Is(err, revokeErr) {
 		t.Fatalf("err = %v, want errors.Is revokeErr", err)
+	}
+}
+
+// P29: room.Leave отвечает ErrRoomShouldClose (authoritative-host, ушёл
+// master) → teardown: OpRoomClosed оставшимся → stop всех → DeleteRoom →
+// UnregisterRoom. Отдельный Revoke ушедшего не нужен — слоты ревокает
+// teardown.
+func TestLeaveRoom_RoomShouldClose_ClosesRoom(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	registry := mocks.NewMockRoomRegistry(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
+	logger := mocks.NewMockLogger(ctrl)
+	room := mocks.NewMockRoom(ctrl)
+	master := mocks.NewMockPeer(ctrl)
+	survivor := mocks.NewMockPeer(ctrl)
+
+	const (
+		roomID     = domain.RoomID(1)
+		masterID   = domain.PeerID(2)
+		survivorID = domain.PeerID(3)
+	)
+
+	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
+	room.EXPECT().HasPeer(masterID).Return(true)
+	room.EXPECT().GetPeer(masterID).Return(master, nil)
+	room.EXPECT().Leave(master).Return(domain.ErrRoomShouldClose)
+	master.EXPECT().Stop().Return(nil)
+
+	room.EXPECT().GetID().Return(roomID).AnyTimes()
+	room.EXPECT().GetPeers().Return([]realtime.Peer{survivor})
+	survivor.EXPECT().GetID().Return(survivorID).AnyTimes()
+	survivor.EXPECT().Deliver(gomock.Any()).DoAndReturn(func(ev events.PeerEvent) error {
+		if ev.Frame.OpCode != domain.OpRoomClosed {
+			t.Fatalf("delivered opcode = %#x, want OpRoomClosed (0x82)", ev.Frame.OpCode)
+		}
+		return nil
+	})
+	survivor.EXPECT().Stop().Return(nil)
+	registry.EXPECT().DeleteRoom(gomock.Any(), roomID).Return(nil)
+	reservation.EXPECT().UnregisterRoom(gomock.Any(), roomID).Return(nil)
+	// Revoke ушедшего master'а не вызывается — UnregisterRoom ревокает все слоты.
+	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
+	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
+
+	uc := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
+	if err := uc.LeaveRoom(context.Background(), roomID, masterID); err != nil {
+		t.Fatalf("LeaveRoom: %v", err)
 	}
 }
