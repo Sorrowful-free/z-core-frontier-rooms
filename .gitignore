@@ -25,3 +25,7 @@ vendor/
 # Local env (secrets)
 .env
 .scratch/
+
+# loadgen report (P27) — артефакт прогона, не исходник
+/report.json
+/report.json.tmp
