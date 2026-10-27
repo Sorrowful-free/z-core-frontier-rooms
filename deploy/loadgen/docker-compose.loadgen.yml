@@ -1,0 +1,84 @@
+# P27 inc2 — контейнерный прогон loadgen с tc netem на egress.
+#
+# Топология: оба контейнера в user-defined сети zcore-loadtest (встроенный
+# DNS — loadgen достаёт сервер по имени "rooms"; на default bridge имён нет).
+# Прямого выхода на хост-сервисы у контейнеров нет: host firewall не пускает
+# bridge-трафик на непублицированные порты шлюза — поэтому сервер тоже
+# контейнером (опц. сервис, profile "server"), а его HTTP/admin/ENet порты
+# публикуются на 127.0.0.1 для readiness/metrics с хоста мимо impair'а.
+#
+# Build — ТОЛЬКО plain docker (compose build не умеет --network=host, а DNS
+# в bridge на этой машине мёртв):
+#   docker build --network=host -t zcore-loadgen -f deploy/loadgen/Dockerfile .
+#
+# Полный прогон удобнее через оркестратор: LOADTEST_DOCKER=1 ./scripts/loadtest-run.sh
+# Ручной запуск:
+#   docker network create zcore-loadtest   # один раз
+#   ADMISSION_SECRET=$(openssl rand -hex 32) \
+#     docker compose -f deploy/loadgen/docker-compose.loadgen.yml --profile server up -d rooms
+#   LOADGEN_HTTP_ADDR=rooms:3000 LOADGEN_WS_ADDR=rooms:3000 \
+#   LOADGEN_ADMIN_ADDR=rooms:9091 LOADGEN_REPORT=/out/report.json \
+#     docker compose -f deploy/loadgen/docker-compose.loadgen.yml run --rm loadgen
+
+name: zcore-loadgen
+
+networks:
+  loadtest:
+    name: zcore-loadtest
+    external: true # сеть создаёт оркестратор/вручную — общая с loadtest-run.sh
+
+services:
+  loadgen:
+    image: zcore-loadgen
+    build:
+      context: ../..
+      dockerfile: deploy/loadgen/Dockerfile
+    networks: [loadtest]
+    cap_add:
+      - NET_ADMIN # SO_MARK + tc qdisc/filter в entrypoint
+    environment:
+      - LOADGEN_HTTP_ADDR
+      - LOADGEN_WS_ADDR
+      - LOADGEN_ADMIN_ADDR
+      - LOADGEN_ENET_ADDR
+      - LOADGEN_ROOMS
+      - LOADGEN_ROOM_MIX
+      - LOADGEN_TRANSPORT_MIX
+      - LOADGEN_POLICY_MIX
+      - LOADGEN_MODE
+      - LOADGEN_INPUT_HZ
+      - LOADGEN_ENTITIES_HZ
+      - LOADGEN_RAMP
+      - LOADGEN_DURATION
+      - LOADGEN_DRAIN_TIMEOUT
+      - LOADGEN_RECONNECT_RATE
+      - LOADGEN_RECONNECT_EVERY
+      - LOADGEN_LOG_EVERY
+      - LOADGEN_REPORT
+      - LOADGEN_NETEM_SHARE
+      - LOADGEN_NETEM_BAD
+      - LOADGEN_NETEM_UGLY
+      - LOADGEN_NETEM_DEV
+    volumes:
+      - ${LOADTEST_OUT_DIR:-../../.scratch/loadtest}:/out
+
+  # Опциональный сервер тем же образом (бинарь /app/rooms) — для ручного
+  # прогона без оркестратора. Env: preset .env.loadtest + ADMISSION_SECRET
+  # из shell (обязателен).
+  rooms:
+    image: zcore-loadgen
+    profiles: ["server"]
+    entrypoint: ["/app/rooms"]
+    networks:
+      loadtest:
+        aliases: [rooms]
+    env_file:
+      - ../../.env.loadtest
+    environment:
+      - ADMISSION_SECRET
+      - HTTP_ADDR=:3000
+      - ADMIN_LISTEN_ADDR=:9091
+    ports:
+      - "127.0.0.1:3000:3000"   # HTTP control plane (readiness/GET /rooms)
+      - "127.0.0.1:9091:9091"   # admin /metrics — с хоста мимо impair'а
+      - "127.0.0.1:5000-5003:5000-5003/udp" # ENet listeners (inc3)

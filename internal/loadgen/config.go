@@ -53,6 +53,11 @@ type Config struct {
 	ReconnectRate  float64       // доля клиентов, делающих abrupt close → resume
 	ReconnectEvery time.Duration // период разрыва у выбранных клиентов
 
+	// NetemShare — распределение клиентов по netem-профилям (inc2,
+	// LOADGEN_NETEM_SHARE="clean:30,bad:50,ugly:20"); пусто — dial'ы без
+	// SO_MARK (host-режим, tc не трогаем).
+	NetemShare []weightedOption
+
 	ReportPath string
 	LogEvery   time.Duration
 }
@@ -110,6 +115,11 @@ func LoadConfigFromEnv() (*Config, error) {
 	}
 	if cfg.ReconnectEvery, err = envDuration("LOADGEN_RECONNECT_EVERY", cfg.ReconnectEvery); err != nil {
 		return nil, err
+	}
+	if raw := envOr("LOADGEN_NETEM_SHARE", ""); raw != "" {
+		if cfg.NetemShare, err = parseMix(raw, mapNetem); err != nil {
+			return nil, fmt.Errorf("LOADGEN_NETEM_SHARE: %w", err)
+		}
 	}
 	if cfg.LogEvery, err = envDuration("LOADGEN_LOG_EVERY", cfg.LogEvery); err != nil {
 		return nil, err

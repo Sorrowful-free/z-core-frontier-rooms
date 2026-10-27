@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand/v2"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -42,11 +43,25 @@ type roomPlan struct {
 }
 
 // NewFleet собирает флот. log — live-прогресс (stdout из cmd/loadgen).
+// Control-plane HTTP тоже маркируется (клиенты за плохой сетью и на
+// control-plane): каждый новый conn Transport'а получает SO_MARK по
+// weighted pick из NETEM_SHARE; пустой share — немаркированный dial.
 func NewFleet(cfg *Config, log io.Writer) *Fleet {
 	return &Fleet{
 		cfg: cfg,
 		m:   newMetrics(),
-		hc:  &http.Client{Timeout: 15 * time.Second},
+		hc: &http.Client{
+			Timeout: 15 * time.Second,
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+					mark, err := netemMarkFor(pickNetemGlobal(cfg.NetemShare))
+					if err != nil {
+						return nil, err
+					}
+					return markedDialer(mark).DialContext(ctx, network, addr)
+				},
+			},
+		},
 		rnd: rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())),
 		log: log,
 	}
@@ -188,7 +203,39 @@ func (f *Fleet) spawnRoom(ctx context.Context, plan roomPlan) {
 	}
 }
 
+// pickNetemGlobal — weighted pick netem-профиля через concurrency-safe
+// пакетный rand (DialContext Transport'а зовётся из его фоновых горутин —
+// f.rnd там трогать нельзя; для peer-спавна годится тот же pick). Пустой
+// share → "" (без маркировки).
+func pickNetemGlobal(opts []weightedOption) string {
+	if len(opts) == 0 {
+		return ""
+	}
+	total := 0
+	for _, o := range opts {
+		total += o.Weight
+	}
+	roll := rand.IntN(total)
+	for _, o := range opts {
+		if roll < o.Weight {
+			return o.Value
+		}
+		roll -= o.Weight
+	}
+	return opts[len(opts)-1].Value
+}
+
 func (f *Fleet) spawnPeer(ctx context.Context, spec peerSpec, plan roomPlan) {
+	profile := pickNetemGlobal(f.cfg.NetemShare)
+	mark, err := netemMarkFor(profile)
+	if err != nil { // имена провалидированы в LoadConfigFromEnv — unreachable
+		f.m.httpError("netem")
+		return
+	}
+	spec.netemMark = mark
+	if profile != "" {
+		f.m.netemAssign(profile)
+	}
 	p := newPeer(f.cfg, f.m, spec)
 	p.roomPolicy = plan.policy
 	f.peersMu.Lock()

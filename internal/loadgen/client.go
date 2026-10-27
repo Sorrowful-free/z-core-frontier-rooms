@@ -37,13 +37,15 @@ type DialParams struct {
 	EnetAddr string // host (без порта) ENet host'ов — inc 3
 	EnetPort uint16 // назначенный порт из ticket-ответа (0 — нет привязки)
 	Token    string // join-ticket или reconnect-токен (base64url, как в ответе)
+	// Mark — SO_MARK для tc netem-шардинга (inc2); 0 — без маркировки.
+	Mark uint32
 }
 
 // dialDataConn — точка выбора транспорта (inc 3 добавит case "enet").
 func dialDataConn(ctx context.Context, transport string, p DialParams) (DataConn, error) {
 	switch transport {
 	case "ws":
-		return dialWS(ctx, p.WSAddr, p.Token)
+		return dialWS(ctx, p.WSAddr, p.Token, p.Mark)
 	case "enet":
 		return nil, fmt.Errorf("transport enet: %w", ErrEnetUnsupported)
 	default:
@@ -60,10 +62,14 @@ type wsDataConn struct {
 const wsClientWriteDeadline = 5 * time.Second
 
 // dialWS — GET ws://<addr>/ws?token=<base64url-ticket>. Токен идёт как есть —
-// сервер сам декодирует base64url.
-func dialWS(ctx context.Context, addr, token string) (DataConn, error) {
+// сервер сам декодирует base64url. mark>0 → SO_MARK на сокете (netem-band).
+func dialWS(ctx context.Context, addr, token string, mark uint32) (DataConn, error) {
 	u := url.URL{Scheme: "ws", Host: addr, Path: "/ws", RawQuery: "token=" + token}
-	conn, resp, err := fwebsocket.DefaultDialer.DialContext(ctx, u.String(), nil)
+	dialer := fwebsocket.Dialer{
+		NetDialContext:   markedDialer(mark).DialContext,
+		HandshakeTimeout: 10 * time.Second,
+	}
+	conn, resp, err := dialer.DialContext(ctx, u.String(), nil)
 	if err != nil {
 		status := 0
 		if resp != nil {

@@ -1,6 +1,6 @@
 # internal/loadgen
 
-Нагрузочный клиент флота комнат (план [P27](../../docs/plans/P27-loadgen.md), inc 1: host-only, WS). Бинарь — `cmd/loadgen`, оркестратор — `scripts/loadtest-run.sh` (поднимает `cmd/rooms` с пресетом [.env.loadtest](../../.env.loadtest), снимает `GET /metrics` до/после в `report.server_metrics`).
+Нагрузочный клиент флота комнат (план [P27](../../docs/plans/P27-loadgen.md), inc 1+2: host/WS + Docker/netem). Бинарь — `cmd/loadgen`, оркестратор — `scripts/loadtest-run.sh` (поднимает `cmd/rooms` с пресетом [.env.loadtest](../../.env.loadtest), снимает `GET /metrics` до/после в `report.server_metrics`).
 
 ## Поток
 
@@ -33,10 +33,28 @@ Auth-комнаты (`POLICY_MIX=auth`): host-клиент делает одно
 | `LOADGEN_RECONNECT_EVERY` | `60s` | Период разрыва у выбранных клиентов (первый — со случайным джиттером) |
 | `LOADGEN_REPORT` | `./report.json` | Путь report.json (оркестратор ставит `.scratch/loadtest/`) |
 | `LOADGEN_LOG_EVERY` | `10s` | Период live-прогресса на stdout |
+| `LOADGEN_NETEM_SHARE` | пусто | `clean:30,bad:50,ugly:20` — доли клиентов по netem-профилям; пусто = без SO_MARK (host-режим) |
+| `LOADGEN_NETEM_BAD` | `loss 5% delay 150ms 50ms` | Строка аргументов `tc netem` для band bad (читает entrypoint контейнера) |
+| `LOADGEN_NETEM_UGLY` | `loss 20% delay 300ms 150ms reorder 10%` | То же для ugly |
+| `LOADGEN_NETEM_DEV` | `eth0` | Исходящий интерфейс для tc в контейнере |
+
+## Netem (inc 2, контейнер)
+
+Механизм: клиенту при спавне weighted pick из `NETEM_SHARE` → профиль → `SO_MARK` на dial-сокете (`netem.go`: clean=1, bad=2, ugly=3); tc в entrypoint контейнера — `prio` qdisc, `fw`-фильтры `handle N → flowid 1:N`, netem-ребёнок на band bad/ugly (немаркированный трафик → 1:1 clean). Control-plane HTTP маркируется тем же pick на каждый новый conn Transport'а. `SO_MARK` требует `cap_add: NET_ADMIN` — только контейнерный режим; на хосте share не задавать (dial упадёт EPERM → `dial_errors`). Проверка долей: `report.netem_clients` vs `report.config.netem_share`, контракт ±5%.
+
+```bash
+# docker-режим оркестратора: build --network=host (bridge DNS мёртв),
+# сервер на хосте, контейнер — через host.docker.internal, report → $OUT_DIR.
+LOADTEST_DOCKER=1 LOADGEN_ROOMS=30 LOADGEN_ROOM_MIX="4/4:100" \
+LOADGEN_NETEM_SHARE="clean:30,bad:50,ugly:20" LOADGEN_DURATION=30s \
+./scripts/loadtest-run.sh
+```
+
+Ручной прогон: `docker compose -f deploy/loadgen/docker-compose.loadgen.yml run --rm loadgen` (образ собирается только `docker build --network=host` — compose build host-net не умеет).
 
 ## Отчёт
 
-`report.json`: join/dial latency p50/p95/p99, frames in/out, счётчики по opcode (reject 0x40–0x7F, in-room 0x60–0x6F, уведомления 0x80–0x82), reconnect attempts/success, `drain_complete` + `rooms_dump` при недожатии, `server_metrics` — снимки exposition до/после (мерджит оркестратор). Без pass/fail-вердикта.
+`report.json`: join/dial latency p50/p95/p99, frames in/out, счётчики по opcode (reject 0x40–0x7F, in-room 0x60–0x6F, уведомления 0x80–0x82), reconnect attempts/success, `netem_clients` — фактические доли профилей, `drain_complete` + `rooms_dump` при недожатии, `server_metrics` — снимки exposition до/после (мерджит оркестратор). Без pass/fail-вердикта.
 
 ## Smoke
 
@@ -46,6 +64,6 @@ LOADGEN_TRANSPORT_MIX="ws:100" LOADGEN_DURATION=30s LOADGEN_RECONNECT_RATE=0.2 \
 ./scripts/loadtest-run.sh
 ```
 
-## Inc 2/3 (план)
+## Inc 3 (план)
 
-Docker/netem (`deploy/loadgen/`, `NETEM_SHARE`) и ENet-клиент (`client_enet.go` под `-tags enet`, dial по `enet_port` из ticket) — следующие инкременты P27.
+ENet-клиент (`client_enet.go` под `-tags enet`, dial по `enet_port` из ticket, распределение по `ENET_LISTEN_PORTS` round-robin) — следующий инкремент P27. Образ `deploy/loadgen` уже собирает бинарь с `-tags enet` — код inc3 подхватится без правок Dockerfile.

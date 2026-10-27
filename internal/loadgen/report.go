@@ -54,6 +54,10 @@ type Report struct {
 	AuthRoomsDied         int64 `json:"auth_rooms_died"`
 	UnexpectedDisconnects int64 `json:"unexpected_disconnects"`
 
+	// NetemClients — фактическое распределение клиентов по профилям
+	// (сверка с config.netem_share, контракт ±5%); nil — share не задан.
+	NetemClients map[string]int64 `json:"netem_clients,omitempty"`
+
 	DrainComplete bool            `json:"drain_complete"`
 	DrainElapsedS float64         `json:"drain_elapsed_s"`
 	ActiveRooms   float64         `json:"server_active_rooms_final"`
@@ -79,6 +83,8 @@ type reportConfig struct {
 	DrainTimeoutS  float64 `json:"drain_timeout_s"`
 	ReconnectRate  float64 `json:"reconnect_rate"`
 	ReconnectEvery float64 `json:"reconnect_every_s"`
+	// NetemShare — сконфигурированные доли профилей (LOADGEN_NETEM_SHARE).
+	NetemShare map[string]int `json:"netem_share,omitempty"`
 }
 
 // latencyStats — перцентили по всем замерам (выборка мала: ≤ clients count).
@@ -152,6 +158,7 @@ func (f *Fleet) buildReport(started time.Time, plans []roomPlan, drain drainResu
 			DrainTimeoutS:  f.cfg.DrainTimeout.Seconds(),
 			ReconnectRate:  f.cfg.ReconnectRate,
 			ReconnectEvery: f.cfg.ReconnectEvery.Seconds(),
+			NetemShare:     netemShareMap(f.cfg.NetemShare),
 		},
 
 		RoomsPlanned:   len(plans),
@@ -184,6 +191,8 @@ func (f *Fleet) buildReport(started time.Time, plans []roomPlan, drain drainResu
 		ReconnectSuccess:  m.ReconnectSuccess.Load(),
 		ResumeRejects:     m.ResumeRejects.Load(),
 
+		NetemClients: nilIfEmpty(m.netemAssignedSnapshot()),
+
 		PeerDisconnectedRecv:  m.PeerDisconnectedRecv.Load(),
 		PeerReconnectedRecv:   m.PeerReconnectedRecv.Load(),
 		RoomClosedRecv:        m.RoomClosedRecv.Load(),
@@ -197,6 +206,18 @@ func (f *Fleet) buildReport(started time.Time, plans []roomPlan, drain drainResu
 		ActiveSlots:   drain.activeSlots,
 		RoomsDump:     drain.roomsDump,
 	}
+}
+
+// netemShareMap — []weightedOption → {"profile": weight} для отчёта.
+func netemShareMap(opts []weightedOption) map[string]int {
+	if len(opts) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(opts))
+	for _, o := range opts {
+		out[o.Value] = o.Weight
+	}
+	return out
 }
 
 func nilIfEmpty(m map[string]int64) map[string]int64 {

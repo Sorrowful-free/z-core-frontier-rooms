@@ -46,6 +46,7 @@ type peer struct {
 	reconnectToken string
 	enetAddr       string // host для будущего ENet-dial (inc 3)
 	enetPort       uint16 // назначенный enet_port из ticket (0 — нет)
+	netemMark      uint32 // SO_MARK профиля из NETEM_SHARE (0 — без маркировки)
 	host           bool   // host-ticket: в auth-комнате его разрыв = смерть комнаты
 	roomPolicy     string // domain.RoomPolicyKind комнаты (fleet ставит при спавне)
 
@@ -87,6 +88,7 @@ func newPeer(cfg *Config, m *Metrics, spec peerSpec) *peer {
 		reconnectToken: spec.reconnectToken,
 		enetAddr:       spec.enetAddr,
 		enetPort:       spec.enetPort,
+		netemMark:      spec.netemMark,
 		host:           spec.host,
 		cfg:            cfg,
 		m:              m,
@@ -109,6 +111,7 @@ type peerSpec struct {
 	reconnectToken string
 	enetAddr       string
 	enetPort       uint16
+	netemMark      uint32
 	host           bool
 }
 
@@ -168,6 +171,7 @@ func (p *peer) dial(ctx context.Context, token string, resumed bool) (DataConn, 
 		EnetAddr: p.enetAddr,
 		EnetPort: p.enetPort,
 		Token:    token,
+		Mark:     p.netemMark,
 	})
 	if err != nil {
 		p.m.dialError(p.transport)

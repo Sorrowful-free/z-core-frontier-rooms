@@ -1,0 +1,7 @@
+# Контекст docker build для deploy/loadgen: репо целиком (go.mod + internal/).
+# Всё локальное/временное в образ не тащим.
+.git
+.scratch
+*.log
+.env
+.env.*

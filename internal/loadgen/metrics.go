@@ -36,7 +36,8 @@ type Metrics struct {
 	joinRejects   map[uint8]int64  // wire opcode → count (0x40–0x7F)
 	inRoomErrors  map[uint8]int64  // wire opcode → count (0x60–0x6F)
 	dialErrors    map[string]int64 // transport → count
-	httpErrors    map[string]int64 // op (create|issue|list|metrics) → count
+	httpErrors    map[string]int64 // op (create|issue|list|metrics|netem) → count
+	netemAssigned map[string]int64 // netem-профиль → клиентов (inc2)
 	sendErrors    int64            // ошибки Send (кроме ожидаемого teardown)
 	recvErrors    int64            // ошибки Recv, не разрыв-ожидание
 	decodeErrors  int64            // codec decode state-кадров
@@ -46,10 +47,11 @@ type Metrics struct {
 
 func newMetrics() *Metrics {
 	return &Metrics{
-		joinRejects:  make(map[uint8]int64),
-		inRoomErrors: make(map[uint8]int64),
-		dialErrors:   make(map[string]int64),
-		httpErrors:   make(map[string]int64),
+		joinRejects:   make(map[uint8]int64),
+		inRoomErrors:  make(map[uint8]int64),
+		dialErrors:    make(map[string]int64),
+		httpErrors:    make(map[string]int64),
+		netemAssigned: make(map[string]int64),
 	}
 }
 
@@ -74,6 +76,14 @@ func (m *Metrics) dialError(transport string) {
 func (m *Metrics) httpError(op string) {
 	m.mu.Lock()
 	m.httpErrors[op]++
+	m.mu.Unlock()
+}
+
+// netemAssign — клиенту при спавне назначен профиль (доли сверяются с
+// NETEM_SHARE в отчёте, контракт ±5%).
+func (m *Metrics) netemAssign(profile string) {
+	m.mu.Lock()
+	m.netemAssigned[profile]++
 	m.mu.Unlock()
 }
 
@@ -131,6 +141,12 @@ func (m *Metrics) httpErrorsSnapshot() map[string]int64 {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return cloneS(m.httpErrors)
+}
+
+func (m *Metrics) netemAssignedSnapshot() map[string]int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return cloneS(m.netemAssigned)
 }
 
 func (m *Metrics) scalarErrorsSnapshot() (send, recv, decode int64) {
