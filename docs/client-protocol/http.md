@@ -214,3 +214,7 @@ http.request("http://localhost:3000/rooms/%d/tickets" % room_id, headers, HTTPCl
 ```
 
 Далее: [enet.md](enet.md) (основной) или [realtime.md](realtime.md#websocket-отладка) (WS smoke-test).
+
+### `POST /rooms/:id/leave` — self-leave (P32)
+
+Body: `{"reconnect_token": "<base64url>"}` — reconnect-токен peer'а (kind=2 claims доказывают `peerID`+`roomID`; roomID обязан совпадать с `:id`). Невалидный/чужой/join-токен → `401 invalid_credentials`. Идемпотентно: peer уже не в комнате → `204`. Conn peer'а закрывается сервером (drain-aware stop). Kick чужих по HTTP не существует.

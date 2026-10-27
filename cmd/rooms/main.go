@@ -170,7 +170,7 @@ func run() error {
 		z.Warn("HTTP control plane auth is disabled — for local development only")
 	}
 
-	roomsHandler := http.NewRoomsHandler(createUseCase, issueTicketUseCase, deleteUseCase, getListUseCase, leaveRoomUseCase, zaplog.NewFrom(z, "rooms handler"))
+	roomsHandler := http.NewRoomsHandler(createUseCase, issueTicketUseCase, deleteUseCase, getListUseCase, leaveRoomUseCase, admission, zaplog.NewFrom(z, "rooms handler"))
 	roomsHandler.RegisterRoutes(fiberApp, cfg.HTTPAuth, httpLimits)
 
 	wsHandler := deliveryws.NewRoomsHandler(appCtx, admitPeerUseCase, disconnectPeerUseCase, wsConnectionFactory, cfg.Transport, zaplog.NewFrom(z, "ws rooms handler"), m)

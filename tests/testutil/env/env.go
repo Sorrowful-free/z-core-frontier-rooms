@@ -244,7 +244,7 @@ func New(t *testing.T, opts ...Option) *Env {
 		app.Use(deliveryhttp.NewMetricsMiddleware(m))
 	}
 	leaveUC := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
-	deliveryhttp.NewRoomsHandler(createUC, issueUC, deleteUC, getListUC, leaveUC, logger).
+	deliveryhttp.NewRoomsHandler(createUC, issueUC, deleteUC, getListUC, leaveUC, admission, logger).
 		RegisterRoutes(app, cfg.httpAuth, limits)
 	deliveryws.NewRoomsHandler(context.Background(), admitUC, disconnectUC, connectionFactory, cfg.transport, logger, m).
 		RegisterRoutes(app)

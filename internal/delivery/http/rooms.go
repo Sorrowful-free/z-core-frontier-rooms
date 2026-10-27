@@ -1,8 +1,11 @@
 package http
 
 import (
+	"encoding/base64"
+
 	httpauthadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httpauth"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
+	portadmission "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/admission"
 	porthttplimits "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/httplimits"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 	useroom "github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
@@ -15,6 +18,7 @@ type RoomsHandler struct {
 	deleteUseCase      *useroom.DeleteUseCase
 	getListUseCase     *useroom.GetListUseCase
 	leaveRoomUseCase   *useroom.LeaveRoomUseCase
+	admission          portadmission.Admission
 	logger             logging.Logger
 }
 
@@ -24,6 +28,7 @@ func NewRoomsHandler(
 	deleteUseCase *useroom.DeleteUseCase,
 	getListUseCase *useroom.GetListUseCase,
 	leaveRoomUseCase *useroom.LeaveRoomUseCase,
+	admission portadmission.Admission,
 	logger logging.Logger,
 ) *RoomsHandler {
 	return &RoomsHandler{
@@ -32,6 +37,7 @@ func NewRoomsHandler(
 		deleteUseCase:      deleteUseCase,
 		getListUseCase:     getListUseCase,
 		leaveRoomUseCase:   leaveRoomUseCase,
+		admission:          admission,
 		logger:             logger,
 	}
 }
@@ -110,25 +116,35 @@ func (h *RoomsHandler) DeleteRoom(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// LeavePeer — выход peer'а из комнаты по HTTP (P31): graceful leave через
+// LeaveSelf — self-leave по reconnect-токену (P32): credential kind=2
+// доказывает peerID+roomID из claims — клиент уходит только сам,
+// kick чужих по HTTP не существует. Graceful leave через
 // LeaveRoomUseCase — тот же путь, что у disconnect'а (room.Leave →
-// drain-aware Stop → Revoke, пустая комната умирает). Self-leave =
-// свой peerID; с API-key можно выгнать чужого (kick — строго слабее
-// DELETE /rooms, тот же credential).
-func (h *RoomsHandler) LeavePeer(c fiber.Ctx) error {
+// drain-aware Stop → Revoke, пустая комната умирает). Идемпотентно:
+// peer уже не в комнате → 204.
+func (h *RoomsHandler) LeaveSelf(c fiber.Ctx) error {
 	roomID, err := parseRoomIDParam(c, "id")
 	if err != nil {
 		status, code := roomIDParseAPIError(err)
 		return writeAPIError(c, status, code, err.Error())
 	}
-	peerID, err := parsePeerIDParam(c, "peerID")
-	if err != nil {
-		status, code := peerIDParseAPIError(err)
-		return writeAPIError(c, status, code, err.Error())
+
+	var req leaveRoomRequest
+	if err := c.Bind().JSON(&req); err != nil {
+		return writeBindError(c, err)
 	}
 
-	if err := h.leaveRoomUseCase.LeaveRoom(c.Context(), roomID, peerID); err != nil {
-		h.logger.Error("http leave peer failed", "error", err, "roomID", roomID, "peerID", peerID)
+	token, err := base64.RawURLEncoding.DecodeString(req.ReconnectToken)
+	if err != nil {
+		return writeAPIError(c, fiber.StatusUnauthorized, codeInvalidCredentials, "invalid reconnect token")
+	}
+	claims, err := h.admission.Validate(c.Context(), token)
+	if err != nil || claims.Kind != domain.ClaimsKindReconnect || claims.RoomID != roomID {
+		return writeAPIError(c, fiber.StatusUnauthorized, codeInvalidCredentials, "invalid reconnect token")
+	}
+
+	if err := h.leaveRoomUseCase.LeaveRoom(c.Context(), roomID, claims.PeerID); err != nil {
+		h.logger.Error("http leave failed", "error", err, "roomID", roomID, "peerID", claims.PeerID)
 		return writeUsecaseError(c, err)
 	}
 
@@ -150,6 +166,6 @@ func (h *RoomsHandler) RegisterRoutes(app *fiber.App, httpAuth httpauthadapter.H
 	protected.Post("/rooms", newCreateRateLimitMiddleware(limits), h.CreateRoom)
 	protected.Post("/rooms/:id/tickets", newIssueRateLimitMiddleware(limits), h.IssueTicket)
 	protected.Delete("/rooms/:id", newDeleteRateLimitMiddleware(limits), h.DeleteRoom)
-	protected.Delete("/rooms/:id/peers/:peerID", newDeleteRateLimitMiddleware(limits), h.LeavePeer)
+	protected.Post("/rooms/:id/leave", newDeleteRateLimitMiddleware(limits), h.LeaveSelf)
 	protected.Get("/rooms", newListRateLimitMiddleware(limits), h.GetListRooms)
 }

@@ -32,6 +32,7 @@ Env — [adapter/httplimits/README.md](../../adapter/httplimits/README.md).
 |-------|------|----------|-------|--------------|-------------|
 | `POST` | `/rooms` | Create | `201` | `capacity`, `nick_name`, `password?`, `attributes?`, `policy?` | `token`, `reconnect_token`, `enet_port?`, `room` (как list) |
 | `GET` | `/rooms` | GetList | `200` | — | `rooms[]` |
+| `POST` | `/rooms/:id/leave` | Self-leave по `reconnect_token` (P32, P31) — `204`, `401 invalid_credentials` |
 | `DELETE` | `/rooms/:id` | Delete | `204` | `password?` | — |
 | `POST` | `/rooms/:id/tickets` | IssueTicket | `201` | `nick_name`, `password` | `token`, `reconnect_token`, `enet_port?`, `room` (как create/list) |
 

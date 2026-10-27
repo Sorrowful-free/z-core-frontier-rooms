@@ -52,3 +52,10 @@ type errorResponse struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
+
+// leaveRoomRequest — POST /rooms/:id/leave (P32): self-leave по
+// reconnect-токену (base64url, как в ticket-ответе); peerID+roomID
+// берутся из claims токена.
+type leaveRoomRequest struct {
+	ReconnectToken string `json:"reconnect_token"`
+}

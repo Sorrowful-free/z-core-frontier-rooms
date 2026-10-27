@@ -25,8 +25,9 @@ func createRoomRequest(extra map[string]any) map[string]any {
 }
 
 type createRoomResponse struct {
-	Token string `json:"token"`
-	Room  struct {
+	Token          string `json:"token"`
+	ReconnectToken string `json:"reconnect_token"`
+	Room           struct {
 		ID         int64          `json:"id"`
 		Attributes map[string]any `json:"attributes"`
 		Peers      []any          `json:"peers"`
@@ -507,7 +508,7 @@ func TestHTTP_CreateRoomInvalidPolicy(t *testing.T) {
 	assertErrorCode(t, body, "invalid_policy")
 }
 
-func TestHTTP_LeavePeer(t *testing.T) {
+func TestHTTP_LeaveSelf(t *testing.T) {
 	t.Parallel()
 
 	e := env.New(t)
@@ -520,22 +521,25 @@ func TestHTTP_LeavePeer(t *testing.T) {
 	}
 	created := parseCreateRoomResponse(t, body)
 
-	// peer никогда не заходил → идемпотентный 204 (leave — «peer'а нет
-	// в комнате», UC добивает revoke и возвращает nil)
-	resp, body = e.Do(t, http.MethodDelete, "/rooms/"+formatID(created.Room.ID)+"/peers/999", nil)
+	// валидный reconnect-токен → 204 (идемпотентно: peer не в комнате,
+	// UC добивает revoke и возвращает nil)
+	resp, body = e.Do(t, http.MethodPost, "/rooms/"+formatID(created.Room.ID)+"/leave",
+		map[string]any{"reconnect_token": created.ReconnectToken})
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("leave status = %d, body = %s", resp.StatusCode, body)
 	}
 
-	// мусорный peerID → 400 invalid_peer_id
-	resp, body = e.Do(t, http.MethodDelete, "/rooms/"+formatID(created.Room.ID)+"/peers/abc", nil)
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("leave bad peerID status = %d, body = %s", resp.StatusCode, body)
+	// join-токен (kind=1) → 401
+	resp, _ = e.Do(t, http.MethodPost, "/rooms/"+formatID(created.Room.ID)+"/leave",
+		map[string]any{"reconnect_token": created.Token})
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("join-token leave status = %d", resp.StatusCode)
 	}
 
-	// несуществующая комната — идемпотентно 204 (revoke tolerated)
-	resp, body = e.Do(t, http.MethodDelete, "/rooms/424242/peers/1", nil)
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("leave missing room status = %d, body = %s", resp.StatusCode, body)
+	// мусорный токен → 401
+	resp, _ = e.Do(t, http.MethodPost, "/rooms/"+formatID(created.Room.ID)+"/leave",
+		map[string]any{"reconnect_token": "%%%not-base64"})
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("garbage-token leave status = %d", resp.StatusCode)
 	}
 }
