@@ -119,6 +119,45 @@ func (c *MockReservationListAdmittedPeersCall) DoAndReturn(f func(context.Contex
 	return c
 }
 
+// ListRoomSlots mocks base method.
+func (m *MockReservation) ListRoomSlots(ctx context.Context, roomID domain.RoomID) ([]domain.RoomSlotDetail, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListRoomSlots", ctx, roomID)
+	ret0, _ := ret[0].([]domain.RoomSlotDetail)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListRoomSlots indicates an expected call of ListRoomSlots.
+func (mr *MockReservationMockRecorder) ListRoomSlots(ctx, roomID any) *MockReservationListRoomSlotsCall {
+	mr.mock.ctrl.T.Helper()
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRoomSlots", reflect.TypeOf((*MockReservation)(nil).ListRoomSlots), ctx, roomID)
+	return &MockReservationListRoomSlotsCall{Call: call}
+}
+
+// MockReservationListRoomSlotsCall wrap *gomock.Call
+type MockReservationListRoomSlotsCall struct {
+	*gomock.Call
+}
+
+// Return rewrite *gomock.Call.Return
+func (c *MockReservationListRoomSlotsCall) Return(arg0 []domain.RoomSlotDetail, arg1 error) *MockReservationListRoomSlotsCall {
+	c.Call = c.Call.Return(arg0, arg1)
+	return c
+}
+
+// Do rewrite *gomock.Call.Do
+func (c *MockReservationListRoomSlotsCall) Do(f func(context.Context, domain.RoomID) ([]domain.RoomSlotDetail, error)) *MockReservationListRoomSlotsCall {
+	c.Call = c.Call.Do(f)
+	return c
+}
+
+// DoAndReturn rewrite *gomock.Call.DoAndReturn
+func (c *MockReservationListRoomSlotsCall) DoAndReturn(f func(context.Context, domain.RoomID) ([]domain.RoomSlotDetail, error)) *MockReservationListRoomSlotsCall {
+	c.Call = c.Call.DoAndReturn(f)
+	return c
+}
+
 // MarkDisconnected mocks base method.
 func (m *MockReservation) MarkDisconnected(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) error {
 	m.ctrl.T.Helper()

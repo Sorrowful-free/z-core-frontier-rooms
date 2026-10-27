@@ -21,3 +21,21 @@ type AdmittedSlot struct {
 	// все три пишут одно поле (P20); от него считается grace-дедлайн.
 	LastSeen time.Time
 }
+
+// RoomSlotDetail — read-only деталь слота reservation в любом состоянии
+// (P31, sweep never-joined комнат): если ListAdmittedPeers возвращает
+// только admitted-слоты, RoomSlotDetail покрывает и reserve-слоты
+// (ожидающий ticket) для предиката «все reserve истекли или слотов нет».
+type RoomSlotDetail struct {
+	PeerID PeerID
+	// State — текущее состояние слота (ReservationSlotReserved /
+	// ReservationSlotAdmitted; никогда None — отсутствующие слоты не
+	// перечисляются).
+	State ReservationSlot
+	// ExpiresAt — дедлайн reserved-слота (TTL тикета); нулевое у admitted
+	// (у вошедшего слота дедлайна тикета больше нет).
+	ExpiresAt time.Time
+	// LastSeen — timestamp grace admitted-слота (та же семантика, что у
+	// AdmittedSlot.LastSeen); нулевое у reserved-слота.
+	LastSeen time.Time
+}

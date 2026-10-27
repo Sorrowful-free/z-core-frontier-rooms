@@ -50,9 +50,11 @@ const (
 	// peer ушёл в grace (может вернуться) / воскрес под тем же peerID (P20).
 	OpPeerDisconnected OpCode = 0x80
 	OpPeerReconnected  OpCode = 0x81
-	// OpRoomClosed - комната закрыта сервером (P29: authoritative-host, ушёл
-	// хост). Payload пустой; после кадра соединение закрывается. Рассылает
-	// usecase через peer.Deliver оставшимся peer'ам до их disconnect.
+	// OpRoomClosed - комната закрыта сервером. Источники (P31):
+	// authoritative-host, ушёл хост (P29); DELETE /rooms/:id; shutdown
+	// процесса. Payload пустой; после кадра соединение закрывается.
+	// Рассылает usecase через peer.Deliver оставшимся peer'ам до их
+	// disconnect (empty-death слушать некому — кадра нет).
 	OpRoomClosed OpCode = 0x82
 )
 

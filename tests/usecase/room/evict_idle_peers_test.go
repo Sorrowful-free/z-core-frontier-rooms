@@ -195,3 +195,35 @@ func TestStartIdlePeerSweep_StopWaitsForRunOnce(t *testing.T) {
 		t.Fatal("Stop did not return after RunOnce finished")
 	}
 }
+
+// Регрессия (P31 review): безусловный closeRoomIfEmpty на каждой комнате
+// убивал never-joined комнату (peers==0, живой reserve-тикет) на первом
+// же sweep-проходе. Пустая комната без evict'ов не должна трогаться —
+// её kill ведёт SweepEmptyRooms по слотам, не idle-sweep.
+func TestEvictIdlePeers_NeverJoinedRoomNotKilled(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	registry := mocks.NewMockRoomRegistry(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
+	logger := mocks.NewMockLogger(ctrl)
+	room := mocks.NewMockRoom(ctrl)
+
+	const roomID = domain.RoomID(1)
+
+	registry.EXPECT().GetList(gomock.Any()).Return([]realtime.Room{room}, nil)
+	room.EXPECT().GetID().Return(roomID).AnyTimes()
+	room.EXPECT().GetPeers().Return(nil).AnyTimes()
+	// DeleteRoom/UnregisterRoom/Delete-вызовов не ожидаем — gomock
+	// упадёт на любом из них (strict default).
+
+	disconnectUC := useroom.NewDisconnectPeerUseCase(registry, reservation, logger)
+	uc := useroom.NewEvictIdlePeersUseCase(registry, disconnectUC, logger, nil)
+	evicted, err := uc.RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if evicted != 0 {
+		t.Fatalf("evicted = %d, want 0", evicted)
+	}
+}

@@ -23,14 +23,14 @@ Prometheus-реализация [`port/metrics`](../../port/metrics/README.md) (
 | `rooms_queue_drops_total` | counter | `queue` = `room_incoming` / `peer_outbound` / `enet_incoming` |
 | `rooms_master_elections_total` | counter | — |
 | `rooms_reservation_ops_total` | counter | `op` = `reserve` / `admit` / `revoke` |
-| `rooms_sweep_processed_total` | counter | `sweep` = `orphan_admitted` / `idle_peers` |
+| `rooms_sweep_processed_total` | counter | `sweep` = `orphan_admitted` / `idle_peers` / `empty_rooms` |
 | `rooms_room_incoming_depth` / `rooms_peer_outbound_depth` | gauge | — |
 | `rooms_room_tick_seconds` | summary | `kind` = `full` / `patch` |
 | `rooms_peer_send_errors_total` | counter | — |
 | `rooms_enet_host_peers` | gauge | `host` (HostID, bounded числом `ENET_LISTEN_PORTS`) |
 | `rooms_enet_host_loop_queue_latency_seconds` | summary | — |
 | `rooms_reservation_active_slots` | gauge | — |
-| `rooms_sweep_runs_total` | counter | `sweep` = `orphan_admitted` / `idle_peers` |
+| `rooms_sweep_runs_total` | counter | `sweep` = `orphan_admitted` / `idle_peers` / `empty_rooms` |
 | `rooms_http_request_duration_seconds` | histogram | `route` (шаблон), `method`, `status` |
 
 Per-room/per-peer label'ы намеренно отсутствуют — кардинальность (P19). `peer_joins/peer_leaves` считают lifecycle-переходы: `Replace` даёт пару leave+join.

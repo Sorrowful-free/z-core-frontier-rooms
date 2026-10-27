@@ -31,4 +31,9 @@ type Reservation interface {
 
 	State(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) (domain.ReservationSlot, error)
 	ListAdmittedPeers(ctx context.Context, roomID domain.RoomID) ([]domain.AdmittedSlot, error)
+	// ListRoomSlots — read-only листинг всех слотов комнаты независимо от
+	// состояния (P31): нужен sweep'у never-joined комнат для проверки
+	// «ни admitted, ни unexpired reserve». Комнаты нет / tombstone →
+	// ErrReservationNotFound (для sweep'а эквивалент «слотов нет»).
+	ListRoomSlots(ctx context.Context, roomID domain.RoomID) ([]domain.RoomSlotDetail, error)
 }

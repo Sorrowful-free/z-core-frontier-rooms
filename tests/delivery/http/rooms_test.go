@@ -506,3 +506,36 @@ func TestHTTP_CreateRoomInvalidPolicy(t *testing.T) {
 	}
 	assertErrorCode(t, body, "invalid_policy")
 }
+
+func TestHTTP_LeavePeer(t *testing.T) {
+	t.Parallel()
+
+	e := env.New(t)
+
+	resp, body := e.Do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
+		"capacity": 2,
+	}))
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", resp.StatusCode, body)
+	}
+	created := parseCreateRoomResponse(t, body)
+
+	// peer никогда не заходил → идемпотентный 204 (leave — «peer'а нет
+	// в комнате», UC добивает revoke и возвращает nil)
+	resp, body = e.Do(t, http.MethodDelete, "/rooms/"+formatID(created.Room.ID)+"/peers/999", nil)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("leave status = %d, body = %s", resp.StatusCode, body)
+	}
+
+	// мусорный peerID → 400 invalid_peer_id
+	resp, body = e.Do(t, http.MethodDelete, "/rooms/"+formatID(created.Room.ID)+"/peers/abc", nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("leave bad peerID status = %d, body = %s", resp.StatusCode, body)
+	}
+
+	// несуществующая комната — идемпотентно 204 (revoke tolerated)
+	resp, body = e.Do(t, http.MethodDelete, "/rooms/424242/peers/1", nil)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("leave missing room status = %d, body = %s", resp.StatusCode, body)
+	}
+}

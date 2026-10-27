@@ -73,6 +73,10 @@ func (uc *EvictIdlePeersUseCase) RunOnce(ctx context.Context) (int, error) {
 			}
 			evicted++
 		}
+		// closeRoomIfEmpty тут не нужна: DisconnectPeer уже делает
+		// empty-проверку на каждого выгнанного; безусловный вызов убил бы
+		// never-joined комнату (peers==0, живой reserve-тикет) на первом
+		// же sweep-проходе — её kill ведёт SweepEmptyRooms по слотам.
 	}
 
 	if evicted > 0 {

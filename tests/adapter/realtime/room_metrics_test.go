@@ -107,3 +107,45 @@ func TestRoomMetrics_LeaveDriftGuard(t *testing.T) {
 		t.Fatalf("peer_leaves after double leave = %v, want 1", got)
 	}
 }
+
+// P31: teardown комнаты с N peers — Room.Stop вычитает оставшихся из
+// active_peers разом (-len(r.peers)): kill-пути комнаты (closeRoom,
+// DELETE, empty-death, shutdown) убивают peers мимо Leave и их +1 на
+// join иначе завышали бы gauge навсегда. Peers, ушедшие через Leave,
+// уже получили свой -1 и в r.peers не лежат — двойного вычета нет.
+func TestRoomMetrics_StopRebalancesActivePeers(t *testing.T) {
+	t.Parallel()
+
+	m, err := metricsadapter.New(metricsadapter.MetricsConfig{})
+	if err != nil {
+		t.Fatalf("metrics.New: %v", err)
+	}
+	room := newMetricsRoom(t, m)
+
+	const n = 3
+	for i := range n {
+		if err := room.Join(testpeer.New(domain.PeerID(i+1), "p")); err != nil {
+			t.Fatalf("join peer %d: %v", i+1, err)
+		}
+	}
+	if got := prom.Value(t, m.Gatherer(), "rooms_active_peers", nil); got != n {
+		t.Fatalf("active_peers after joins = %v, want %d", got, n)
+	}
+
+	// Один уходит обычным Leave: -1 уже эмитнут на lifecycle — Stop не
+	// должен вычесть его повторно.
+	peers := room.GetPeers()
+	if err := room.Leave(peers[0]); err != nil {
+		t.Fatalf("leave: %v", err)
+	}
+	if got := prom.Value(t, m.Gatherer(), "rooms_active_peers", nil); got != n-1 {
+		t.Fatalf("active_peers after leave = %v, want %d", got, n-1)
+	}
+
+	if err := room.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if got := prom.Value(t, m.Gatherer(), "rooms_active_peers", nil); got != 0 {
+		t.Fatalf("active_peers after room Stop = %v, want 0", got)
+	}
+}

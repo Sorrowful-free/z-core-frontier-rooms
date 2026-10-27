@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
@@ -34,11 +35,58 @@ func TestDisconnectPeer_Success(t *testing.T) {
 	room.EXPECT().Leave(peer).Return(nil)
 	peer.EXPECT().Stop().Return(nil)
 	room.EXPECT().Send(gomock.Any()).Return(nil)
+	room.EXPECT().GetID().Return(roomID).AnyTimes()
+	// P31: проверка «пустая» — grace-слот остаётся admitted, комната живёт.
+	room.EXPECT().GetPeers().Return(nil)
+	reservation.EXPECT().ListAdmittedPeers(gomock.Any(), roomID).Return([]domain.AdmittedSlot{{
+		PeerID: peerID,
+	}}, nil)
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewDisconnectPeerUseCase(registry, reservation, logger)
 	err := uc.DisconnectPeer(context.Background(), useroom.PeerSession{RoomID: roomID, PeerID: peerID, Peer: peer})
 	if err != nil {
+		t.Fatalf("DisconnectPeer: %v", err)
+	}
+}
+
+// P31: disconnect последнего peer'а НЕ убивает комнату — grace-слот
+// (MarkDisconnected) держит её до истечения RESERVATION_RECONNECT_TTL,
+// иначе сломался бы P20-resume (вернуться некуда).
+func TestDisconnectPeer_LastPeerGrace_KeepsRoom(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	registry := mocks.NewMockRoomRegistry(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
+	logger := mocks.NewMockLogger(ctrl)
+	room := mocks.NewMockRoom(ctrl)
+	peer := mocks.NewMockPeer(ctrl)
+
+	const (
+		roomID = domain.RoomID(1)
+		peerID = domain.PeerID(2)
+	)
+
+	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
+	room.EXPECT().GetPeer(peerID).Return(peer, nil)
+	reservation.EXPECT().MarkDisconnected(gomock.Any(), roomID, peerID).Return(nil)
+	room.EXPECT().Leave(peer).Return(nil)
+	peer.EXPECT().Stop().Return(nil)
+	room.EXPECT().Send(gomock.Any()).Return(nil)
+
+	// Комната пуста по peers, но grace-слот admitted → kill запрещён:
+	// DeleteRoom/UnregisterRoom не ожидаются — gomock упадёт на вызове.
+	room.EXPECT().GetID().Return(roomID).AnyTimes()
+	room.EXPECT().GetPeers().Return(nil)
+	reservation.EXPECT().ListAdmittedPeers(gomock.Any(), roomID).Return([]domain.AdmittedSlot{{
+		PeerID:   peerID,
+		LastSeen: time.Now(),
+	}}, nil)
+	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
+
+	uc := useroom.NewDisconnectPeerUseCase(registry, reservation, logger)
+	if err := uc.DisconnectPeer(context.Background(), useroom.PeerSession{RoomID: roomID, PeerID: peerID, Peer: peer}); err != nil {
 		t.Fatalf("DisconnectPeer: %v", err)
 	}
 }
@@ -65,6 +113,12 @@ func TestDisconnectPeer_MarkErrorStillLeaves(t *testing.T) {
 	room.EXPECT().Leave(peer).Return(nil)
 	peer.EXPECT().Stop().Return(nil)
 	room.EXPECT().Send(gomock.Any()).Return(nil)
+	// P31: проверка «пустая» — слот ушедшего ещё admitted → no-op.
+	room.EXPECT().GetID().Return(roomID).AnyTimes()
+	room.EXPECT().GetPeers().Return(nil)
+	reservation.EXPECT().ListAdmittedPeers(gomock.Any(), roomID).Return([]domain.AdmittedSlot{{
+		PeerID: peerID,
+	}}, nil)
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 

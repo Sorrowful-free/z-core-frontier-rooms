@@ -124,5 +124,10 @@ func (uc *DisconnectPeerUseCase) DisconnectPeer(ctx context.Context, session Pee
 		return err
 	}
 	uc.logging.Info("peer disconnected to grace", "roomID", session.RoomID, "peerID", session.PeerID)
+	// P31: disconnect последнего peer'а обычно оставляет grace-слот
+	// admitted → closeRoomIfEmpty no-op и комната живёт до истечения
+	// RESERVATION_RECONNECT_TTL; kill здесь срабатывает только когда
+	// grace-слота уже нет (например, его ревокал IssueTicket).
+	closeRoomIfEmpty(ctx, room, uc.roomRegistry, uc.reservation, uc.logging)
 	return nil
 }

@@ -97,3 +97,74 @@ func closeRoom(
 	logger.Info("room closed by policy", "roomID", roomID)
 	return nil
 }
+
+// closeRoomIfEmpty — смерть «пустой» комнаты (P31): teardown после реального
+// изъятия последнего peer'а. «Пустая» = ни живых peers в комнате, ни
+// admitted-слотов reservation: grace-слот (MarkDisconnected) остаётся
+// admitted и держит reconnect — комната живёт до истечения
+// RESERVATION_RECONNECT_TTL, пока orphan sweep не отзовёт слот.
+//
+// Pending reserve-тикеты kill не блокируют (в отличие от предиката
+// SweepEmptyRooms): комната умирает по факту ухода всех вошедших —
+// опоздавший joiner получит reject (0x43 / reservation-ошибку), а не
+// пустую комнату.
+//
+// Kill идемпотентен через DeleteRoom (ErrRoomNotFound — tolerated, как в
+// closeRoom). Гонка «join попал в умирающую комнату» та же, что у DELETE:
+// peer приземляется в мёртвую комнату и его ctx умирает с room.Stop —
+// принято без дополнительных гарантий. Ошибки логируются и не
+// пропагируются: смерть пустой комнаты не должна фейлить завершившийся
+// leave/disconnect. Возвращает true, если teardown реально выполнен.
+func closeRoomIfEmpty(
+	ctx context.Context,
+	room realtime.Room,
+	roomRegistry registry.RoomRegistry,
+	reservation reservation.Reservation,
+	logger logging.Logger,
+) bool {
+	if len(room.GetPeers()) > 0 {
+		return false
+	}
+	roomID := room.GetID()
+
+	admitted, err := reservation.ListAdmittedPeers(ctx, roomID)
+	if err != nil {
+		// ErrReservationNotFound — комната уже unregister'нута из
+		// reservation параллельным teardown: слотов нет, kill законен.
+		// Любая другая ошибка — состояние неизвестно, kill откладывается
+		// до следующего триггера/sweep'а.
+		if !errors.Is(err, domain.ErrReservationNotFound) {
+			logger.Error("empty room: list admitted peers failed", "error", err, "roomID", roomID)
+			return false
+		}
+	}
+	if len(admitted) > 0 {
+		return false
+	}
+
+	killed := true
+	if err := roomRegistry.DeleteRoom(ctx, roomID); err != nil {
+		if errors.Is(err, domain.ErrRoomNotFound) {
+			// Гонка с параллельной смертью (closeRoom, DELETE, sweep):
+			// комната уже снята с реестра — цель достигнута.
+			logger.Warn("empty room: room already unregistered", "roomID", roomID)
+		} else {
+			logger.Error("empty room: delete room failed", "error", err, "roomID", roomID)
+			killed = false
+		}
+	}
+	if err := reservation.UnregisterRoom(ctx, roomID); err != nil {
+		if errors.Is(err, domain.ErrReservationNotFound) {
+			// Та же идемпотентность, что у DeleteRoom: слоты уже
+			// сняты параллельным teardown — цель достигнута.
+			logger.Warn("empty room: reservation already unregistered", "roomID", roomID)
+		} else {
+			logger.Error("empty room: unregister room failed", "error", err, "roomID", roomID)
+			killed = false
+		}
+	}
+	if killed {
+		logger.Info("room died empty", "roomID", roomID)
+	}
+	return killed
+}

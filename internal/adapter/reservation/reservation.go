@@ -405,6 +405,48 @@ func (r *Reservation) ListAdmittedPeers(ctx context.Context, roomID domain.RoomI
 	return slots, nil
 }
 
+// ListRoomSlots — read-only листинг всех слотов комнаты (P31), зеркало
+// ListAdmittedPeers без фильтра по состоянию: sweep never-joined комнат
+// отличает живой reserve (unexpired ticket) от истёкшего по ExpiresAt.
+func (r *Reservation) ListRoomSlots(ctx context.Context, roomID domain.RoomID) ([]domain.RoomSlotDetail, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	room, err := r.lookupRoom(roomID)
+	if err != nil {
+		return nil, err
+	}
+
+	room.mu.Lock()
+	defer room.mu.Unlock()
+
+	if err := room.checkLive(roomID); err != nil {
+		return nil, err
+	}
+
+	slots := make([]domain.RoomSlotDetail, 0, len(room.peers))
+	for peerID, peer := range room.peers {
+		var state domain.ReservationSlot
+		switch peer.state {
+		case reservationStateReserved:
+			state = domain.ReservationSlotReserved
+		default:
+			// reservationStateAdmitted и любое будущее состояние —
+			// fail-safe в «живой» слот: sweep не должен принять
+			// неизвестное состояние за мёртвое и убить комнату.
+			state = domain.ReservationSlotAdmitted
+		}
+		slots = append(slots, domain.RoomSlotDetail{
+			PeerID:    peerID,
+			State:     state,
+			ExpiresAt: peer.expiresAt,
+			LastSeen:  peer.lastSeen,
+		})
+	}
+	return slots, nil
+}
+
 func (r *Reservation) Revoke(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) error {
 	if err := ctx.Err(); err != nil {
 		return err

@@ -128,6 +128,16 @@ func (r *Room) Stop() error {
 		}
 		r.mutex.Unlock()
 		r.wg.Wait()
+		// Баланс gauge active_peers (P31): registry.DeleteRoom всегда
+		// идёт через room.Stop — единственная точка, где умирает любая
+		// комната (closeRoom, DELETE, empty-death, shutdown). Peers,
+		// ещё лежащие в r.peers, убиты teardown'ом мимо Leave и свой
+		// -1 на runLeaveLocked не получили — вычитаем их разом.
+		// Ушедшие через Leave уже вне map, двойного вычета нет.
+		// Эмит строго после wg.Wait: room-loop мёртв, r.peers
+		// иммутабельна — queued lifecycle (Leave/Join) из select-окна
+		// до cancel не проскочит (дубль -1 / +1 дрейф).
+		r.metrics.AddActivePeers(-len(r.peers))
 		err = r.policy.OnStop(r)
 	})
 	return err

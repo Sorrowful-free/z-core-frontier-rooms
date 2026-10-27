@@ -34,7 +34,49 @@ func TestLeaveRoom_Success(t *testing.T) {
 	room.EXPECT().Leave(peer).Return(nil)
 	peer.EXPECT().Stop().Return(nil)
 	reservation.EXPECT().Revoke(gomock.Any(), roomID, peerID).Return(nil)
+	// P31: проверка «пустая» после изъятия — в комнате остаётся peer,
+	// closeRoomIfEmpty no-op.
+	room.EXPECT().GetPeers().Return([]realtime.Peer{mocks.NewMockPeer(ctrl)})
 	logger.EXPECT().Info(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
+
+	uc := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
+	if err := uc.LeaveRoom(context.Background(), roomID, peerID); err != nil {
+		t.Fatalf("LeaveRoom: %v", err)
+	}
+}
+
+// P31: ушёл последний peer и grace-слотов не осталось — комната умирает
+// сразу (DeleteRoom + UnregisterRoom), а не ждёт DELETE/shutdown.
+func TestLeaveRoom_LastPeerLeaves_RoomDiesEmpty(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	registry := mocks.NewMockRoomRegistry(ctrl)
+	reservation := mocks.NewMockReservation(ctrl)
+	logger := mocks.NewMockLogger(ctrl)
+	room := mocks.NewMockRoom(ctrl)
+	peer := mocks.NewMockPeer(ctrl)
+
+	const (
+		roomID = domain.RoomID(1)
+		peerID = domain.PeerID(2)
+	)
+
+	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
+	room.EXPECT().HasPeer(peerID).Return(true)
+	room.EXPECT().GetPeer(peerID).Return(peer, nil)
+	room.EXPECT().Leave(peer).Return(nil)
+	peer.EXPECT().Stop().Return(nil)
+	reservation.EXPECT().Revoke(gomock.Any(), roomID, peerID).Return(nil)
+
+	room.EXPECT().GetID().Return(roomID).AnyTimes()
+	room.EXPECT().GetPeers().Return(nil)
+	reservation.EXPECT().ListAdmittedPeers(gomock.Any(), roomID).Return(nil, nil)
+	registry.EXPECT().DeleteRoom(gomock.Any(), roomID).Return(nil)
+	reservation.EXPECT().UnregisterRoom(gomock.Any(), roomID).Return(nil)
+	logger.EXPECT().Warn(gomock.Any(), gomock.Any()).AnyTimes()
+	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
+	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 
 	uc := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
 	if err := uc.LeaveRoom(context.Background(), roomID, peerID); err != nil {
@@ -172,6 +214,8 @@ func TestLeaveRoom_RevokeNotFoundStillSuccess(t *testing.T) {
 	reservation.EXPECT().
 		Revoke(gomock.Any(), roomID, peerID).
 		Return(domain.ErrReservationNotFound)
+	// P31: проверка «пустая» — комната не пуста, closeRoomIfEmpty no-op.
+	room.EXPECT().GetPeers().Return([]realtime.Peer{mocks.NewMockPeer(ctrl)})
 	logger.EXPECT().Warn(gomock.Any(), gomock.Any()).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
 

@@ -14,6 +14,7 @@ type RoomsHandler struct {
 	issueTicketUseCase *useroom.IssueTicketUseCase
 	deleteUseCase      *useroom.DeleteUseCase
 	getListUseCase     *useroom.GetListUseCase
+	leaveRoomUseCase   *useroom.LeaveRoomUseCase
 	logger             logging.Logger
 }
 
@@ -22,6 +23,7 @@ func NewRoomsHandler(
 	issueTicketUseCase *useroom.IssueTicketUseCase,
 	deleteUseCase *useroom.DeleteUseCase,
 	getListUseCase *useroom.GetListUseCase,
+	leaveRoomUseCase *useroom.LeaveRoomUseCase,
 	logger logging.Logger,
 ) *RoomsHandler {
 	return &RoomsHandler{
@@ -29,6 +31,7 @@ func NewRoomsHandler(
 		issueTicketUseCase: issueTicketUseCase,
 		deleteUseCase:      deleteUseCase,
 		getListUseCase:     getListUseCase,
+		leaveRoomUseCase:   leaveRoomUseCase,
 		logger:             logger,
 	}
 }
@@ -107,6 +110,31 @@ func (h *RoomsHandler) DeleteRoom(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
+// LeavePeer — выход peer'а из комнаты по HTTP (P31): graceful leave через
+// LeaveRoomUseCase — тот же путь, что у disconnect'а (room.Leave →
+// drain-aware Stop → Revoke, пустая комната умирает). Self-leave =
+// свой peerID; с API-key можно выгнать чужого (kick — строго слабее
+// DELETE /rooms, тот же credential).
+func (h *RoomsHandler) LeavePeer(c fiber.Ctx) error {
+	roomID, err := parseRoomIDParam(c, "id")
+	if err != nil {
+		status, code := roomIDParseAPIError(err)
+		return writeAPIError(c, status, code, err.Error())
+	}
+	peerID, err := parsePeerIDParam(c, "peerID")
+	if err != nil {
+		status, code := peerIDParseAPIError(err)
+		return writeAPIError(c, status, code, err.Error())
+	}
+
+	if err := h.leaveRoomUseCase.LeaveRoom(c.Context(), roomID, peerID); err != nil {
+		h.logger.Error("http leave peer failed", "error", err, "roomID", roomID, "peerID", peerID)
+		return writeUsecaseError(c, err)
+	}
+
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
 func (h *RoomsHandler) GetListRooms(c fiber.Ctx) error {
 	summaries, err := h.getListUseCase.GetList(c.Context())
 	if err != nil {
@@ -122,5 +150,6 @@ func (h *RoomsHandler) RegisterRoutes(app *fiber.App, httpAuth httpauthadapter.H
 	protected.Post("/rooms", newCreateRateLimitMiddleware(limits), h.CreateRoom)
 	protected.Post("/rooms/:id/tickets", newIssueRateLimitMiddleware(limits), h.IssueTicket)
 	protected.Delete("/rooms/:id", newDeleteRateLimitMiddleware(limits), h.DeleteRoom)
+	protected.Delete("/rooms/:id/peers/:peerID", newDeleteRateLimitMiddleware(limits), h.LeavePeer)
 	protected.Get("/rooms", newListRateLimitMiddleware(limits), h.GetListRooms)
 }

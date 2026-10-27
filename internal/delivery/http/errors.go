@@ -15,6 +15,7 @@ const (
 	codeInvalidPolicy              = "invalid_policy"
 	codeInvalidNickName            = "invalid_nick_name"
 	codeRoomNotFound               = "room_not_found"
+	codePeerNotFound               = "peer_not_found"
 	codeRoomAlreadyExists          = "room_already_exists"
 	codeReservationNotFound        = "reservation_not_found"
 	codeReservationAlreadyExists   = "reservation_already_exists"
@@ -51,6 +52,8 @@ func statusAndCodeFromError(err error) (int, string) {
 	switch {
 	case errors.Is(err, domain.ErrRoomNotFound):
 		return fiber.StatusNotFound, codeRoomNotFound
+	case errors.Is(err, domain.ErrPeerNotFound):
+		return fiber.StatusNotFound, codePeerNotFound
 	case errors.Is(err, domain.ErrReservationNotFound):
 		return fiber.StatusNotFound, codeReservationNotFound
 	case errors.Is(err, domain.ErrRoomAlreadyExists):

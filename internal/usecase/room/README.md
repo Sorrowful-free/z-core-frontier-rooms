@@ -7,7 +7,7 @@
 | Файл | Плоскость | Кратко |
 |------|-----------|--------|
 | `create.go` | Control | `limits.AllowCreateRoom` → `RegisterRoom` → registry → `IssueTicket` (хост); откат комнаты при ошибке issue |
-| `delete.go` | Control | kick peers (`LeaveRoom`) → `DeleteRoom` → `UnregisterRoom` |
+| `delete.go` | Control | DELETE/shutdown — тот же `closeRoom`: `OpRoomClosed` (0x82) всем → `DeleteRoom` → `UnregisterRoom` → параллельные `Stop` |
 | `get_list.go` | Control | Список комнат |
 | `issue_ticket.go` | Control | `ValidateNickName` → AssignHost (ENet sharding) → Reserve → Issue + IssueReconnect → snapshot комнаты (`RoomSummary`) + `EnetPort` + reconnect-токен |
 | `admit_peer.go` | Data | Фасад (P20): Validate один раз → claims.Kind → join или resume; ENet strict binding (enetHostID) |
@@ -15,11 +15,12 @@
 | `reconnect_room.go` | Data | Resume (P20/P24): `reservation.SlotDetails` → deadline-гейт (`ErrReservationExpired`) → `reservation.Reconnect` → CreatePeer(nick из слота) → Join/Replace → Start → `OpPeerReconnected` |
 | `disconnect_peer.go` | Data | Разрыв в grace (P20): `GetPeer` identity-check → `MarkDisconnected` → Leave → Stop → `OpPeerDisconnected` |
 | `leave_room.go` | Data | Leave → Stop → Revoke (явный leave / rollback); `ErrRoomShouldClose` → `closeRoom` |
-| `close_room.go` | Data | Teardown по запросу policy (P29): `OpRoomClosed` оставшимся → `DeleteRoom` → `UnregisterRoom` → `Stop` всех |
+| `close_room.go` | Data | `closeRoom` — teardown по запросу policy (P29) и DELETE/shutdown (P31): `OpRoomClosed` оставшимся → `DeleteRoom` → `UnregisterRoom` → `Stop` всех. `closeRoomIfEmpty` — смерть пустой комнаты без broadcast'а (некому слать) |
 | `peer_session.go` | Data | `PeerSession{RoomID, PeerID, Peer}` — session-handle до teardown (P20) |
 | `place_peer.go` | Data | Общий хвост admit-потоков (P20): CreatePeer → HasPeer?Replace:Join (resume дожимает `ErrPeerAlreadyInRoom` гонки через Replace) → Start + rollback → `PeerSession` |
-| `sweep_orphan_admitted.go` | Background | grace-expiry: admitted без peer в room и `lastSeen + ReconnectTTL` прошёл → Revoke |
-| `evict_idle_peers.go` | Background | peer с `!IsAlive()` → DisconnectPeer (idle eviction, ADR 0001 + P20) |
+| `sweep_orphan_admitted.go` | Background | grace-expiry: admitted без peer в room и `lastSeen + ReconnectTTL` прошёл → Revoke → `closeRoomIfEmpty` (P31) |
+| `sweep_empty_rooms.go` | Background | never-joined (P31): `peers==0` ∧ ни admitted, ни unexpired reserve → kill через `closeRoomIfEmpty`; каденс — `RESERVATION_ORPHAN_SWEEP_INTERVAL` |
+| `evict_idle_peers.go` | Background | peer с `!IsAlive()` → DisconnectPeer (idle eviction, ADR 0001 + P20); после батча — `closeRoomIfEmpty` (P31) |
 
 ## Create
 
@@ -93,11 +94,24 @@ GetPeer(session.PeerID) — stale teardown (peer вытеснен Replace / уж
 ## Delete
 
 ```text
-VerifyRoomPassword (только Delete) → GetRoom → kick all peers (LeaveRoom)
-→ DeleteRoom → UnregisterRoom
+VerifyRoomPassword (только Delete) → GetRoom → closeRoom
+(OpRoomClosed 0x82 всем → DeleteRoom → UnregisterRoom → параллельные Stop)
 ```
 
-Ошибки kick логируются; комната всё равно удаляется. `DeleteForShutdown` — без пароля, тот же kick.
+P31: серийный `LeaveRoom`-цикл заменён общим `closeRoom` — на `authoritative-host` комнате первый master-kick триггерил policy-death и остальные `LeaveRoom` + `DeleteRoom` сыпали `ErrRoomNotFound` в ответ (латентный баг), плюс O(N×drainTimeout). `ErrRoomNotFound` из `DeleteRoom` — tolerated (Warn), гонка с параллельной смертью. `DeleteForShutdown` — без пароля, тот же путь: остановка сервера — тоже «комната закрыта сервером» для клиента.
+
+## Смерть комнаты (P31)
+
+Четыре потока, один teardown:
+
+| Поток | Триггер | Broadcast `0x82` |
+|-------|---------|------------------|
+| Policy-death (`closeRoom`, P29) | `ErrRoomShouldClose` от policy в `LeaveRoom`/`DisconnectPeer` (ушёл master `authoritative-host`) | Да — оставшимся |
+| Emptied-death (`closeRoomIfEmpty`) | После реального изъятия peer'а: `LeaveRoom`, `DisconnectPeer`, `EvictIdlePeers` (post-batch), revoke grace-слота в `SweepOrphanAdmitted` | Нет — peers нет |
+| Never-joined sweep (`SweepEmptyRoomsUseCase`) | Периодический проход: `peers==0` ∧ ни admitted, ни unexpired reserve | Нет — peers никогда не было |
+| DELETE / shutdown (`Delete`/`DeleteForShutdown`) | Админ / остановка процесса | Да — всем |
+
+«Пустая» = `len(room.GetPeers())==0` И `len(reservation.ListAdmittedPeers)==0`: grace-слот (`MarkDisconnected`, всё ещё `admitted`) держит комнату до истечения `RESERVATION_RECONNECT_TTL` — убийство по голому `peers==0` сломало бы P20-resume. Pending reserve-тикеты transition-kill не блокируют (комната умирает по факту ухода всех вошедших — опоздавший joiner получит reject, а не пустую комнату); never-joined sweep живой reserve наоборот уважает — join ещё может состояться. Kill идемпотентен: `ErrRoomNotFound`/`ErrReservationNotFound` на `DeleteRoom`/`UnregisterRoom` — tolerated (Warn). Гонка «join в умирающую комнату» та же, что у DELETE — принята.
 
 ## EvictIdlePeers
 
@@ -105,7 +119,9 @@ VerifyRoomPassword (только Delete) → GetRoom → kick all peers (LeaveRo
 
 Оба sweep (`StartIdlePeerSweep`, `StartOrphanAdmittedSweep`) возвращают `*SweepHandle`: `Stop()` отменяет ctx и ждёт завершения горутины, включая in-flight `RunOnce`.
 
-Sweep-use-case'ы принимают `port/metrics.Metrics` (nil-safe) и считают обработанные записи за проход: `rooms_sweep_processed_total{sweep="idle_peers"}` / `{sweep="orphan_admitted"}` (P19), а каждый проход - `rooms_sweep_runs_total{sweep=...}` (P19b, отдельно от processed).
+Sweep-use-case'ы принимают `port/metrics.Metrics` (nil-safe) и считают обработанные записи за проход: `rooms_sweep_processed_total{sweep="idle_peers"}` / `{sweep="orphan_admitted"}` (P19), а каждый проход - `rooms_sweep_runs_total{sweep=...}` (P19b, отдельно от processed; `empty_rooms` — третий label, P31).
+
+`StartEmptyRoomsSweep` (P31) делит каденс с orphan-sweep: `RESERVATION_ORPHAN_SWEEP_INTERVAL` (= `ReservationConfig.OrphanSweepInterval`) крутит оба sweep'а, `0` отключает оба.
 
 ## HTTP / transport
 

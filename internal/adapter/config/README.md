@@ -60,7 +60,7 @@
 | Переменная | Обязательна | Default | Описание |
 |------------|-------------|---------|----------|
 | `RESERVATION_RECONNECT_TTL` | нет | `30s` | Grace admitted-слота от lastSeen (разрыв/resume) до revoke; `0` — сразу при sweep |
-| `RESERVATION_ORPHAN_SWEEP_INTERVAL` | нет | `10s` | Период фонового sweep; `0` — отключить |
+| `RESERVATION_ORPHAN_SWEEP_INTERVAL` | нет | `10s` | Период фоновых sweep'ей — orphan admitted **и** empty rooms (P31); `0` — отключить оба |
 
 Валидация — `reservation.ReservationConfig.Validate()`.
 

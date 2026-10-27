@@ -114,6 +114,8 @@ ID комнаты выдаёт сервер — в запросе поля `id` 
 
 **Успех:** `204` без body.
 
+**Поведение для подключённых peers (P31):** выгнанные peer'ы получают `0x82 OpRoomClosed` (payload пустой) до разрыва соединения — тот же кадр, что при смерти `authoritative-host` комнаты; обработка клиентом идентична (комнаты больше нет, см. [errors.md](errors.md#room-notifications-0x80-не-ошибки-p20)).
+
 **Ошибки:** `400` `invalid_room_id` (невалидный `:id`), `404` `room_not_found`, `401` `invalid_credentials`, `429` `rate_limited`.
 
 ---

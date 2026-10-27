@@ -6,7 +6,6 @@ import (
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/registry"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/reservation"
 )
@@ -14,20 +13,17 @@ import (
 type DeleteUseCase struct {
 	roomRegistry registry.RoomRegistry
 	reservation  reservation.Reservation
-	leaveRoom    *LeaveRoomUseCase
 	logging      logging.Logger
 }
 
 func NewDeleteUseCase(
 	roomRegistry registry.RoomRegistry,
 	reservation reservation.Reservation,
-	leaveRoom *LeaveRoomUseCase,
 	logging logging.Logger,
 ) *DeleteUseCase {
 	return &DeleteUseCase{
 		roomRegistry: roomRegistry,
 		reservation:  reservation,
-		leaveRoom:    leaveRoom,
 		logging:      logging,
 	}
 }
@@ -54,6 +50,13 @@ func (uc *DeleteUseCase) DeleteForShutdown(ctx context.Context, roomID domain.Ro
 	return uc.deleteRoom(ctx, roomID)
 }
 
+// deleteRoom — тот же teardown, что у policy-death (P29/P31): OpRoomClosed
+// (0x82) всем peer'ам → DeleteRoom → UnregisterRoom → параллельные
+// drain-aware Stop. Заменяет серийный LeaveRoom-цикл: первый же master-kick
+// на authoritative-host комнате триггерил closeRoom и остальные LeaveRoom
+// сыпали ErrRoomNotFound в ответ (латентный баг), плюс O(N×drainTimeout).
+// ErrRoomNotFound из DeleteRoom внутри closeRoom tolerated (Warn) — гонка
+// с параллельной смертью комнаты.
 func (uc *DeleteUseCase) deleteRoom(ctx context.Context, roomID domain.RoomID) error {
 	room, err := uc.roomRegistry.GetRoom(ctx, roomID)
 	if err != nil {
@@ -61,36 +64,18 @@ func (uc *DeleteUseCase) deleteRoom(ctx context.Context, roomID domain.RoomID) e
 		return err
 	}
 
-	kickErr := uc.kickAllPeers(ctx, room)
-	if kickErr != nil {
-		uc.logging.Warn("delete room: kick peers had errors", "error", kickErr, "roomID", roomID)
+	if err := closeRoom(ctx, room, uc.roomRegistry, uc.reservation, uc.logging); err != nil {
+		// Контракт DELETE — «комната удалена»: ошибки per-peer
+		// deliver/stop, попавшие в join closeRoom'а, не должны
+		// превращаться в 5xx, когда цель уже достигнута. Проверяем
+		// факт: комнаты нет в registry → Warn + успех; есть →
+		// ошибка реальная, отдаём её.
+		if _, getErr := uc.roomRegistry.GetRoom(ctx, roomID); errors.Is(getErr, domain.ErrRoomNotFound) {
+			uc.logging.Warn("delete room: room deleted with teardown errors", "error", err, "roomID", roomID)
+			return nil
+		}
+		return err
 	}
-
-	if err := uc.roomRegistry.DeleteRoom(ctx, roomID); err != nil {
-		uc.logging.Error("delete room: delete room failed", "error", err, "roomID", roomID)
-		return errors.Join(kickErr, err)
-	}
-
-	if err := uc.reservation.UnregisterRoom(ctx, roomID); err != nil {
-		uc.logging.Error("delete room: unregister room failed", "error", err, "roomID", roomID)
-		return errors.Join(kickErr, err)
-	}
-
 	uc.logging.Info("delete room: delete room success", "roomID", roomID)
 	return nil
-}
-
-func (uc *DeleteUseCase) kickAllPeers(ctx context.Context, room realtime.Room) error {
-	roomID := room.GetID()
-	peers := room.GetPeers()
-
-	var kickErr error
-	for _, peer := range peers {
-		peerID := peer.GetID()
-		if err := uc.leaveRoom.LeaveRoom(ctx, roomID, peerID); err != nil {
-			uc.logging.Error("delete room: kick peer failed", "error", err, "roomID", roomID, "peerID", peerID)
-			kickErr = errors.Join(kickErr, err)
-		}
-	}
-	return kickErr
 }

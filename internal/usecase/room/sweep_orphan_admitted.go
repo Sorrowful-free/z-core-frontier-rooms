@@ -66,6 +66,7 @@ func (uc *SweepOrphanAdmittedUseCase) RunOnce(ctx context.Context) (int, error) 
 			continue
 		}
 
+		roomRevoked := false
 		for _, slot := range slots {
 			if room.HasPeer(slot.PeerID) {
 				continue
@@ -80,6 +81,14 @@ func (uc *SweepOrphanAdmittedUseCase) RunOnce(ctx context.Context) (int, error) 
 				continue
 			}
 			revoked++
+			roomRevoked = true
+		}
+
+		// P31: revoke последнего grace-слота — именно здесь «пустая»
+		// наступает по истечении TTL последнего reconnect-окна: ни живых
+		// peers, ни admitted-слотов → комната умирает.
+		if roomRevoked {
+			closeRoomIfEmpty(ctx, room, uc.roomRegistry, uc.reservation, uc.logger)
 		}
 	}
 

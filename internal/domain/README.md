@@ -25,6 +25,7 @@
 | `frame_wire.go` | Data plane (`ErrIncomingFrameTooLarge`) |
 | `room_errors.go` | In-room (`ErrNotMaster`, …), control (`ErrRoomsLimitReached`, …), `ErrQueueFull` |
 | `reservation_error.go` | Слоты (`ErrReservationFull`, …) |
+| `reservation_slot.go` | `ReservationSlot` (enum none/reserved/admitted), `AdmittedSlot` (lastSeen-слот для resume/sweep), `RoomSlotDetail` (P31 — read-only слот любого состояния: `PeerID`, `State`, `ExpiresAt`, `LastSeen`; листинг `reservation.ListRoomSlots` для empty-room sweep) |
 
 `RoomPolicyKind` (`room_policy.go`, P29) — политика комнаты из `POST /rooms`: `state` (дефолт) / `authoritative-host` (уход хоста убивает комнату); `ParseRoomPolicyKind` валидирует (`""`→`state`, иначе `ErrInvalidPolicy`).
 

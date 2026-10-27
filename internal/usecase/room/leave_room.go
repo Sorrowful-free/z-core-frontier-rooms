@@ -87,6 +87,9 @@ func (uc *LeaveRoomUseCase) LeaveRoom(ctx context.Context, roomID domain.RoomID,
 	}
 
 	uc.logging.Info("peer left room", "roomID", roomID, "peerID", peerID)
+	// P31: ушёл последний peer без grace-слотов — комната умирает сразу,
+	// а не висит трупом в registry до DELETE/shutdown.
+	closeRoomIfEmpty(ctx, room, uc.roomRegistry, uc.reservation, uc.logging)
 	return nil
 }
 

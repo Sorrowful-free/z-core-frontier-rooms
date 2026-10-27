@@ -196,9 +196,8 @@ func New(t *testing.T, opts ...Option) *Env {
 	allocator := identityadapter.NewCounter()
 	connectionFactory := transportws.NewWsConnectionFactory(logger, cfg.transport)
 
-	leaveUC := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
 	disconnectUC := useroom.NewDisconnectPeerUseCase(registry, reservation, logger)
-	deleteUC := useroom.NewDeleteUseCase(registry, reservation, leaveUC, logger)
+	deleteUC := useroom.NewDeleteUseCase(registry, reservation, logger)
 	getListUC := useroom.NewGetListUseCase(registry, logger)
 	joinUC := useroom.NewJoinRoomUseCase(peerFactory, registry, reservation, logger)
 	reconnectUC := useroom.NewReconnectRoomUseCase(peerFactory, registry, reservation, cfg.reconnectTTL, logger, m)
@@ -244,7 +243,8 @@ func New(t *testing.T, opts ...Option) *Env {
 	if m != nil {
 		app.Use(deliveryhttp.NewMetricsMiddleware(m))
 	}
-	deliveryhttp.NewRoomsHandler(createUC, issueUC, deleteUC, getListUC, logger).
+	leaveUC := useroom.NewLeaveRoomUseCase(registry, reservation, logger)
+	deliveryhttp.NewRoomsHandler(createUC, issueUC, deleteUC, getListUC, leaveUC, logger).
 		RegisterRoutes(app, cfg.httpAuth, limits)
 	deliveryws.NewRoomsHandler(context.Background(), admitUC, disconnectUC, connectionFactory, cfg.transport, logger, m).
 		RegisterRoutes(app)
@@ -435,17 +435,29 @@ func (e *Env) CreateRoom(t *testing.T, nick string) (domain.RoomID, string) {
 // (P18: ответ issue несёт enet_port; 0 - env без ENet listener'а).
 func (e *Env) CreateRoomPort(t *testing.T, nick string) (domain.RoomID, string, uint16) {
 	t.Helper()
-	return e.createRoomPost(t, map[string]any{
+	roomID, token, _, port := e.createRoomPost(t, map[string]any{
 		"capacity":  4,
 		"nick_name": nick,
 	})
+	return roomID, token, port
+}
+
+// CreateRoomReconnect - то же, что CreateRoom, плюс reconnect-токен хоста
+// (P20): resume под тем же peerID в пределах grace-окна после разрыва.
+func (e *Env) CreateRoomReconnect(t *testing.T, nick string) (roomID domain.RoomID, joinToken, reconnectToken string) {
+	t.Helper()
+	roomID, token, reconnect, _ := e.createRoomPost(t, map[string]any{
+		"capacity":  4,
+		"nick_name": nick,
+	})
+	return roomID, token, reconnect
 }
 
 // CreateRoomWithPolicy — то же, что CreateRoom, с явным полем "policy"
 // в теле (P29: "state" / "authoritative-host").
 func (e *Env) CreateRoomWithPolicy(t *testing.T, nick, policy string) (domain.RoomID, string) {
 	t.Helper()
-	roomID, token, _ := e.createRoomPost(t, map[string]any{
+	roomID, token, _, _ := e.createRoomPost(t, map[string]any{
 		"capacity":  4,
 		"nick_name": nick,
 		"policy":    policy,
@@ -453,7 +465,7 @@ func (e *Env) CreateRoomWithPolicy(t *testing.T, nick, policy string) (domain.Ro
 	return roomID, token
 }
 
-func (e *Env) createRoomPost(t *testing.T, payload map[string]any) (domain.RoomID, string, uint16) {
+func (e *Env) createRoomPost(t *testing.T, payload map[string]any) (domain.RoomID, string, string, uint16) {
 	t.Helper()
 
 	resp, body := e.Do(t, http.MethodPost, "/rooms", payload)
@@ -461,9 +473,10 @@ func (e *Env) createRoomPost(t *testing.T, payload map[string]any) (domain.RoomI
 		t.Fatalf("create room status = %d, body = %s", resp.StatusCode, body)
 	}
 	var created struct {
-		Token    string `json:"token"`
-		EnetPort uint16 `json:"enet_port"`
-		Room     struct {
+		Token          string `json:"token"`
+		ReconnectToken string `json:"reconnect_token"`
+		EnetPort       uint16 `json:"enet_port"`
+		Room           struct {
 			ID int64 `json:"id"`
 		} `json:"room"`
 	}
@@ -473,7 +486,10 @@ func (e *Env) createRoomPost(t *testing.T, payload map[string]any) (domain.RoomI
 	if created.Token == "" {
 		t.Fatal("create room: empty token")
 	}
-	return domain.RoomID(created.Room.ID), created.Token, created.EnetPort
+	if created.ReconnectToken == "" {
+		t.Fatal("create room: empty reconnect token")
+	}
+	return domain.RoomID(created.Room.ID), created.Token, created.ReconnectToken, created.EnetPort
 }
 
 // IssueTicket делает POST /rooms/:id/tickets {"nick_name":nick} и возвращает

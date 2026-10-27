@@ -112,7 +112,6 @@ func run() error {
 		return fmt.Errorf("http limits: %w", err)
 	}
 
-	leaveRoomUseCase := room.NewLeaveRoomUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "leave room use case"))
 	disconnectPeerUseCase := room.NewDisconnectPeerUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "disconnect peer use case"))
 	joinRoomUseCase := room.NewJoinRoomUseCase(peerFactory, roomRegistry, reservation, zaplog.NewFrom(z, "join room use case"))
 	reconnectRoomUseCase := room.NewReconnectRoomUseCase(peerFactory, roomRegistry, reservation, cfg.Reservation.ReconnectTTL, zaplog.NewFrom(z, "reconnect room use case"), m)
@@ -139,7 +138,8 @@ func run() error {
 
 	issueTicketUseCase := room.NewIssueTicketUseCase(roomRegistry, allocator, admission, reservation, enetHandler, zaplog.NewFrom(z, "issue ticket use case"))
 	createUseCase := room.NewCreateUseCase(roomRegistry, allocator, reservation, httpLimits, issueTicketUseCase, zaplog.NewFrom(z, "create use case"))
-	deleteUseCase := room.NewDeleteUseCase(roomRegistry, reservation, leaveRoomUseCase, zaplog.NewFrom(z, "delete use case"))
+	deleteUseCase := room.NewDeleteUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "delete use case"))
+	leaveRoomUseCase := room.NewLeaveRoomUseCase(roomRegistry, reservation, zaplog.NewFrom(z, "leave room use case"))
 	getListUseCase := room.NewGetListUseCase(roomRegistry, zaplog.NewFrom(z, "get list use case"))
 	sweepOrphanAdmittedUseCase := room.NewSweepOrphanAdmittedUseCase(
 		roomRegistry,
@@ -149,6 +149,16 @@ func run() error {
 		m,
 	)
 	orphanSweep := room.StartOrphanAdmittedSweep(appCtx, sweepOrphanAdmittedUseCase, cfg.Reservation.OrphanSweepInterval, zaplog.NewFrom(z, "orphan admitted sweep"))
+
+	// P31: sweep never-joined комнат — тот же каденс, что у orphan-sweep
+	// (RESERVATION_ORPHAN_SWEEP_INTERVAL = 0 отключает оба).
+	sweepEmptyRoomsUseCase := room.NewSweepEmptyRoomsUseCase(
+		roomRegistry,
+		reservation,
+		zaplog.NewFrom(z, "empty rooms sweep"),
+		m,
+	)
+	emptySweep := room.StartEmptyRoomsSweep(appCtx, sweepEmptyRoomsUseCase, cfg.Reservation.OrphanSweepInterval, zaplog.NewFrom(z, "empty rooms sweep"))
 
 	var idleSweep *room.SweepHandle
 	if cfg.Transport.PeerIdleTimeout > 0 {
@@ -160,7 +170,7 @@ func run() error {
 		z.Warn("HTTP control plane auth is disabled — for local development only")
 	}
 
-	roomsHandler := http.NewRoomsHandler(createUseCase, issueTicketUseCase, deleteUseCase, getListUseCase, zaplog.NewFrom(z, "rooms handler"))
+	roomsHandler := http.NewRoomsHandler(createUseCase, issueTicketUseCase, deleteUseCase, getListUseCase, leaveRoomUseCase, zaplog.NewFrom(z, "rooms handler"))
 	roomsHandler.RegisterRoutes(fiberApp, cfg.HTTPAuth, httpLimits)
 
 	wsHandler := deliveryws.NewRoomsHandler(appCtx, admitPeerUseCase, disconnectPeerUseCase, wsConnectionFactory, cfg.Transport, zaplog.NewFrom(z, "ws rooms handler"), m)
@@ -278,6 +288,7 @@ waitLoop:
 	// Receive-горутины peer'ов просыпаются по closed-каналу.
 	enetHandle.Stop()
 	orphanSweep.Stop()
+	emptySweep.Stop()
 	idleSweep.Stop()
 
 	// Однократное чтение listenErr: если select выше уже забрал результат,
