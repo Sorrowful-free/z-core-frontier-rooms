@@ -1,25 +1,78 @@
-# Room policy: authoritative-host (комната умирает с хостом)
+# Room policy: master-migration — глобальный флаг вместо per-room kind
 
-До P29 каждая комната получала идентичный `StateRoomPolicy` с автоматической master-миграцией: уход master'а вёл к `electAndAssign` среди оставшихся. Для сценария «авторитарный хост» (сервер матча живёт в клиенте-хосте) это неприменимо: ушёл хост — матч окончен, перевыборы бессмысленны.
+> История: изначально (P29) решение фиксировало per-room поле `policy` в
+> `POST /rooms` (`domain.RoomPolicyKind`: `state` / `authoritative-host`) и
+> отдельный тип `AuthoritativeHostPolicy` поверх `StateRoomPolicy`. P33
+> разворачивает это: выбор режима — прерогатива деплоя, а не создателя
+> комнаты; весь per-room kind-механизм удалён. Текст ниже описывает
+> актуальное решение.
+
+## Контекст
+
+До P29 каждая комната получала `StateRoomPolicy` с автоматической
+master-миграцией: уход master'а вёл к `electAndAssign` среди оставшихся.
+Для сценария «авторитарный хост» (сервер матча живёт в клиенте-хосте) это
+неприменимо: ушёл хост — матч окончен, перевыборы бессмысленны.
+
+P29 ввёл per-room kind (`policy` в `POST /rooms`, `RoomPolicyKind`,
+`KindRoomFactory`, две policy-фабрики, `policyKind`-параметр сквозь
+port/usecase). Практика показала: смешанный деплой (мигрирующие и
+authoritative-host комнаты в одном процессе) не нужен — режим определяется
+оператором сервиса, а цена kind-цепочки (dispatch-фабрика, параметр через
+четыре уровня, DTO-валидация) оказалась избыточной.
 
 ## Decision
 
-- **Объявление полиси — first-class поле `policy` в `POST /rooms`** (`domain.RoomPolicyKind`: `state` дефолт / `authoritative-host`), а не ticket: тикет — per-peer credential, полиси — свойство комнаты, задаваемое создателем. Неизвестное значение → `ErrInvalidPolicy` → HTTP `400 invalid_policy`.
-- **Отдельная реализация `AuthoritativeHostPolicy`** (композиция над `*StateRoomPolicy`, тот же пакет `adapter/realtime/policy/state`), не флаг: `OnLeave` уходящего master'а возвращает sentinel `domain.ErrRoomShouldClose` вместо делегирования в state-перевыборы; остальное поведение — делегирование.
-- **Dispatch по kind — композитная `KindRoomFactory`** (`adapter/realtime`): leaf `realtime.RoomFactory` на каждую policy factory (`StateRoomPolicyFactory` / `AuthoritativeHostPolicyFactory`). Port `policy.RoomPolicyFactory.CreateRoomPolicy()` не расширяется — kind несут только `port/realtime.RoomFactory` и `port/registry.RoomRegistry`.
-- **Смерть комнаты — teardown в usecase**: `LeaveRoom`/`DisconnectPeer` при `ErrRoomShouldClose` вызывают `closeRoom` (`usecase/room/close_room.go`): `OpRoomClosed` (`0x82`, payload пустой) всем оставшимся через `peer.Deliver` → `registry.DeleteRoom` → `reservation.UnregisterRoom` (ревокает и слот ушедшего) → `peer.Stop` каждого. Grace-окно хосту не применяется; resume невозможен — комнаты нет.
-- **Wire:** `OpRoomClosed = 0x82` (band room notifications 0x80+, не ошибка), за кадром disconnect; на ENet порядок жёсткий (reliable packet + `DisconnectLater` в FIFO host loop'а), на WS — best-effort флеш (см. Consequences).
+- **Режим — глобальный флаг деплоя**: env
+  `STATE_POLICY_ALLOW_MASTER_MIGRATION` (дефолт `true` — миграция
+  разрешена, историческое поведение). ModuleConfig
+  `state.StatePolicyConfig{AllowMasterMigration bool}` +
+  `Validate()` в `adapter/realtime/policy/state`; поле
+  `Config.StatePolicy`, парсинг в `adapter/config/loadStatePolicyFromEnv`.
+- **`allowMasterMigration` — поле `StateRoomPolicy`**: при
+  `OnLeave` уходящего master'а и `allowMasterMigration == false` policy
+  возвращает sentinel `domain.ErrRoomShouldClose` (проверка до входа в
+  master-машину — peer ещё в state); уход non-master — обычный путь.
+  Фабрика `StateRoomPolicyFactory` принимает `StatePolicyConfig` в
+  конструкторе и вливает флаг **полем** (прецедент `p.master.metrics` —
+  сигнатура `NewStateRoomPolicy` стабильна для тестов).
+- **Teardown без изменений**: `ErrRoomShouldClose` → usecase `closeRoom`
+  (`OpRoomClosed 0x82` оставшимся → `DeleteRoom` → `UnregisterRoom` →
+  drain-aware `peer.Stop`); `RoomPolicyFactory.CreateRoomPolicy()` и
+  `masterMachine` не трогаются.
+- **Per-room kind удалён целиком** (no-prerelease-compat): поле `policy`
+  в `POST /rooms`, `RoomPolicyKind`, `ParseRoomPolicyKind`,
+  `ErrInvalidPolicy`, `codeInvalidPolicy`, `AuthoritativeHostPolicy` +
+  `AuthoritativeHostPolicyFactory`, `KindRoomFactory`, параметр
+  `policyKind` в `port/realtime.RoomFactory`,
+  `port/registry.RoomRegistry`, `adapter/registry`, `CreateUseCase.Create`,
+  `LOADGEN_POLICY_MIX` и `body["policy"]` в loadgen.
 
 ## Considered Options
 
-- **Флаг `noMasterMigration` в StateRoomPolicy** — отклонено: ветвление внутри `OnLeave` размыло бы контракт policy; отдельный тип сохраняет обе реализации читаемыми.
-- **Dispatch внутри `StateRoomPolicyFactory.CreateRoomPolicy(kind)`** — отклонено: расширяло бы порт фабрики kind'ом и смешивало две полиси в одной фабрике; композитная фабрика комнат чище.
-- **Grace-окно для хоста (P20-модель)** — отклонено: авторитарный хост ушёл = матч окончен; держать слот/peerID под resume бессмысленно.
-- **Reason-payload у `0x82`** — отложено: сейчас причина одна (host gone), payload пустой.
+- **Оставить per-room поле поверх env-дефолта** — отклонено: смешанный
+  режим не нужен, а оба пути конфигурации плодят рассинхрон («клиент
+  попросил state при no-migration деплое»).
+- **`NewStateRoomPolicy(..., allowMasterMigration bool)`** — отклонено в
+  пользу полевого влейва: metrics уже идёт полем именно ради стабильной
+  сигнатуры для тестов; флаг — тот же случай (внешние тесты строят
+  no-migration policy через фабрику с `StatePolicyConfig{false}`).
+- **Флаг внутри masterMachine** — отклонено: `ErrRoomShouldClose` должен
+  уйти наружу до staged-мутаций state; проверка на входе `OnLeave`
+  сохраняет контракт «ошибка = нет побочек».
+- **Новый ADR вместо правки на месте** — отклонено: 0011 переписан под
+  актуальное решение, история разворота зафиксирована шапкой.
 
 ## Consequences
 
-- `0x82` обязателен к обработке в Godot-клиенте; до её реализации закрытие комнаты видно как обрыв. Комната после смерти исчезает из registry и reservation целиком — `GET /rooms`/`admit` → `0x43`.
-- На WS `0x82` доставляется best-effort: `peer.Deliver` коммитит кадр в write-loop, а `peer.Stop→conn.Close` идёт из другой горутины — `closeRoom` выстраивает порядок (Deliver до unregister'а, Stop последним + scheduling yield), но гарантия «send до close» требует drain-aware close на уровне `Peer` — отдельная работа.
-- `room.Leave` логирует `ErrRoomShouldClose` как `policy on leave failed` (не входил в скоуп плана) — разовая строка на смерть комнаты.
-- Evict-путь (`EvictIdlePeersUseCase`) покрыт без правок: он делегирует в `DisconnectPeer`.
+- Старые клиенты, шлющие `policy` в body create, получают молчаливый игнор
+  (неизвестное JSON-поле) — поведение комнаты диктует сервер.
+- В no-migration деплое **каждая** комната умирает с уходом master'а;
+  `0x82` остаётся обязательным к обработке в Godot-клиенте.
+- Тесты no-migration режима (ex-`authoritative_host_policy_test`,
+  integration) строятся через `NewStateRoomPolicyFactory` с
+  `StatePolicyConfig{AllowMasterMigration: false}` /
+  `testutil/env.WithStatePolicy(...)` — прямого доступа к полю у внешних
+  пакетов нет.
+- `room.Leave` по-прежнему логирует `ErrRoomShouldClose` как
+  `policy on leave failed` — разовая строка на смерть комнаты.
