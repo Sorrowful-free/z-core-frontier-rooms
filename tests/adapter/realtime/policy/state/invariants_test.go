@@ -14,25 +14,25 @@ import (
 	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
-// P10: исполняемые инварианты StateRoomPolicy. Поля p.master/p.state
-// неэкспортируемы — проверяем клиент-видимое wire-state, материализованное
-// из тех кадров, что реально дошли до peer-наблюдателя.
+// P10: executable invariants of StateRoomPolicy. The p.master/p.state
+// fields are unexported — we check the client-visible wire state
+// materialized from the frames that actually reached the observer peer.
 
-// shadowPeerID — выделенный ID наблюдателя. Высокий ID + unknown ping
-// гарантируют: shadow не выигрывает election у тестовых peers и не влияет
-// на существующие master-scenario'и.
+// shadowPeerID — the observer's dedicated ID. A high ID + unknown ping
+// guarantee that the shadow never wins the election against the test peers
+// and does not affect the existing master scenarios.
 const shadowPeerID = domain.PeerID(900)
 
-// --- shadow view: материализация клиент-видимого RoomState ---
+// --- shadow view: materialization of the client-visible RoomState ---
 
-// shadowView материализует state.RoomState из кадров, реально доставленных
-// наблюдателю: full-state заменяет вид, patch применяется поверх — ровно то,
-// что видит клиент, без сайд-эффектов.
+// shadowView materializes a state.RoomState from the frames actually
+// delivered to the observer: a full state replaces the view, a patch is
+// applied on top — exactly what the client sees, with no side effects.
 //
-// desync: patch до первого full-state либо ошибка Decode/ApplyPatch — вид
-// перестаёт быть авторитетным (расхождение после частично откаченного
-// broadcast); инварианты по нему не проверяем до следующего full-state
-// (resync — штатный механизм протокола).
+// desync: a patch before the first full state, or a Decode/ApplyPatch
+// error — the view is no longer authoritative (divergence after a
+// partially rolled-back broadcast); we do not check invariants against it
+// until the next full state (resync is the protocol's normal mechanism).
 type shadowView struct {
 	roomCodec *codec.RoomStateCodec
 
@@ -46,9 +46,9 @@ func newShadowView(roomCodec *codec.RoomStateCodec) *shadowView {
 	return &shadowView{roomCodec: roomCodec}
 }
 
-// seed задаёт начальный вид напрямую — для виртуальных наблюдателей вне room
-// (mock-room фикстуры): эквивалент полученного full-state, последующие кадры
-// идут поверх.
+// seed sets the initial view directly — for virtual observers outside a
+// room (mock-room fixtures): the equivalent of a received full state, with
+// subsequent frames applied on top.
 func (s *shadowView) seed(rs *state.RoomState) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -91,7 +91,7 @@ func (s *shadowView) feed(ev events.PeerEvent) {
 	}
 }
 
-// materialized — клон текущего вида + флаг desync.
+// materialized — a clone of the current view + the desync flag.
 func (s *shadowView) materialized() (*state.RoomState, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -113,12 +113,12 @@ func (s *shadowView) lastError() error {
 	return s.lastErr
 }
 
-// --- shadow peer: in-room наблюдатель ---
+// --- shadow peer: the in-room observer ---
 
-// shadowPeer — peer-наблюдатель: сидит в комнате как обычный peer (валидный
-// кандидат election, но с худшими ping/ID), никогда не уходит, материализует
-// wire-state из каждого доставленного кадра. Join mid-room безопасен: первый
-// кадр — join full-state, который сидит вид.
+// shadowPeer — an observer peer: sits in the room like a normal peer (a
+// valid election candidate, but with the worst ping/ID), never leaves, and
+// materializes the wire state from every delivered frame. A mid-room join
+// is safe: the first frame is the join full state, which seeds the view.
 type shadowPeer struct {
 	*testpeer.Peer
 	view *shadowView
@@ -137,8 +137,8 @@ func (p *shadowPeer) Deliver(ev events.PeerEvent) error {
 	return err
 }
 
-// mustJoinShadow подсаживает наблюдателя в комнату; он занимает один слот
-// capacity — учитывать в тестах с плотной вместимостью.
+// mustJoinShadow seats the observer in the room; it occupies one capacity
+// slot — account for it in tests with tight capacity.
 func mustJoinShadow(t *testing.T, h *harness) *shadowPeer {
 	t.Helper()
 	sh := newShadowPeer(h.roomCodec)
@@ -148,12 +148,12 @@ func mustJoinShadow(t *testing.T, h *harness) *shadowPeer {
 	return sh
 }
 
-// --- инварианты ---
+// --- invariants ---
 
-// checkWeakInvariants — post-op уровень (без settle):
-//  1. IsMaster выставлен не более чем у одного peer;
-//  2. IsMaster peer присутствует в записях Peers wire-state
-//     (флаг у живой записи, не у фантомной).
+// checkWeakInvariants — post-op level (without settle):
+//  1. IsMaster is set on at most one peer;
+//  2. the IsMaster peer is present in the wire-state Peers entries
+//     (the flag is on a live entry, not a phantom one).
 func checkWeakInvariants(view *state.RoomState) error {
 	if view == nil {
 		return nil
@@ -178,8 +178,8 @@ func checkWeakInvariants(view *state.RoomState) error {
 	return nil
 }
 
-// checkStrongInvariants — settle уровень (после patch-тика, prune-окно
-// закрыто): weak + рекламируемый master обязан быть живым peer комнаты.
+// checkStrongInvariants — settle level (after a patch tick, the prune
+// window is closed): weak + the advertised master must be a live room peer.
 func checkStrongInvariants(view *state.RoomState, room portrealtime.Room) error {
 	if err := checkWeakInvariants(view); err != nil {
 		return err
@@ -217,8 +217,8 @@ func assertWeakInvariants(t *testing.T, sh *shadowView) {
 	}
 }
 
-// assertStrongInvariants — только на синхронизированном виде: при desync
-// вызывающий код обязан сначала resync (OnTickFullState) или признать окно.
+// assertStrongInvariants — only on a synchronized view: on desync the
+// caller must first resync (OnTickFullState) or accept the window.
 func assertStrongInvariants(t *testing.T, sh *shadowView, room portrealtime.Room) {
 	t.Helper()
 	view, desynced := sh.materialized()
@@ -231,10 +231,10 @@ func assertStrongInvariants(t *testing.T, sh *shadowView, room portrealtime.Room
 	}
 }
 
-// settleTick — один patch-тик: pruneStalePeers закрывает prune-окно
-// (stale-записи вычищены, master переизбран) и выносит накопленную
-// дельту broadcast'ом — дальше допустимы сильные проверки. Ошибка
-// broadcast — легальный fault mode: логируем, не падаем.
+// settleTick — one patch tick: pruneStalePeers closes the prune window
+// (stale entries are cleaned, the master is re-elected) and carries the
+// accumulated delta out via broadcast — after that, strong checks are
+// valid. A broadcast error is a legal fault mode: we log, we do not fail.
 func settleTick(t *testing.T, h *harness, sh *shadowView) *state.RoomState {
 	t.Helper()
 	if err := h.policy.OnTickPatchState(); err != nil {
@@ -244,8 +244,8 @@ func settleTick(t *testing.T, h *harness, sh *shadowView) *state.RoomState {
 	return view
 }
 
-// resyncShadow — full-state рассылка поднимает shadow из desync до
-// authoritative state.
+// resyncShadow — a full-state broadcast lifts the shadow out of desync to
+// the authoritative state.
 func resyncShadow(t *testing.T, h *harness) {
 	t.Helper()
 	if err := h.policy.OnTickFullState(); err != nil {
@@ -253,9 +253,9 @@ func resyncShadow(t *testing.T, h *harness) {
 	}
 }
 
-// --- self-tests: чекеры и материализация обязаны ловить нарушения ---
+// --- self-tests: the checkers and materialization must catch violations ---
 
-// Материализация: full-state сидит вид, patch применяется поверх.
+// Materialization: a full state seeds the view, a patch applies on top.
 func TestShadowView_MaterializesFullThenPatch(t *testing.T) {
 	t.Parallel()
 
@@ -292,7 +292,7 @@ func TestShadowView_MaterializesFullThenPatch(t *testing.T) {
 	}
 }
 
-// Patch до первого full-state → desync, а не паника/мусор.
+// A patch before the first full state → desync, not a panic/garbage.
 func TestShadowView_PatchBeforeFull_IsDesync(t *testing.T) {
 	t.Parallel()
 
@@ -310,12 +310,12 @@ func TestShadowView_PatchBeforeFull_IsDesync(t *testing.T) {
 	}
 }
 
-// Sanity: заведомо битое состояние (два master / master на мёртвом peer)
-// обязано ловиться чекерами — иначе инварианты декоративные.
+// Sanity: a deliberately broken state (two masters / master on a dead
+// peer) must be caught by the checkers — otherwise the invariants are decorative.
 func TestInvariantCheckers_FlagDeliberatelyBrokenState(t *testing.T) {
 	t.Parallel()
 
-	// Два IsMaster — слабый инвариант обязан сломаться.
+	// Two IsMaster flags — the weak invariant must break.
 	dup := state.NewRoomState(domain.RoomID(1), 4)
 	dup.Peers[domain.PeerID(1)] = state.PeerState{NickName: "a", IsMaster: true}
 	dup.Peers[domain.PeerID(2)] = state.PeerState{NickName: "b", IsMaster: true}
@@ -323,8 +323,8 @@ func TestInvariantCheckers_FlagDeliberatelyBrokenState(t *testing.T) {
 		t.Fatal("checkWeakInvariants missed duplicate IsMaster flags")
 	}
 
-	// Master-флаг на peer, которого нет в room: слабый чек (структурный)
-	// проходит, сильный — обязан упасть.
+	// A master flag on a peer that is not in the room: the weak check
+	// (structural) passes, the strong one must fail.
 	h := newHarness(t, domain.RoomID(2), 4)
 	member := testpeer.New(1, "member")
 	mustJoin(t, h.room, member)
@@ -339,7 +339,7 @@ func TestInvariantCheckers_FlagDeliberatelyBrokenState(t *testing.T) {
 		t.Fatal("checkStrongInvariants missed advertised master outside room")
 	}
 
-	// Здоровое состояние — оба чекера зелёные.
+	// A healthy state — both checkers are green.
 	ok := state.NewRoomState(domain.RoomID(2), 4)
 	ok.Peers[domain.PeerID(1)] = state.PeerState{NickName: "member", IsMaster: true}
 	if err := checkStrongInvariants(ok, h.room); err != nil {

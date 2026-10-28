@@ -115,8 +115,9 @@ func TestApplyMapStatePatch_roundTrip(t *testing.T) {
 	}
 }
 
-// Мягкий apply (P34): Added на существующем ключе — upsert, не ошибка.
-// Реплика может опережать поток дельт (full state джойнеру + tick-эхо).
+// Soft apply (P34): Added on an existing key is an upsert, not an error.
+// A replica may run ahead of the delta stream (full state to the joiner +
+// tick echo).
 func TestApplyMapStatePatch_addedExistingKey_upserts(t *testing.T) {
 	t.Parallel()
 
@@ -137,7 +138,7 @@ func TestApplyMapStatePatch_addedExistingKey_upserts(t *testing.T) {
 	}
 }
 
-// Removed на отсутствующем ключе — ignore, не ошибка.
+// Removed on a missing key — ignored, not an error.
 func TestApplyMapStatePatch_removedMissingKey_ignored(t *testing.T) {
 	t.Parallel()
 
@@ -158,9 +159,9 @@ func TestApplyMapStatePatch_removedMissingKey_ignored(t *testing.T) {
 	}
 }
 
-// Updated на отсутствующем ключе — по-прежнему ошибка: в корректном
-// потоке ключ обязан быть и в prev, и в new, значит есть у всех реплик;
-// его отсутствие — детектор рассинхрона.
+// Updated on a missing key — still an error: in a correct stream the key
+// must exist in both prev and new, meaning it exists on every replica; its
+// absence is a desync detector.
 func TestApplyMapStatePatch_updatedMissingKey_errors(t *testing.T) {
 	t.Parallel()
 

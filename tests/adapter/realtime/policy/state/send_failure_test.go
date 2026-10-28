@@ -10,8 +10,8 @@ import (
 	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
-// Падение Deliver при отправке full-state новому peer пробрасывается
-// из OnJoin без потери исходной ошибки.
+// A Deliver failure while sending the full state to a new peer propagates
+// out of OnJoin without losing the original error.
 func TestOnJoin_FailedFullStateDeliver_PropagatesError(t *testing.T) {
 	t.Parallel()
 
@@ -35,7 +35,7 @@ func TestOnJoin_FailedFullStateDeliver_PropagatesError(t *testing.T) {
 	assertStrongInvariants(t, shadow.view, h.room)
 }
 
-// Отказ peer.Deliver при broadcast full state пробрасывается из OnTickFullState.
+// A peer.Deliver failure during the full-state broadcast propagates out of OnTickFullState.
 func TestOnTickFullState_PeerDeliverFails_PropagatesError(t *testing.T) {
 	t.Parallel()
 
@@ -63,9 +63,9 @@ func TestOnTickFullState_PeerDeliverFails_PropagatesError(t *testing.T) {
 	assertStrongInvariants(t, shadow.view, h.room)
 }
 
-// Отказ peer.Deliver при tick-broadcast patch пробрасывается из
-// OnTickPatchState; мутация в state уже закоммичена — дельта не теряется
-// (prevState коммитится только после успешного send).
+// A peer.Deliver failure during the tick patch broadcast propagates out of
+// OnTickPatchState; the mutation in the state is already committed — the
+// delta is not lost (prevState commits only after a successful send).
 func TestOnTickPatchState_PatchDeliverFails_PropagatesError(t *testing.T) {
 	t.Parallel()
 
@@ -82,8 +82,8 @@ func TestOnTickPatchState_PatchDeliverFails_PropagatesError(t *testing.T) {
 	mustConverge(t, h)
 	member.Clear()
 
-	// Leave сам по себе ничего не шлёт (P34): мутация state + перевыбор
-	// на месте — дельта копится до тика.
+	// Leave itself sends nothing (P34): the state mutation + re-election
+	// happen in place — the delta accumulates until the tick.
 	if err := h.room.Leave(master); err != nil {
 		t.Fatalf("Leave master: %v", err)
 	}
@@ -101,9 +101,9 @@ func TestOnTickPatchState_PatchDeliverFails_PropagatesError(t *testing.T) {
 	assertStrongInvariants(t, shadow.view, h.room)
 }
 
-// Упавший Deliver другого peer не влияет на OnMessage (P34): обработчик
-// только мутирует state и завершается успехом; send-фейл всплывает на
-// ближайшем patch-тике.
+// A failed Deliver to another peer does not affect OnMessage (P34): the
+// handler only mutates the state and completes successfully; the send
+// failure surfaces on the next patch tick.
 func TestOnMessage_FullEntities_BystanderDeliverFails_MessageSucceeds(t *testing.T) {
 	t.Parallel()
 

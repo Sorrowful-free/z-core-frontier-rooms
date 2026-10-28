@@ -25,8 +25,8 @@ type CreateUseCase struct {
 	limits       httplimits.Limits
 	ticketIssuer ticketIssuer
 	logging      logging.Logger
-	// createMu сериализует проверку лимита и регистрацию комнаты —
-	// иначе два конкурентных Create видят один и тот же len(rooms) (TOCTOU).
+	// createMu serializes the limit check and room registration —
+	// otherwise two concurrent Create calls see the same len(rooms) (TOCTOU).
 	createMu sync.Mutex
 }
 

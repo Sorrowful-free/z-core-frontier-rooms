@@ -14,8 +14,8 @@ import (
 	dto "github.com/prometheus/client_model/go"
 )
 
-// P19: GET /metrics admin listener'а — 200 + exposition-текст
-// (сигналы приложения и go_* коллекторы).
+// P19: GET /metrics of the admin listener — 200 + exposition text
+// (application signals and the go_* collectors).
 func TestMetricsEndpoint(t *testing.T) {
 	t.Parallel()
 
@@ -56,15 +56,16 @@ func TestMetricsEndpoint(t *testing.T) {
 	}
 }
 
-// errGatherer - Gatherer, всегда падающий с ошибкой (error-path P19b).
+// errGatherer — a Gatherer that always fails (error path P19b).
 type errGatherer struct{}
 
 func (errGatherer) Gather() ([]*dto.MetricFamily, error) {
 	return nil, errors.New("gather boom")
 }
 
-// P19b фикс 6: ошибка Gather не глотается - handler логирует и отдаёт 500
-// с контекстом (обёрнутая ошибка, не голый ErrInternalServerError).
+// P19b fix 6: a Gather error is not swallowed — the handler logs and
+// returns 500 with context (a wrapped error, not a bare
+// ErrInternalServerError).
 func TestMetricsEndpoint_GatherError(t *testing.T) {
 	t.Parallel()
 

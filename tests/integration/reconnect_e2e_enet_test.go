@@ -19,59 +19,64 @@ import (
 	libenet "github.com/codecat/go-enet"
 )
 
-// E2E reconnect по реальному ENet-транспорту (план docs/plans/P22-enet-reconnect-e2e.md,
-// поверх семантики P20/P24 и WS-покрытия reconnect_test.go):
+// E2E reconnect over the real ENet transport (plan docs/plans/P22-enet-reconnect-e2e.md,
+// on top of the P20/P24 semantics and the WS coverage of reconnect_test.go):
 //
-//	TestE2E_ENetReconnect          — разрыв → 0x80 OpPeerDisconnected у host'а →
-//	                                resume reconnect_token первым пакетом →
-//	                                0x81 OpPeerReconnected у host'а + full state
-//	                                resync вернувшемуся, nick из слота.
-//	TestE2E_ENetReconnectExpired   — короткий ReconnectTTL: resume past grace →
-//	                                0x74 OpReservationExpired (deadline-гейт P24;
-//	                                orphan sweep в env не поднят → ветка
-//	                                детерминирована, 0x73 недостижим).
-//	TestE2E_ENetReconnectWrongHost — multi-host env: reconnect-токен наследует
-//	                                claims.hostID join-тикета; resume-пакет на
-//	                                чужом host'е → 0x77 OpWrongHost, слот не
-//	                                тратится (correct-host resume после проходит).
+//	TestE2E_ENetReconnect          — disconnect → 0x80 OpPeerDisconnected at the
+//	                                host → resume with reconnect_token as the first
+//	                                packet → 0x81 OpPeerReconnected at the host +
+//	                                a full state resync for the returnee, nick
+//	                                from the slot.
+//	TestE2E_ENetReconnectExpired   — short ReconnectTTL: resume past grace →
+//	                                0x74 OpReservationExpired (the P24 deadline
+//	                                gate; the orphan sweep is not running in env →
+//	                                the branch is deterministic, 0x73 is
+//	                                unreachable).
+//	TestE2E_ENetReconnectWrongHost — multi-host env: the reconnect token inherits
+//	                                the join ticket's claims.hostID; a resume
+//	                                packet on a foreign host → 0x77 OpWrongHost,
+//	                                the slot is not consumed (a correct-host
+//	                                resume afterwards succeeds).
 //
-// Клиент — облегчённый enetWireClient ниже: plumbing тот же, что у enetClient
-// из match_e2e_enet_test.go (HostLoop, Call/Do, admit первым пакетом), но без
-// match-машинерии (input/entities-стримы не нужны) и с записью сырых
-// wire-кадров — общий клиент ленту 0x7x/0x8x opcodes не наблюдает.
+// The client is the lightweight enetWireClient below: the same plumbing as
+// enetClient from match_e2e_enet_test.go (HostLoop, Call/Do, admit as the
+// first packet), but without the match machinery (input/entities streams are
+// not needed) and with raw wire-frame recording — the shared client does not
+// observe the 0x7x/0x8x opcode feed.
 
-// wireFrame — принятый серверный кадр (OpCode + payload) в порядке прихода.
+// wireFrame — a received server frame (OpCode + payload) in arrival order.
 type wireFrame struct {
 	op      domain.OpCode
 	payload []byte
 }
 
-// enetWireClient — in-test ENet-клиент для reconnect-сценариев: connect →
-// admit первым пакетом (произвольный raw-token: join-ticket или
-// reconnect-token) →
-// события Service в ленту frames → graceful disconnect → stop.
+// enetWireClient — an in-test ENet client for reconnect scenarios: connect →
+// admit as the first packet (an arbitrary raw token: join ticket or
+// reconnect token) →
+// Service events into the frames feed → graceful disconnect → stop.
 type enetWireClient struct {
 	t    *testing.T
 	nick string
 
 	loop     *adapterenet.HostLoop
 	enetPeer libenet.Peer
-	token    []byte // admit: первый пакет после EventConnect — сырой (decoded) token
+	token    []byte // admit: the first packet after EventConnect — raw (decoded) token
 
-	connected atomic.Bool // EventConnect получен — handshake завершён
-	connDead  atomic.Bool // pump увидел ошибку/разрыв соединения
-	pumpStop  atomic.Bool // stop(): pump выходит без ожидания EventDisconnect
-	leftClean atomic.Bool // плановый уход — разрыв ожидаем
+	connected atomic.Bool // EventConnect received — handshake done
+	connDead  atomic.Bool // pump saw a connection error/drop
+	pumpStop  atomic.Bool // stop(): the pump exits without waiting for EventDisconnect
+	leftClean atomic.Bool // scheduled leave — the drop is expected
 	pumpDone  chan struct{}
 
 	mu     sync.Mutex
 	frames []wireFrame
-	read   int // курсор потреблённых кадров waitOp
+	read   int // cursor of frames consumed by waitOp
 }
 
-// newEnetWireClient — connect + ожидание EventConnect; admit-пакет (token)
-// уходит автоматически в eventLoop. tokenB64 — base64url из HTTP-ответа
-// (join token или reconnect_token — оба сырые токены под base64).
+// newEnetWireClient — connect + wait for EventConnect; the admit packet
+// (token) is sent automatically in eventLoop. tokenB64 is the base64url from
+// the HTTP response (join token or reconnect_token — both are raw tokens
+// under base64).
 func newEnetWireClient(t *testing.T, nick, tokenB64 string, port uint16) *enetWireClient {
 	t.Helper()
 
@@ -91,7 +96,7 @@ func newEnetWireClient(t *testing.T, nick, tokenB64 string, port uint16) *enetWi
 		loop:     loop,
 		pumpDone: make(chan struct{}),
 	}
-	// Страховка на случай t.Fatal до stop(): Stop идемпотентен.
+	// Insurance against a t.Fatal before stop(): Stop is idempotent.
 	t.Cleanup(loop.Stop)
 
 	err = loop.Do(func() error {
@@ -105,18 +110,18 @@ func newEnetWireClient(t *testing.T, nick, tokenB64 string, port uint16) *enetWi
 
 	go c.eventLoop()
 
-	// Как у enetClient: сериализуем handshake — параллельные CONNECT иногда
-	// теряют дейтаграммы и достаются libenet-ретраями (~6s).
+	// Same as enetClient: serialize the handshake — parallel CONNECTs
+	// occasionally lose datagrams and get rescued by libenet retries (~6s).
 	waitFor(t, 15*time.Second, nick+" enet connect", func() bool {
 		return c.connected.Load()
 	})
 	return c
 }
 
-// eventLoop — pump клиента: Service(1) через очередь HostLoop (те же
-// правила confinement, что у enetClient) + dispatch событий. Кадры
-// EventReceive складываются в frames (OpCode + payload); выход —
-// EventDisconnect, ошибка loop'а либо pumpStop.
+// eventLoop — the client's pump: Service(1) through the HostLoop queue (the
+// same confinement rules as enetClient) + event dispatch. EventReceive frames
+// are appended to frames (OpCode + payload); exit — EventDisconnect, a loop
+// error, or pumpStop.
 func (c *enetWireClient) eventLoop() {
 	defer close(c.pumpDone)
 	admitted := false
@@ -171,10 +176,11 @@ func (c *enetWireClient) eventLoop() {
 	}
 }
 
-// disconnect — graceful разрыв соединения (как leaveClean у enetClient):
-// сервер получает disconnect-команду → EventDisconnect → DisconnectPeer →
-// peer из комнаты в grace, остальным OpPeerDisconnected. Ждёт собственный
-// EventDisconnect клиента (bound — сервер libenet-ответа может не успеть).
+// disconnect — a graceful connection drop (like enetClient's leaveClean):
+// the server gets the disconnect command → EventDisconnect → DisconnectPeer →
+// the peer leaves the room into grace, the others get OpPeerDisconnected.
+// Waits for the client's own EventDisconnect (bounded — the server may not
+// get a libenet response out in time).
 func (c *enetWireClient) disconnect() {
 	c.leftClean.Store(true)
 	select {
@@ -190,10 +196,10 @@ func (c *enetWireClient) disconnect() {
 	}
 }
 
-// stop — финальный teardown (идемпотентен после disconnect): graceful
-// disconnect, если pump ещё жив, bound на выход pump'а, затем loop.Stop →
-// host.Destroy. Destroy только после pumpDone — Service на разрушенном
-// host'е был бы UB.
+// stop — final teardown (idempotent after disconnect): a graceful disconnect
+// if the pump is still alive, a bound on the pump's exit, then loop.Stop →
+// host.Destroy. Destroy only after pumpDone — a Service on a destroyed host
+// would be UB.
 func (c *enetWireClient) stop() {
 	c.leftClean.Store(true)
 	select {
@@ -210,10 +216,10 @@ func (c *enetWireClient) stop() {
 	c.loop.Stop()
 }
 
-// waitOp ждёт кадр с заданным OpCode по ленте frames (прочие пропускаются:
-// state-патчи/full — не ассерты). Курсор read — общий на клиента: ассерты
-// сценария идут в порядке прихода кадров. Мёртвая соединение до кадра →
-// fail-fast; найденного — payload.
+// waitOp waits for a frame with the given OpCode on the frames feed (others
+// are skipped: state patches/full are not asserts). The read cursor is shared
+// per client: the scenario asserts run in frame arrival order. A dead
+// connection before the frame → fail-fast; on a hit — the payload.
 func (c *enetWireClient) waitOp(t *testing.T, op domain.OpCode, timeout time.Duration) []byte {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -239,9 +245,10 @@ func (c *enetWireClient) waitOp(t *testing.T, op domain.OpCode, timeout time.Dur
 	return nil
 }
 
-// TestE2E_ENetReconnect — базовый сценарий P20 поверх ENet: разрыв →
-// OpPeerDisconnected у host'а → resume reconnect-токеном первым пакетом →
-// OpPeerReconnected + full state resync, nick из слота (в токене его нет).
+// TestE2E_ENetReconnect — the basic P20 scenario over ENet: disconnect →
+// OpPeerDisconnected at the host → resume with the reconnect token as the
+// first packet → OpPeerReconnected + full state resync, nick from the slot
+// (the token has none).
 func TestE2E_ENetReconnect(t *testing.T) {
 	t.Parallel()
 
@@ -253,14 +260,14 @@ func TestE2E_ENetReconnect(t *testing.T) {
 
 	joinToken, reconnectToken, joinerPort := e.IssueTicketReconnect(t, roomID, "joiner")
 	joiner := newEnetWireClient(t, "joiner", joinToken, joinerPort)
-	defer joiner.stop() // идемпотентен после явного stop ниже — страховка на mid-test Fatal
+	defer joiner.stop() // idempotent after the explicit stop below — insurance for a mid-test Fatal
 
 	waitPeerCount(t, e, roomID, 2, 10*time.Second)
 	joinerPeerID := peerIDOfNick(t, e, roomID, "joiner")
 
-	// Разрыв: graceful disconnect → серверный EventDisconnect →
-	// DisconnectPeer (слот в grace, peer из комнаты сразу) → host'у
-	// OpPeerDisconnected{peerID u64 BE}.
+	// Disconnect: graceful disconnect → server-side EventDisconnect →
+	// DisconnectPeer (slot into grace, peer leaves the room at once) → the
+	// host gets OpPeerDisconnected{peerID u64 BE}.
 	joiner.disconnect()
 	joiner.stop()
 	waitPeerCount(t, e, roomID, 1, 10*time.Second)
@@ -270,9 +277,9 @@ func TestE2E_ENetReconnect(t *testing.T) {
 		t.Fatalf("OpPeerDisconnected payload = %x, want peerID %d", payload, joinerPeerID)
 	}
 
-	// Resume: reconnect_token первым пакетом на том же host'е → admit
-	// успешен под тем же peerID; host'у OpPeerReconnected, вернувшемуся —
-	// full state.
+	// Resume: reconnect_token as the first packet on the same host → admit
+	// succeeds under the same peerID; the host gets OpPeerReconnected, the
+	// returnee — a full state.
 	resumed := newEnetWireClient(t, "joiner", reconnectToken, joinerPort)
 	defer resumed.stop()
 	waitPeerCount(t, e, roomID, 2, 10*time.Second)
@@ -286,8 +293,8 @@ func TestE2E_ENetReconnect(t *testing.T) {
 		t.Fatalf("resumed peerID = %d, want %d", got, joinerPeerID)
 	}
 
-	// Full state resync: свой peer присутствует, nick — из admitted-слота
-	// reservation (в reconnect-токене nick'а нет).
+	// Full state resync: the own peer is present, the nick — from the
+	// reservation admitted slot (the reconnect token has no nick).
 	fullPayload := resumed.waitOp(t, state.OpCodeFullState, 10*time.Second)
 	full, err := codec.NewRoomStateCodec().Decode(fullPayload)
 	if err != nil {
@@ -302,10 +309,11 @@ func TestE2E_ENetReconnect(t *testing.T) {
 	}
 }
 
-// TestE2E_ENetReconnectExpired — grace-expiry (P24): короткий ReconnectTTL,
-// разрыв → ожидание past TTL → resume → reject 0x74 OpReservationExpired.
-// Orphan sweep в env не поднят — дедлайн-гейт ReconnectRoom срабатывает до
-// любого revoke, ветка 0x74 детерминирована (слот остаётся admitted-сиротой).
+// TestE2E_ENetReconnectExpired — grace expiry (P24): a short ReconnectTTL,
+// disconnect → wait past the TTL → resume → reject 0x74 OpReservationExpired.
+// The orphan sweep is not running in env — the ReconnectRoom deadline gate
+// fires before any revoke, the 0x74 branch is deterministic (the slot stays
+// an admitted orphan).
 func TestE2E_ENetReconnectExpired(t *testing.T) {
 	t.Parallel()
 
@@ -326,7 +334,7 @@ func TestE2E_ENetReconnectExpired(t *testing.T) {
 	joiner.stop()
 	waitPeerCount(t, e, roomID, 1, 10*time.Second)
 
-	// Ждём past TTL: deadline = lastSeen (MarkDisconnected) + ReconnectTTL.
+	// Wait past the TTL: deadline = lastSeen (MarkDisconnected) + ReconnectTTL.
 	time.Sleep(700 * time.Millisecond)
 
 	resumed := newEnetWireClient(t, "joiner", reconnectToken, joinerPort)
@@ -334,8 +342,9 @@ func TestE2E_ENetReconnectExpired(t *testing.T) {
 
 	resumed.waitOp(t, domain.OpReservationExpired, 10*time.Second)
 
-	// Слот не тронут отклонённой попыткой (SlotDetails read-only): всё ещё
-	// admitted-сирота — проверяем состояние reservation напрямую.
+	// The slot is untouched by the rejected attempt (SlotDetails is
+	// read-only): still an admitted orphan — check the reservation state
+	// directly.
 	slotState, err := e.Reservation.State(context.Background(), roomID, joinerPeerID)
 	if err != nil {
 		t.Fatalf("reservation state: %v", err)
@@ -345,14 +354,15 @@ func TestE2E_ENetReconnectExpired(t *testing.T) {
 	}
 }
 
-// TestE2E_ENetReconnectWrongHost — strict binding (P18+P20): reconnect
-// -токен наследует claims.hostID join-тикета. Resume-пакет, отправленный на
-// порт другого host'а mux'а, отклоняется 0x77 OpWrongHost ДО траты слота —
-// grace-слот остаётся admitted, resume на назначенном host'е после проходит.
+// TestE2E_ENetReconnectWrongHost — strict binding (P18+P20): the reconnect
+// token inherits the join ticket's claims.hostID. A resume packet sent to the
+// port of the mux's other host is rejected with 0x77 OpWrongHost BEFORE the
+// slot is consumed — the grace slot stays admitted, a resume on the assigned
+// host afterwards succeeds.
 func TestE2E_ENetReconnectWrongHost(t *testing.T) {
 	t.Parallel()
 
-	e := env.New(t, env.WithEnet(0, 0)) // два host'а: порты auto
+	e := env.New(t, env.WithEnet(0, 0)) // two hosts: auto ports
 	ports := e.EnetPorts()
 	if len(ports) < 2 {
 		t.Fatalf("multi-host env: need 2+ enet ports, got %v", ports)
@@ -372,7 +382,7 @@ func TestE2E_ENetReconnectWrongHost(t *testing.T) {
 		t.Fatalf("no alternative enet port (assigned %d, ports %v)", assignedPort, ports)
 	}
 
-	// Join на назначенном host'е → разрыв → слот admitted в grace.
+	// Join on the assigned host → disconnect → the slot is admitted in grace.
 	joiner := newEnetWireClient(t, "joiner", joinToken, assignedPort)
 	defer joiner.stop()
 	waitPeerCount(t, e, roomID, 1, 10*time.Second)
@@ -382,7 +392,7 @@ func TestE2E_ENetReconnectWrongHost(t *testing.T) {
 	joiner.stop()
 	waitPeerCount(t, e, roomID, 0, 10*time.Second)
 
-	// Resume-пакет на чужом host'е → 0x77 OpWrongHost + graceful close.
+	// A resume packet on the foreign host → 0x77 OpWrongHost + graceful close.
 	wrong := newEnetWireClient(t, "joiner", reconnectToken, wrongPort)
 	defer wrong.stop()
 	wrong.waitOp(t, domain.OpWrongHost, 10*time.Second)
@@ -391,7 +401,7 @@ func TestE2E_ENetReconnectWrongHost(t *testing.T) {
 	})
 	wrong.stop()
 
-	// Слот не тратится: admitted в grace — correct-host resume проходит.
+	// The slot is not consumed: admitted in grace — the correct-host resume succeeds.
 	slotState, err := e.Reservation.State(context.Background(), roomID, joinerPeerID)
 	if err != nil {
 		t.Fatalf("reservation state: %v", err)

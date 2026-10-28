@@ -31,10 +31,11 @@ func (f *StateRoomPolicyFactory) CreateRoomPolicy() policy.RoomPolicy {
 		DefaultFullStateInterval,
 		DefaultPatchStateInterval,
 	)
-	// Счётчик master-elections живёт в машине эпизодов; вливается
-	// полем, чтобы сигнатура NewStateRoomPolicy осталась стабильной.
+	// The master-elections counter lives in the episode machine; it is
+	// injected via the field so the NewStateRoomPolicy signature stays
+	// stable.
 	p.master.metrics = f.metrics
-	// Режим master-миграции (P33) — тот же полевой влейв из конфига деплоя.
+	// The master-migration mode (P33) — the same field injection from the deploy config.
 	p.allowMasterMigration = f.cfg.AllowMasterMigration
 	return p
 }

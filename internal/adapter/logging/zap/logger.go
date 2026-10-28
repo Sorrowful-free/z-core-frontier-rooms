@@ -7,13 +7,13 @@ import (
 	"go.uber.org/zap"
 )
 
-// Logger реализует logging.Logger поверх go.uber.org/zap (SugaredLogger).
-// args в методах — пары key, value, как в slog: Info("msg", "room_id", id).
+// Logger implements logging.Logger on top of go.uber.org/zap (SugaredLogger).
+// args in methods are key, value pairs, as in slog: Info("msg", "room_id", id).
 type Logger struct {
 	sugar *zap.SugaredLogger
 }
 
-// New создаёт production-логгер с именем компонента (поле logger).
+// New creates a production logger with the component name (logger field).
 func New(tag string) (*Logger, error) {
 	z, err := zap.NewProduction()
 	if err != nil {
@@ -22,7 +22,7 @@ func New(tag string) (*Logger, error) {
 	return &Logger{sugar: z.Named(tag).Sugar()}, nil
 }
 
-// NewDevelopment — development-конфиг (человекочитаемый вывод, DebugLevel).
+// NewDevelopment — development config (human-readable output, DebugLevel).
 func NewDevelopment(tag string) (*Logger, error) {
 	z, err := zap.NewDevelopment()
 	if err != nil {
@@ -31,7 +31,7 @@ func NewDevelopment(tag string) (*Logger, error) {
 	return &Logger{sugar: z.Named(tag).Sugar()}, nil
 }
 
-// NewFrom создаёт адаптер из готового *zap.Logger (например, общий root в cmd).
+// NewFrom creates an adapter from a ready *zap.Logger (e.g., the shared root in cmd).
 func NewFrom(z *zap.Logger, tag string) logging.Logger {
 	return &Logger{sugar: z.Named(tag).Sugar()}
 }
@@ -56,12 +56,12 @@ func (l *Logger) Fatal(msg string, args ...any) {
 	l.sugar.Fatalw(msg, args...)
 }
 
-// Zap возвращает именованный *zap.Logger (для Fiber middleware и т.п.).
+// Zap returns the named *zap.Logger (for Fiber middleware and the like).
 func (l *Logger) Zap() *zap.Logger {
 	return l.sugar.Desugar()
 }
 
-// Sync сбрасывает буферы; при общем root в cmd лучше вызывать Sync на нём.
+// Sync flushes buffers; with a shared root in cmd it is better to call Sync on that root.
 func (l *Logger) Sync() error {
 	return l.sugar.Sync()
 }

@@ -16,24 +16,24 @@ type Reservation interface {
 	Admit(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) error
 	Revoke(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) error
 
-	// MarkDisconnected — начало reconnect grace (P20): admitted-слот не
-	// освобождается, lastSeen обновляется до момента разрыва.
+	// MarkDisconnected — start of reconnect grace (P20): the admitted slot
+	// is not released, lastSeen is updated to the disconnect moment.
 	MarkDisconnected(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) error
-	// SlotDetails — read-only просмотр admitted-слота (P24): возвращает
-	// слот БЕЗ refresh'а lastSeen (в отличие от Reconnect) — источник
-	// честного timestamp для проверки grace-дедлайна. Слота нет или не
+	// SlotDetails — read-only view of an admitted slot (P24): returns the
+	// slot WITHOUT refreshing lastSeen (unlike Reconnect) — the source of
+	// an honest timestamp for the grace deadline check. No slot or not
 	// admitted → ErrReservationNotReserved.
 	SlotDetails(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) (domain.AdmittedSlot, error)
-	// Reconnect — атомарная проверка admitted-слота + refresh lastSeen +
-	// возврат слота (NickName — источник ника при resume). Слота нет или
-	// он не admitted → ErrReservationNotReserved.
+	// Reconnect — atomic admitted slot check + lastSeen refresh + slot
+	// return (NickName is the nickname source on resume). No slot or not
+	// admitted → ErrReservationNotReserved.
 	Reconnect(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) (domain.AdmittedSlot, error)
 
 	State(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) (domain.ReservationSlot, error)
 	ListAdmittedPeers(ctx context.Context, roomID domain.RoomID) ([]domain.AdmittedSlot, error)
-	// ListRoomSlots — read-only листинг всех слотов комнаты независимо от
-	// состояния (P31): нужен sweep'у never-joined комнат для проверки
-	// «ни admitted, ни unexpired reserve». Комнаты нет / tombstone →
-	// ErrReservationNotFound (для sweep'а эквивалент «слотов нет»).
+	// ListRoomSlots — read-only listing of all room slots regardless of
+	// state (P31): needed by the never-joined rooms sweep to check for
+	// "neither admitted nor unexpired reserve". No room / tombstone →
+	// ErrReservationNotFound (equivalent to "no slots" for the sweep).
 	ListRoomSlots(ctx context.Context, roomID domain.RoomID) ([]domain.RoomSlotDetail, error)
 }

@@ -9,33 +9,33 @@ type Peer interface {
 	GetID() domain.PeerID
 	GetNickName() string
 	Ping() int64
-	// IsAlive — false: транспорт peer'а мёртв, peer подлежит idle eviction.
+	// IsAlive — false: the peer's transport is dead, the peer is subject to idle eviction.
 	IsAlive() bool
 
-	// Start запускает read/write горутины peer'а; sink — mailbox той
-	// комнаты, которая peer'а уже приняла. Контракт порядка
-	// (Start-after-join): Start вызывается только после успешного
-	// Join/Replace — sink это не «какая-то комната», а входная точка
-	// комнаты-владельца. Peer сам проверить членство не может (о
-	// комнатах он не знает — и это намеренно, P26): инвариант
-	// caller-side. Sink живёт только в замыкании read-горутины и умирает
-	// вместе с ней — peer не хранит ссылки на комнату.
+	// Start launches the peer's read/write goroutines; sink is the mailbox
+	// of the room that has already accepted the peer. Ordering contract
+	// (Start-after-join): Start is called only after a successful
+	// Join/Replace — sink is not "some room" but the entry point of the
+	// owning room. The peer cannot verify membership itself (it knows
+	// nothing about rooms — intentionally, P26): the invariant is
+	// caller-side. The sink lives only in the read goroutine's closure and
+	// dies with it — the peer holds no reference to the room.
 	Start(sink EventSink) error
 
-	// Stop — реальное завершение обеих горутин, не fire-and-forget:
-	// cancel → drain outbound (write-loop сливает закоммиченные кадры,
-	// bounded по drain-таймауту) → conn.Close → read-loop выходит по
-	// ошибке Receive, wg.Wait ждёт обеих. Контракт: кадры, чей Deliver
-	// закоммитил до начала Stop, получают попытку Send до Close;
-	// Deliver, гонящийся со Stop (прошёл ctx-проверку, enqueue после
-	// наблюдения пустой очереди write-loop'ом), — unspecified, кадр
-	// может быть потерян. Порядок: Stop после изъятия peer'а из комнаты
-	// (Leave/Replace/rollback) — остановленный peer в реестре комнаты =
-	// zombie до idle-sweep. Fallback: conn умер сам (сеть) → read-loop
-	// выходит по ошибке Receive без Stop; write-loop висит на ctx.Done
-	// до Stop от evict-пути. Stop ожидается после Start: до Start
-	// write-loop не запущен — drain-ожидание пропускается, соединение
-	// просто закрывается.
+	// Stop — real termination of both goroutines, not fire-and-forget:
+	// cancel → drain outbound (the write loop flushes committed frames,
+	// bounded by the drain timeout) → conn.Close → the read loop exits on
+	// a Receive error, wg.Wait waits for both. Contract: frames whose
+	// Deliver committed before Stop began get a Send attempt before Close;
+	// a Deliver racing with Stop (passed the ctx check, enqueued after the
+	// write loop observed an empty queue) is unspecified — the frame may
+	// be lost. Ordering: Stop after the peer has been removed from the
+	// room (Leave/Replace/rollback) — a stopped peer in the room registry
+	// is a zombie until the idle sweep. Fallback: the conn died on its own
+	// (network) → the read loop exits on a Receive error without Stop; the
+	// write loop waits on ctx.Done until Stop from the evict path. Stop is
+	// expected after Start: before Start the write loop is not running —
+	// the drain wait is skipped and the connection is simply closed.
 	Stop() error
 
 	Deliver(peerEvent events.PeerEvent) error

@@ -46,9 +46,10 @@ func TestOnJoin_FailedFullStateSend_LeavesNoPhantomPeer(t *testing.T) {
 	}
 }
 
-// P34: join больше не шлёт patch остальным — упавший Deliver выжившего
-// не может сорвать чужой join. Единственный send на этом пути — full
-// state самому джойнеру; ошибка broadcast всплывёт на patch-тике.
+// P34: join no longer sends a patch to the others — a failed Deliver of a
+// bystander cannot break someone else's join. The only send on this path
+// is the full state to the joiner itself; a broadcast error will surface
+// on the patch tick.
 func TestOnJoin_BystanderDeliverFails_JoinStillSucceeds(t *testing.T) {
 	t.Parallel()
 
@@ -68,8 +69,8 @@ func TestOnJoin_BystanderDeliverFails_JoinStillSucceeds(t *testing.T) {
 		t.Fatalf("Join must not depend on bystander deliver: %v", err)
 	}
 
-	// Джойнер получил свой full со всеми тремя peer (запись в state
-	// закоммичена — сорванный тик её не откатывает).
+	// The joiner got its full state with all three peers (the write to
+	// state is committed — a broken tick does not roll it back).
 	got := decodeOnlyFullState(t, h, joiner)
 	if len(got.Peers) != 3 {
 		t.Fatalf("peers = %#v, want {1,2,3}", got.Peers)
@@ -78,9 +79,9 @@ func TestOnJoin_BystanderDeliverFails_JoinStillSucceeds(t *testing.T) {
 		t.Fatal("master flag must stay on peer 1")
 	}
 
-	// Ошибка всплывает на patch-тике broadcast'ом — но дельта не теряется:
-	// prevState коммитится только после успешного send, следующий тик
-	// (после починки peer'а) довозит её.
+	// The error surfaces on the patch tick via broadcast — but the delta is
+	// not lost: prevState commits only after a successful send, and the
+	// next tick (after the peer is fixed) delivers it.
 	if err := h.policy.OnTickPatchState(); !errors.Is(err, errDeliverFailed) {
 		t.Fatalf("OnTickPatchState err = %v, want errDeliverFailed", err)
 	}

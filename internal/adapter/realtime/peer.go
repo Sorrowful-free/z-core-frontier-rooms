@@ -16,10 +16,11 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport"
 )
 
-// defaultPeerCloseDrainTimeout — потолок drain'а outbound при Stop для
-// прямого конструирования NewPeer (white-box тесты); продовое значение
-// вливает PeerFactory полем из TransportConfig.PeerCloseDrainTimeout.
-// Дубль-партнёр transport.DefaultPeerCloseDrainTimeout — держать равными.
+// defaultPeerCloseDrainTimeout is the cap on the outbound drain at Stop
+// for direct NewPeer construction (white-box tests); the production
+// value is injected by PeerFactory via the field from
+// TransportConfig.PeerCloseDrainTimeout. Duplicate partner of
+// transport.DefaultPeerCloseDrainTimeout — keep them equal.
 const defaultPeerCloseDrainTimeout = 1 * time.Second
 
 type Peer struct {
@@ -50,9 +51,10 @@ func NewPeer(ctx context.Context, id domain.PeerID, nickName string, connection 
 		connection: connection,
 		outbound:   make(chan events.PeerEvent, outboundQueue),
 		logger:     logger,
-		// Умолчания при прямом конструировании (тесты): Noop-метрики и
-		// пакетный drain-дефолт; продовые значения вливает PeerFactory
-		// полем (сигнатура стабильна для white-box тестов).
+		// Defaults for direct construction (tests): Noop metrics and the
+		// package drain default; production values are injected by
+		// PeerFactory via the field (the signature stays stable for
+		// white-box tests).
 		metrics:      portmetrics.Noop(),
 		drainTimeout: defaultPeerCloseDrainTimeout,
 		writeDone:    make(chan struct{}),
@@ -89,15 +91,16 @@ func (p *Peer) Stop() error {
 	var err error
 	p.stopOnce.Do(func() {
 		p.cancel()
-		// Drain-фаза (P30): кадры, закоммиченные в outbound до Stop,
-		// получают попытку Send до conn.Close — write-loop сливает
-		// очередь и замыкает writeDone. Ждать bounded (drainTimeout):
-		// по дедлайну идём на force close, прерывающий даже
-		// заблокированный Send. 0 — drain выключен (прежнее поведение).
-		// Отдельный writeDone обязателен: ждать весь wg до conn.Close
-		// нельзя — read-loop висит в Receive() до close (deadlock).
-		// Stop без Start: write-loop не запущен, writeDone не замкнётся
-		// никогда — drain-ожидание пропускаем по started-флагу.
+		// Drain phase (P30): frames committed to outbound before Stop get
+		// a Send attempt before conn.Close — the write loop flushes the
+		// queue and closes writeDone. Wait bounded (drainTimeout): on
+		// deadline we go for a force close that interrupts even a blocked
+		// Send. 0 — drain disabled (previous behavior). A separate
+		// writeDone is mandatory: the whole wg cannot be waited before
+		// conn.Close — the read loop hangs in Receive() until close
+		// (deadlock). Stop without Start: the write loop is not running,
+		// writeDone would never close — the drain wait is skipped via
+		// the started flag.
 		if p.drainTimeout > 0 && p.started.Load() {
 			timer := time.NewTimer(p.drainTimeout)
 			select {
@@ -108,7 +111,7 @@ func (p *Peer) Stop() error {
 		}
 		err = p.connection.Close()
 		p.wg.Wait()
-		// outbound не закрываем: tryDeliver-продюсеры вне p.wg → send-on-closed race (ADR 0003).
+		// outbound is not closed: tryDeliver producers are outside p.wg → send-on-closed race (ADR 0003).
 	})
 	return err
 }
@@ -133,7 +136,7 @@ func processIncomingEvents(peer *Peer, sink realtime.EventSink) {
 				continue
 			}
 			peer.logger.Error("error delivering room event", "error", err)
-			// Фатальная ошибка доставки — ускоряем cleanup соединения.
+			// Fatal delivery error — speed up the connection cleanup.
 			_ = peer.connection.Close()
 			return
 		}
@@ -142,17 +145,17 @@ func processIncomingEvents(peer *Peer, sink realtime.EventSink) {
 
 func processOutgoingEvents(peer *Peer) {
 	defer peer.wg.Done()
-	// writeDone замыкается при выходе из любой ветки — Stop ждёт его как
-	// границу drain-фазы (весь wg ждать нельзя до conn.Close).
+	// writeDone is closed on exit from any branch — Stop waits on it as
+	// the drain-phase boundary (the whole wg cannot be waited before
+	// conn.Close).
 	defer close(peer.writeDone)
 	for {
 		select {
 		case <-peer.ctx.Done():
-			// Drain-фаза (P30): ctx отменён — продюсеры Deliver теперь
-			// фейлятся; выгребаем остаток outbound до пустоты и выходим.
-			// Sweep-повтор после наблюдения пустоты не нужен: Deliver,
-			// гонящийся со Stop, — зафиксированная граница контракта
-			// (unspecified).
+			// Drain phase (P30): ctx is cancelled — Deliver producers now
+			// fail; scoop out the outbound remainder until empty and exit.
+			// No re-sweep after observing empty is needed: a Deliver racing
+			// with Stop is a fixed contract boundary (unspecified).
 			for {
 				select {
 				case peerEvent := <-peer.outbound:
@@ -171,18 +174,19 @@ func processOutgoingEvents(peer *Peer) {
 	}
 }
 
-// sendFrame пишет один кадр на соединение; false — conn мёртв/ошибка
-// записи, write-loop должен выйти (общий путь и для drain-фазы).
+// sendFrame writes one frame to the connection; false — the conn is
+// dead or a write error occurred, the write loop must exit (the common
+// path for the drain phase too).
 func sendFrame(peer *Peer, peerEvent events.PeerEvent) bool {
-	// Gauge-сэмпл глубины после dequeue (приближение, см. порт).
+	// Gauge sample of depth after dequeue (approximation, see the port).
 	peer.metrics.PeerOutboundDepth(len(peer.outbound))
 	if err := peer.connection.Send(peerEvent.Frame); err != nil {
-		// Ошибка записи — соединение мертво (закрыт извне, сетевой
-		// сбой): продолжать бессмысленно — закрываем и выходим,
-		// иначе Error логируется на каждый кадр очереди.
-		// Если соединение уже помечено неживым — это ожидаемый
-		// teardown (evict/leave/Stop закрыл conn раньше кадра),
-		// не сбой: Debug вместо Error и без счётчика send-ошибок.
+		// Write error — the connection is dead (closed externally,
+		// network failure): continuing is pointless — close and exit,
+		// otherwise Error is logged for every queued frame. If the
+		// connection is already marked dead — this is expected teardown
+		// (evict/leave/Stop closed the conn before the frame), not a
+		// failure: Debug instead of Error and no send-error counter.
 		if peer.connection.IsAlive() {
 			peer.metrics.PeerSendError()
 			peer.logger.Error("error sending frame, closing connection", "error", err)
@@ -203,12 +207,13 @@ func (p *Peer) tryDeliver(ev events.PeerEvent) error {
 	case <-p.ctx.Done():
 		return fmt.Errorf("peer stopped: %d: %w", p.id, p.ctx.Err())
 	case p.outbound <- ev:
-		// Gauge-сэмпл глубины после enqueue (приближение, см. порт).
+		// Gauge sample of depth after enqueue (approximation, see the port).
 		p.metrics.PeerOutboundDepth(len(p.outbound))
-		// Гонка со Stop: ctx мог отмениться между проверкой выше и
-		// enqueue — кадр в очереди, но write-loop уже мог увидеть её
-		// пустой и выйти (unspecified по контракту порта). Честный
-		// «peer stopped» вместо nil за кадр, который может не уйти.
+		// Race with Stop: ctx could be cancelled between the check above
+		// and enqueue — the frame is queued, but the write loop may have
+		// already seen it empty and exited (unspecified per the port
+		// contract). An honest "peer stopped" instead of nil for a frame
+		// that may not go out.
 		if err := p.ctx.Err(); err != nil {
 			return fmt.Errorf("peer stopped: %d: %w", p.id, err)
 		}

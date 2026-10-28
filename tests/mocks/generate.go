@@ -1,6 +1,6 @@
-// Package mocks — сгенерированные mockgen-дублёры портов (см. README в этой папке).
+// Package mocks — mockgen-generated doubles of the ports (see README in this folder).
 //
-// Перегенерация из корня модуля:
+// Regenerate from the module root:
 //
 //	go generate ./tests/mocks/...
 package mocks

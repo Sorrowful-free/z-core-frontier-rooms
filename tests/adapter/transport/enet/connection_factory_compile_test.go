@@ -10,8 +10,8 @@ import (
 	portenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/enet"
 )
 
-// Compile-assertion: реализация удовлетворяет port-интерфейсу под enet+cgo,
-// где portenet.Peer — libenet.Peer.
+// Compile-time assertion: the implementation satisfies the port interface
+// under enet+cgo, where portenet.Peer is libenet.Peer.
 var _ portenet.EnetConnectionFactory = (*adapterenet.EnetConnectionFactory)(nil)
 
 type discardLogger struct{}
@@ -22,8 +22,9 @@ func (discardLogger) Debug(string, ...any) {}
 func (discardLogger) Warn(string, ...any)  {}
 func (discardLogger) Fatal(string, ...any) {}
 
-// Поведенческий smoke cgo-ветки: nil-peer допустим (libenet.Peer — интерфейс);
-// Send/Ping на nil-peer не трогают libenet (alive-флаг / nil-check в EnetConnection).
+// Behavioral smoke of the cgo branch: a nil peer is allowed (libenet.Peer
+// is an interface); Send/Ping on a nil peer do not touch libenet
+// (alive-flag / nil-check in EnetConnection).
 func TestEnetConnectionFactoryCreateConnection(t *testing.T) {
 	t.Parallel()
 

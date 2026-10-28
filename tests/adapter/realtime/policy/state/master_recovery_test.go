@@ -20,13 +20,13 @@ import (
 
 var errElectionFailed = errors.New("election failed")
 
-// memberGetPeerFails — сценарий падений GetPeer(member): решает по номеру
-// вызова (1-based), падать ли этому вызову. Порядок вызовов на member внутри
-// одного patch-тика: scan в pruneStalePeers (1), election (2), assign (3);
-// дальше — recovery-тики / lazy re-elect по RPC.
+// memberGetPeerFails — a GetPeer(member) failure scenario: decides by the
+// call number (1-based) whether this call fails. The order of member calls
+// inside one patch tick: scan in pruneStalePeers (1), election (2), assign
+// (3); after that — recovery ticks / lazy re-elect on RPC.
 type memberGetPeerFails func(call int) bool
 
-// failGetPeerOnCalls — падать на перечисленных вызовах GetPeer(member).
+// failGetPeerOnCalls — fail on the listed GetPeer(member) calls.
 func failGetPeerOnCalls(calls ...int) memberGetPeerFails {
 	bad := make(map[int]struct{}, len(calls))
 	for _, c := range calls {
@@ -38,16 +38,16 @@ func failGetPeerOnCalls(calls ...int) memberGetPeerFails {
 	}
 }
 
-// failGetPeerAfter — первые okCalls вызовов проходят, все последующие падают
-// (latch: election не восстанавливается никогда).
+// failGetPeerAfter — the first okCalls calls succeed, all subsequent ones
+// fail (a latch: the election never recovers).
 func failGetPeerAfter(okCalls int) memberGetPeerFails {
 	return func(call int) bool { return call > okCalls }
 }
 
-// nilMasterRoom — политика + mock room в состоянии «post-failed-election»:
-// в state остаётся живой member, но p.master == nil (election на прошлом
-// тике упал). sent — все PeerEvent, прошедшие через room.Send.
-// shadow — виртуальный wire-наблюдатель, подпитанный sent.
+// nilMasterRoom — a policy + mock room in the "post-failed-election"
+// state: the state keeps a live member, but p.master == nil (the election
+// failed on the previous tick). sent — all PeerEvent that passed through
+// room.Send. shadow — a virtual wire observer fed by sent.
 type nilMasterFixture struct {
 	policy *statepolicy.StateRoomPolicy
 	room   *mocks.MockRoom
@@ -56,9 +56,10 @@ type nilMasterFixture struct {
 	shadow *shadowView
 }
 
-// setupNilMasterRoom вгоняет политику в nil-master состояние: master(1)
-// становится stale (ушёл из room, остался в state), а election на member(2)
-// внутри pruneStalePeers/dispatch падает по сценарию failMember.
+// setupNilMasterRoom drives the policy into the nil-master state:
+// master(1) becomes stale (left the room, stayed in state), and the
+// election on member(2) inside pruneStalePeers/dispatch fails per the
+// failMember scenario.
 func setupNilMasterRoom(t *testing.T, failMember memberGetPeerFails) *nilMasterFixture {
 	t.Helper()
 
@@ -66,8 +67,9 @@ func setupNilMasterRoom(t *testing.T, failMember memberGetPeerFails) *nilMasterF
 	room := mocks.NewMockRoom(ctrl)
 
 	var sent []events.PeerEvent
-	// Виртуальный наблюдатель материализует wire-трафик с конца setup —
-	// seedится на post-tick состояние (master вычищен, election упал).
+	// The virtual observer materializes the wire traffic from the end of
+	// setup — it is seeded on the post-tick state (master pruned, election
+	// failed).
 	shadow := newShadowView(codec.NewRoomStateCodec())
 	feedShadow := false
 	room.EXPECT().GetID().Return(domain.RoomID(90)).AnyTimes()
@@ -118,8 +120,8 @@ func setupNilMasterRoom(t *testing.T, failMember memberGetPeerFails) *nilMasterF
 		return member, nil
 	}).AnyTimes()
 
-	// Тик: master вычищен как stale, election на member падает → p.master = nil,
-	// в state остаётся только member.
+	// Tick: master is pruned as stale, the election on member fails →
+	// p.master = nil, only member remains in the state.
 	if err := policy.OnTickPatchState(); err != nil {
 		t.Fatalf("OnTickPatchState (nil-master setup): %v", err)
 	}
@@ -132,12 +134,12 @@ func setupNilMasterRoom(t *testing.T, failMember memberGetPeerFails) *nilMasterF
 	return &nilMasterFixture{policy: policy, room: room, member: member, sent: &sent, shadow: shadow}
 }
 
-// Комната без master (election упал на прошлом тике) обязана переизбрать
-// master на следующем patch-тике, пока есть живые peers.
+// A room without a master (the election failed on the previous tick) must
+// re-elect a master on the next patch tick as long as live peers remain.
 func TestOnTickPatchState_NilMasterRoom_ReelectsOnNextTick(t *testing.T) {
 	t.Parallel()
 
-	// Election на первом тике падает (вызов 2 — elect после scan), дальше member снова доступен.
+	// The election on the first tick fails (call 2 — elect after scan), afterwards member is reachable again.
 	nm := setupNilMasterRoom(t, failGetPeerOnCalls(2))
 
 	if err := nm.policy.OnTickPatchState(); err != nil {
@@ -161,8 +163,8 @@ func TestOnTickPatchState_NilMasterRoom_ReelectsOnNextTick(t *testing.T) {
 	assertStrongInvariants(t, nm.shadow, nm.room)
 }
 
-// RPC→master при отсутствующем master: ленивое переизбрание по живому state
-// и доставка избранному peer вместо ErrNoMaster.
+// RPC→master with no master present: a lazy re-election from the live
+// state and delivery to the elected peer instead of ErrNoMaster.
 func TestOnMessage_RpcTargetMaster_NilMaster_LazyReelectsAndDelivers(t *testing.T) {
 	t.Parallel()
 
@@ -186,8 +188,8 @@ func TestOnMessage_RpcTargetMaster_NilMaster_LazyReelectsAndDelivers(t *testing.
 	assertStrongInvariants(t, nm.shadow, nm.room)
 }
 
-// Комната с peers, но без master и с продолжающим падать election:
-// RPC→master обязан вернуть ErrNoMaster (wire — OpInRoomNoMaster).
+// A room with peers but no master and a still-failing election:
+// RPC→master must return ErrNoMaster (wire — OpInRoomNoMaster).
 func TestOnMessage_RpcTargetMaster_NilMasterElectionFails_ReturnsErrNoMaster(t *testing.T) {
 	t.Parallel()
 
@@ -209,9 +211,9 @@ func TestOnMessage_RpcTargetMaster_NilMasterElectionFails_ReturnsErrNoMaster(t *
 	assertStrongInvariants(t, nm.shadow, nm.room)
 }
 
-// Пустая комната без master: переизбирать не из кого → ErrNoMaster.
-// (shadow-наблюдатель не подключается: он стал бы первым peer и master —
-// ломал бы premissу «комната без master».)
+// An empty room without a master: no one to re-elect → ErrNoMaster.
+// (the shadow observer is not attached: it would become the first peer and
+// the master — it would break the premise "a room without a master".)
 func TestOnMessage_RpcTargetMaster_EmptyRoom_ReturnsErrNoMaster(t *testing.T) {
 	t.Parallel()
 
@@ -230,11 +232,11 @@ func TestOnMessage_RpcTargetMaster_EmptyRoom_ReturnsErrNoMaster(t *testing.T) {
 	}
 }
 
-// Election skip-stale: кандидат, которого уже нет в room (GetPeer →
-// ErrPeerNotFound), пропускается — выборы идут среди живых, а не падают.
-// Stale-запись в state (peer в state, но не в room) с реальной Room
-// не получить — leave вычищает state атомарно с изъятием из r.peers;
-// фикстура на mock room.
+// Election skip-stale: a candidate that is no longer in the room (GetPeer
+// → ErrPeerNotFound) is skipped — the election proceeds among the live
+// peers instead of failing. A stale entry in the state (peer in state but
+// not in room) cannot be produced with a real Room — leave cleans the
+// state atomically with the removal from r.peers; fixture on a mock room.
 func TestOnLeave_ElectionSkipsStaleCandidate_ElectsLivePeer(t *testing.T) {
 	t.Parallel()
 
@@ -268,8 +270,8 @@ func TestOnLeave_ElectionSkipsStaleCandidate_ElectsLivePeer(t *testing.T) {
 		t.Fatalf("OnJoin survivor: %v", err)
 	}
 
-	// Master уходит: election видит кандидатов {2 (stale в state), 3 (живой)} —
-	// stale пропускается, master достаётся survivor.
+	// The master leaves: the election sees candidates {2 (stale in state),
+	// 3 (live)} — stale is skipped, master goes to survivor.
 	if err := policy.OnLeave(master); err != nil {
 		t.Fatalf("OnLeave master: %v (stale candidate must be skipped, not fail election)", err)
 	}
@@ -284,10 +286,10 @@ func TestOnLeave_ElectionSkipsStaleCandidate_ElectsLivePeer(t *testing.T) {
 	}
 }
 
-// Все кандидаты election — stale: пустые выборы — не ошибка, master
-// сбрасывается, никакому peer IsMaster-флаг не выставляется. Masterless-
-// эпизод не липкий: следующий join + patch-тик вычищает stale и избирает
-// joiner'а.
+// All election candidates are stale: an empty election is not an error,
+// the master is reset, no peer gets the IsMaster flag. The masterless
+// episode is not sticky: the next join + patch tick prunes the stale
+// entries and elects the joiner.
 func TestOnLeave_ElectionAllStale_ResetsMasterWithoutFlags(t *testing.T) {
 	t.Parallel()
 
@@ -318,7 +320,7 @@ func TestOnLeave_ElectionAllStale_ResetsMasterWithoutFlags(t *testing.T) {
 		t.Fatalf("OnJoin stale: %v", err)
 	}
 
-	// Единственный оставшийся кандидат stale → пустые выборы (не ошибка).
+	// The only remaining candidate is stale → an empty election (not an error).
 	if err := policy.OnLeave(master); err != nil {
 		t.Fatalf("OnLeave master: %v (all-stale election must be empty, not error)", err)
 	}
@@ -334,8 +336,9 @@ func TestOnLeave_ElectionAllStale_ResetsMasterWithoutFlags(t *testing.T) {
 		}
 	}
 
-	// Joiner входит в masterless-окно (join не переизбирает master в
-	// непустой комнате): его full-state — masterless вид.
+	// The joiner enters during the masterless window (join does not
+	// re-elect a master in a non-empty room): its full state is a
+	// masterless view.
 	if err := policy.OnJoin(joiner); err != nil {
 		t.Fatalf("OnJoin joiner: %v", err)
 	}
@@ -353,7 +356,7 @@ func TestOnLeave_ElectionAllStale_ResetsMasterWithoutFlags(t *testing.T) {
 		}
 	}
 
-	// Следующий patch-тик вычищает stale и избирает joiner'а.
+	// The next patch tick prunes the stale entry and elects the joiner.
 	sent = nil
 	if err := policy.OnTickPatchState(); err != nil {
 		t.Fatalf("OnTickPatchState: %v", err)
@@ -372,8 +375,9 @@ func TestOnLeave_ElectionAllStale_ResetsMasterWithoutFlags(t *testing.T) {
 	}
 }
 
-// newMockRoomPolicy — политика поверх mock room для stale/edge-сценариев,
-// недостижимых через реальную Room (leave атомарен с изъятием из r.peers).
+// newMockRoomPolicy — a policy on top of a mock room for stale/edge
+// scenarios that are unreachable through a real Room (leave is atomic with
+// the removal from r.peers).
 func newMockRoomPolicy(t *testing.T, room *mocks.MockRoom) *statepolicy.StateRoomPolicy {
 	t.Helper()
 	policy := statepolicy.NewStateRoomPolicy(
@@ -404,14 +408,15 @@ func decodeLastFullState(t *testing.T, sent []events.PeerEvent) *state.RoomState
 	return got
 }
 
-// assignMaster validate-first: GetPeer избранного падает уже после победы в
-// election — IsMaster-флаги в state.Peers при этом не выставляются
-// (state не рекламирует master, которого нет у policy).
+// assignMaster validate-first: GetPeer of the electee fails after the
+// election was already won — the IsMaster flags in state.Peers must not be
+// set in that case (the state must not advertise a master the policy does
+// not have).
 func TestOnTickPatchState_AssignMasterFails_NoIsMasterFlagDivergence(t *testing.T) {
 	t.Parallel()
 
-	// Setup-тик: scan(1) и elect(2) проходят, assign(3) падает → p.master=nil,
-	// но member не должен получить IsMaster=true в state.
+	// Setup tick: scan(1) and elect(2) succeed, assign(3) fails →
+	// p.master=nil, but member must not get IsMaster=true in the state.
 	nm := setupNilMasterRoom(t, failGetPeerOnCalls(3))
 
 	if err := nm.policy.OnTickFullState(); err != nil {

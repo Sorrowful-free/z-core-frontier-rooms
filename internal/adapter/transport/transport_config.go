@@ -6,49 +6,49 @@ import (
 )
 
 const (
-	// DefaultMaxIncomingFrameBytes — 256 KiB; WS SetReadLimit и ENet packet check.
+	// DefaultMaxIncomingFrameBytes — 256 KiB; WS SetReadLimit and ENet packet check.
 	DefaultMaxIncomingFrameBytes = 256 * 1024
 
 	DefaultRoomIncomingQueueSize = 128
 	DefaultPeerOutboundQueueSize = 128
 	DefaultEnetIncomingQueueSize = 256
 
-	// DefaultPeerIdleTimeout — окно живости IsAlive для WS.
+	// DefaultPeerIdleTimeout — IsAlive liveness window for WS.
 	DefaultPeerIdleTimeout = 30 * time.Second
-	// DefaultPeerIdleSweepInterval — период фонового sweep idle peer'ов.
+	// DefaultPeerIdleSweepInterval — background idle peer sweep period.
 	DefaultPeerIdleSweepInterval = 10 * time.Second
 
-	// DefaultWSWriteDeadline — дедлайн записи WS-кадра (Send).
+	// DefaultWSWriteDeadline — write deadline for a WS frame (Send).
 	DefaultWSWriteDeadline = 10 * time.Second
 
-	// DefaultPeerCloseDrainTimeout — потолок drain'а peer.outbound при
-	// Stop: закоммиченные до Stop кадры получают попытку Send до
-	// conn.Close (P30). Дубль-партнёр realtime.defaultPeerCloseDrainTimeout
-	// (дефолт прямого NewPeer в тестах) — держать равными.
+	// DefaultPeerCloseDrainTimeout — cap on draining peer.outbound at
+	// Stop: frames committed before Stop get a Send attempt before
+	// conn.Close (P30). Twin of realtime.defaultPeerCloseDrainTimeout
+	// (default of direct NewPeer in tests) — keep them equal.
 	DefaultPeerCloseDrainTimeout = 1 * time.Second
 )
 
-// TransportConfig — лимиты data plane (WS + ENet).
+// TransportConfig — data plane limits (WS + ENet).
 type TransportConfig struct {
-	// MaxIncomingFrameBytes — макс. размер входящего кадра (OpCode + payload) и ENet admit-пакета; 0 — без лимита.
+	// MaxIncomingFrameBytes — max incoming frame size (OpCode + payload) and ENet admit packet; 0 — no limit.
 	MaxIncomingFrameBytes int
-	// RoomIncomingQueueSize — буфер room.incoming; 0 — unbuffered; при переполнении — drop кадра.
+	// RoomIncomingQueueSize — room.incoming buffer; 0 — unbuffered; on overflow — frame drop.
 	RoomIncomingQueueSize int
-	// PeerOutboundQueueSize — буфер peer.outbound; 0 — unbuffered; при переполнении — drop кадра.
+	// PeerOutboundQueueSize — peer.outbound buffer; 0 — unbuffered; on overflow — frame drop.
 	PeerOutboundQueueSize int
-	// EnetIncomingQueueSize — буфер ENet session → peer; при переполнении — drop (host loop не блокируется).
+	// EnetIncomingQueueSize — ENet session → peer buffer; on overflow — drop (host loop is not blocked).
 	EnetIncomingQueueSize int
-	// PeerIdleTimeout — окно живости для IsAlive; <= 0 — механизм полностью отключён.
+	// PeerIdleTimeout — liveness window for IsAlive; <= 0 — mechanism fully disabled.
 	PeerIdleTimeout time.Duration
-	// PeerIdleSweepInterval — период фонового sweep idle peer'ов; <= 0 — не запускать.
+	// PeerIdleSweepInterval — background idle peer sweep period; <= 0 — do not start.
 	PeerIdleSweepInterval time.Duration
-	// WSWriteDeadline — дедлайн записи WS-кадра (SetWriteDeadline перед WriteMessage); 0 — без дедлайна.
+	// WSWriteDeadline — write deadline for a WS frame (SetWriteDeadline before WriteMessage); 0 — no deadline.
 	WSWriteDeadline time.Duration
-	// PeerCloseDrainTimeout — потолок drain'а peer.outbound при peer.Stop (P30); 0 — drain отключён (Stop не ждёт write-loop).
+	// PeerCloseDrainTimeout — cap on draining peer.outbound at peer.Stop (P30); 0 — drain disabled (Stop does not wait for the write loop).
 	PeerCloseDrainTimeout time.Duration
 }
 
-// Validate проверяет допустимость значений.
+// Validate checks that values are permissible.
 func (c TransportConfig) Validate() error {
 	if c.MaxIncomingFrameBytes < 0 {
 		return fmt.Errorf("transport config: max incoming frame bytes must be >= 0")

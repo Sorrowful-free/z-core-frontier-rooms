@@ -11,16 +11,17 @@ import (
 	libenet "github.com/codecat/go-enet"
 )
 
-// EnetConnection - transport.Connection поверх libenet peer'а. Все libenet-
-// вызовы peer'а идут командами в очередь HostLoop владеющего host'а
-// (hostloop_cgo.go): потребители transport.Connection libenet не видят,
-// глобальной сериализации нет - только per-host.
+// EnetConnection - transport.Connection on top of a libenet peer. All libenet
+// peer calls go as commands into the queue of the owning host's HostLoop
+// (hostloop_cgo.go): consumers of transport.Connection never see libenet;
+// there is no global serialization - only per-host.
 //
-// Send/Close - async enqueue: им не нужен результат, а FIFO-очередь сохраняет
-// wire-порядок кадров и финального DisconnectLater. Ping - blocking Call:
-// зовётся с room/policy-горутин, результат нужен синхронно, а ожидание безопасно
-// - executor исполняет только ограниченные по времени libenet-вызовы и не ждёт
-// доменных горутин (см. инвариант в hostloop_cgo.go).
+// Send/Close - async enqueue: they need no result, and the FIFO queue
+// preserves the wire order of frames and the final DisconnectLater. Ping -
+// blocking Call: invoked from room/policy goroutines, the result is needed
+// synchronously, and waiting is safe - the executor runs only time-bounded
+// libenet calls and never waits on domain goroutines (see the invariant in
+// hostloop_cgo.go).
 type EnetConnection struct {
 	loop      *HostLoop
 	peer      libenet.Peer
@@ -50,10 +51,10 @@ func (c *EnetConnection) Send(frame domain.Frame) error {
 	}
 	payload := append([]byte{byte(frame.OpCode)}, frame.Payload...)
 	return c.loop.enqueue(func() {
-		// go-enet quirk: SendBytes → SendPacket игнорирует код возврата
-		// enet_peer_send - отправка disconnecting/zombie peer молча падает
-		// (nil error). Страховка - alive-флаг выше; разрыв всплывёт как
-		// EventDisconnect → LeaveRoom на стороне host loop.
+		// go-enet quirk: SendBytes → SendPacket ignores the return code of
+		// enet_peer_send - sending to a disconnecting/zombie peer silently
+		// fails (nil error). The safeguard is the alive flag above; the break
+		// will surface as EventDisconnect → LeaveRoom on the host loop side.
 		_ = c.peer.SendBytes(payload, 0, packetFlagsFromDelivery(frame.Delivery))
 	})
 }
@@ -81,20 +82,21 @@ func (c *EnetConnection) Ping() int64 {
 func (c *EnetConnection) Close() error {
 	c.closeOnce.Do(func() {
 		c.alive.Store(false)
-		// incoming не закрываем: peerSession.deliver шлёт из host-цикла вне нашего lifecycle → send-on-closed race (ADR 0003).
+		// incoming is not closed: peerSession.deliver sends from the host loop outside our lifecycle → send-on-closed race (ADR 0003).
 		close(c.closed)
 		if c.peer != nil && c.loop != nil {
-			// Graceful disconnect: DisconnectLater ждёт, пока queued outgoing-пакеты
-			// (join reject, последние state-фреймы) уйдут на провод, и только потом шлёт
-			// disconnect. DisconnectNow ресетил бы peer и выбрасывал очередь; plain
-			// Disconnect тоже не гарантирует доставку уже стоящих в очереди команд.
+			// Graceful disconnect: DisconnectLater waits until queued outgoing
+			// packets (join reject, final state frames) go out on the wire, and
+			// only then sends disconnect. DisconnectNow would reset the peer and
+			// drop the queue; plain Disconnect also does not guarantee delivery
+			// of commands already queued.
 			_ = c.loop.enqueue(func() { c.peer.DisconnectLater(0) })
 		}
 	})
 	return nil
 }
 
-// IsAlive - false после Close(); zombie на ENet вычищает собственный таймаут транспорта (EventDisconnect → LeaveRoom).
+// IsAlive - false after Close(); on ENet zombies are reaped by the transport's own timeout (EventDisconnect → LeaveRoom).
 func (c *EnetConnection) IsAlive() bool {
 	return c.alive.Load()
 }

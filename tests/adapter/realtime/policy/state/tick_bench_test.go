@@ -21,8 +21,8 @@ func benchJoinPeers(b *testing.B, h *benchHarness, peerCount int) []*testpeer.Pe
 	return peers
 }
 
-// benchSeedEntities — entities через FullInput-путь master'а: state
-// наполняется как в проде (стоимость diff'а зависит от |state|).
+// benchSeedEntities — entities via the master's FullInput path: the state
+// fills up as in production (the diff cost depends on |state|).
 func benchSeedEntities(b *testing.B, h *benchHarness, master *testpeer.Peer, n int) {
 	b.Helper()
 	entities := state.NewMapState[state.EntityID, state.EntityState]()
@@ -53,10 +53,10 @@ func benchSeedEntities(b *testing.B, h *benchHarness, master *testpeer.Peer, n i
 	}
 }
 
-// Грязный тик (tick-coalesced эмиссия, P34): каждую итерацию одна
-// input-мутация (вне таймера — это не объект замера) → тик делает
-// diff + encode + broadcast. entities-сценарий показывает рост
-// стоимости diff'а от |state|.
+// Dirty tick (tick-coalesced emission, P34): each iteration one input
+// mutation (outside the timer — it is not the measured object) → the tick
+// does diff + encode + broadcast. The entities scenario shows the diff
+// cost growing with |state|.
 func BenchmarkOnTickPatchState(b *testing.B) {
 	for _, peerCount := range []int{8, 64} {
 		for _, entCount := range []int{0, 200} {
@@ -104,7 +104,7 @@ func BenchmarkOnTickPatchState_NoChanges(b *testing.B) {
 		b.Run(benchfixtures.PeerCountLabel(peerCount), func(b *testing.B) {
 			h := newBenchHarness(b, domain.RoomID(2), 128)
 			benchJoinPeers(b, h, peerCount)
-			// Converge: первый тик после join выносит накопленную join-дельту.
+			// Converge: the first tick after the join flushes the accumulated join delta.
 			if err := h.policy.OnTickPatchState(); err != nil {
 				b.Fatal(err)
 			}

@@ -12,6 +12,6 @@ type RoomRegistry interface {
 	CreateRoom(ctx context.Context, id domain.RoomID, capacity int, attributes domain.RoomAttributes) (realtime.Room, error)
 	DeleteRoom(ctx context.Context, id domain.RoomID) error
 	GetList(ctx context.Context) ([]realtime.Room, error)
-	// Shutdown останавливает все комнаты и отменяет lifecycle-контекст реестра.
+	// Shutdown stops all rooms and cancels the registry's lifecycle context.
 	Shutdown(ctx context.Context) error
 }

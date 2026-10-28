@@ -1,9 +1,9 @@
-// Package metrics — потребительский порт телеметрии процесса (P19).
+// Package metrics — consumer-side port for process telemetry (P19).
 //
-// Плоский интерфейс типизированных сигналов (как `port/logging.Logger`):
-// компоненты сообщают события доменными глаголами, адаптер
-// (`internal/adapter/metrics`) мапит их на prometheus-метрики. Кардинальность
-// label'ов ограничена типами параметров (wire OpCode).
+// A flat interface of typed signals (like `port/logging.Logger`):
+// components report events in domain verbs, and the adapter
+// (`internal/adapter/metrics`) maps them to prometheus metrics. Label
+// cardinality is bounded by the parameter types (wire OpCode).
 package metrics
 
 import (
@@ -12,94 +12,94 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
 
-// Metrics — порт экспорта сигналов наблюдаемости. Все методы безошибочны
-// и неблокирующи с точки зрения контракта (реализация сама отвечает за
-// thread-safety; prometheus-коллекторы конкурентно-безопасны).
+// Metrics — port for exporting observability signals. All methods are
+// error-free and non-blocking by contract (the implementation itself is
+// responsible for thread-safety; prometheus collectors are concurrency-safe).
 type Metrics interface {
-	// SetActiveRooms — gauge: текущее число живых комнат в registry.
+	// SetActiveRooms — gauge: current number of live rooms in the registry.
 	SetActiveRooms(rooms int)
-	// AddActivePeers — gauge: дельта живых peer'ов суммарно по комнатам.
+	// AddActivePeers — gauge: delta of live peers summed across rooms.
 	AddActivePeers(delta int)
 
-	// PeerJoined — counter: peer вошёл в комнату (lifecycle room loop).
+	// PeerJoined — counter: peer entered a room (lifecycle room loop).
 	PeerJoined()
-	// PeerLeft — counter: peer изъят из комнаты (lifecycle room loop).
+	// PeerLeft — counter: peer removed from a room (lifecycle room loop).
 	PeerLeft()
-	// PeerDisconnected — counter: peer ушёл в reconnect grace
+	// PeerDisconnected — counter: peer entered reconnect grace
 	// (reservation.MarkDisconnected, P20).
 	PeerDisconnected()
-	// ReconnectSucceeded — counter: resume под тем же peerID завершился
-	// успехом (ReconnectRoomUseCase, P20).
+	// ReconnectSucceeded — counter: resume under the same peerID completed
+	// successfully (ReconnectRoomUseCase, P20).
 	ReconnectSucceeded()
 
-	// JoinRejected — counter: join/admit reject-кадр на wire, label —
-	// OpCode отказа (bounded: конечное множество reject-opcode'ов).
+	// JoinRejected — counter: join/admit reject frame on the wire, label —
+	// the rejection OpCode (bounded: finite set of reject opcodes).
 	JoinRejected(op domain.OpCode)
 
-	// RoomIncomingDropped — counter: кадр отброшен из переполненной
-	// очереди room.incoming (ErrQueueFull).
+	// RoomIncomingDropped — counter: frame dropped from the full
+	// room.incoming queue (ErrQueueFull).
 	RoomIncomingDropped()
-	// PeerOutboundDropped — counter: кадр отброшен из переполненной
-	// очереди peer.outbound (ErrQueueFull).
+	// PeerOutboundDropped — counter: frame dropped from the full
+	// peer.outbound queue (ErrQueueFull).
 	PeerOutboundDropped()
-	// EnetIncomingDropped — counter: кадр отброшен из переполненной
-	// очереди ENet-сессии (EnetIncomingQueueSize).
+	// EnetIncomingDropped — counter: frame dropped from the full
+	// ENet session queue (EnetIncomingQueueSize).
 	EnetIncomingDropped()
 
-	// RoomIncomingDepth — gauge: глубина очереди room.incoming.
-	// Сэмпл `len(chan)` в точках enqueue/dequeue — приближение
-	// (last-write-wins между комнатами), а не точная сумма.
+	// RoomIncomingDepth — gauge: depth of the room.incoming queue.
+	// A `len(chan)` sample at enqueue/dequeue points — an approximation
+	// (last-write-wins between rooms), not an exact sum.
 	RoomIncomingDepth(n int)
-	// PeerOutboundDepth — gauge: глубина очереди peer.outbound.
-	// Сэмпл `len(chan)` в точках enqueue/dequeue — приближение.
+	// PeerOutboundDepth — gauge: depth of the peer.outbound queue.
+	// A `len(chan)` sample at enqueue/dequeue points — an approximation.
 	PeerOutboundDepth(n int)
-	// RoomTickObserved — duration тика room loop (summary);
-	// kind — "full" | "patch" (bounded, константы в adapter/realtime).
+	// RoomTickObserved — room loop tick duration (summary);
+	// kind — "full" | "patch" (bounded, constants in adapter/realtime).
 	RoomTickObserved(kind string, d time.Duration)
-	// PeerSendError — counter: ошибка Send на живом соединении
-	// (ожидаемый teardown с !IsAlive не считается).
+	// PeerSendError — counter: Send error on a live connection
+	// (expected teardown with !IsAlive is not counted).
 	PeerSendError()
 
-	// EnetHostPeers — gauge: живые ENet-сессии на host'е; label
-	// hostID ограничен числом портов ENET_LISTEN_PORTS.
+	// EnetHostPeers — gauge: live ENet sessions on the host; the hostID
+	// label is bounded by the number of ENET_LISTEN_PORTS ports.
 	EnetHostPeers(hostID domain.HostID, peers int)
-	// EnetHostLoopQueueLatency — duration ожидания команды в очереди
-	// HostLoop (enqueue → exec, summary; агрегировано по host'ам).
+	// EnetHostLoopQueueLatency — duration of a command's wait in the
+	// HostLoop queue (enqueue → exec, summary; aggregated per host).
 	EnetHostLoopQueueLatency(d time.Duration)
 
-	// MasterElected — counter: комната получила нового master
-	// (первичное избрание и перевыборы, master_machine).
+	// MasterElected — counter: room got a new master
+	// (initial election and re-elections, master_machine).
 	MasterElected()
 
-	// ReservationReserved — counter: слот reservation занят (Reserve).
+	// ReservationReserved — counter: reservation slot taken (Reserve).
 	ReservationReserved()
-	// ReservationAdmitted — counter: слот переведён в admitted (Admit).
+	// ReservationAdmitted — counter: slot transitioned to admitted (Admit).
 	ReservationAdmitted()
-	// ReservationRevoked — counter: слот освобождён (любой реальный
-	// delete: Revoke, expired в Admit, lazy sweep просроченных).
+	// ReservationRevoked — counter: slot freed (any real delete:
+	// Revoke, expired in Admit, lazy sweep of expired ones).
 	ReservationRevoked()
-	// ReservationActiveSlots — gauge: дельта живых слотов reservation
-	// (reserve +1; каждое реальное удаление слота -1; tombstone
-	// комнаты при UnregisterRoom -len(peers)).
+	// ReservationActiveSlots — gauge: delta of live reservation slots
+	// (reserve +1; each real slot deletion -1; room tombstone on
+	// UnregisterRoom -len(peers)).
 	ReservationActiveSlots(delta int)
 
-	// OrphanAdmittedRevoked — counter: orphan admitted слотов снято
-	// за проход SweepOrphanAdmittedUseCase.
+	// OrphanAdmittedRevoked — counter: orphan admitted slots revoked
+	// per SweepOrphanAdmittedUseCase pass.
 	OrphanAdmittedRevoked(n int)
-	// IdlePeersEvicted — counter: idle peer'ов выведено за проход
-	// EvictIdlePeersUseCase.
+	// IdlePeersEvicted — counter: idle peers evicted per
+	// EvictIdlePeersUseCase pass.
 	IdlePeersEvicted(n int)
-	// SweepRan — counter: проход фонового sweep (отдельно от
+	// SweepRan — counter: background sweep pass (separate from
 	// processed); sweep — "orphan_admitted" | "idle_peers".
 	SweepRan(sweep string)
 
-	// HTTPRequestObserved — duration HTTP-запроса публичного API
-	// (histogram); route — шаблон маршрута Fiber (не raw path,
-	// кардинальность ограничена роутером), status — HTTP-код.
+	// HTTPRequestObserved — public API HTTP request duration
+	// (histogram); route — Fiber route template (not raw path,
+	// cardinality bounded by the router), status — HTTP code.
 	HTTPRequestObserved(route, method string, status int, d time.Duration)
 }
 
-// noopMetrics — реализация-заглушка: все сигналы отбрасываются.
+// noopMetrics — stub implementation: all signals are discarded.
 type noopMetrics struct{}
 
 func (noopMetrics) SetActiveRooms(int)                                     {}
@@ -128,14 +128,14 @@ func (noopMetrics) IdlePeersEvicted(int)                                   {}
 func (noopMetrics) SweepRan(string)                                        {}
 func (noopMetrics) HTTPRequestObserved(string, string, int, time.Duration) {}
 
-// Noop — заглушка Metrics: принимает и отбрасывает все сигналы.
-// Умолчание для компонентов, собранных без телеметрии (тесты).
+// Noop — Metrics stub: accepts and discards all signals.
+// Default for components built without telemetry (tests).
 func Noop() Metrics {
 	return noopMetrics{}
 }
 
-// OrNoop нормализует nil к Noop — точка nil-безопасности DI:
-// конструктор может принимать nil вместо реализации.
+// OrNoop normalizes nil to Noop — DI nil-safety point:
+// a constructor may accept nil instead of an implementation.
 func OrNoop(m Metrics) Metrics {
 	if m == nil {
 		return noopMetrics{}

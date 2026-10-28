@@ -5,8 +5,8 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// newRateLimitMiddleware — общий конструктор per-IP rate limit middleware;
-// check — один из limits.AllowHTTP* методов.
+// newRateLimitMiddleware — shared constructor for per-IP rate limit middleware;
+// check is one of the limits.AllowHTTP* methods.
 func newRateLimitMiddleware(check func(clientIP string) bool) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		if !check(c.IP()) {

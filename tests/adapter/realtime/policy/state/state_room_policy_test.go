@@ -51,9 +51,10 @@ func TestOnJoin_FirstPeerGetsFullStateWithRoomMetadata(t *testing.T) {
 	}
 }
 
-// Tick-coalesced эмиссия (P34): join-дельта остальным уходит не сразу, а
-// ближайшим patch-тиком — универсальным broadcast всем, джойнер получает
-// эхо Added[себя] поверх уже полученного full (мягкий apply — upsert).
+// Tick-coalesced emission (P34): the join delta to the others goes out not
+// immediately but on the next patch tick — a universal broadcast to all;
+// the joiner gets an echo of Added[self] on top of the full state it
+// already received (soft apply — upsert).
 func TestOnJoin_JoinDeltaReachesAllPeersOnNextTick(t *testing.T) {
 	t.Parallel()
 
@@ -62,7 +63,7 @@ func TestOnJoin_JoinDeltaReachesAllPeersOnNextTick(t *testing.T) {
 	client := testpeer.New(2, "client")
 
 	mustJoin(t, h.room, master)
-	// Converge: join-дельта master'а уходит первым тиком, prevState догоняет.
+	// Converge: the master's join delta goes out on the first tick, prevState catches up.
 	if err := h.policy.OnTickPatchState(); err != nil {
 		t.Fatalf("OnTickPatchState converge: %v", err)
 	}
@@ -72,7 +73,7 @@ func TestOnJoin_JoinDeltaReachesAllPeersOnNextTick(t *testing.T) {
 		t.Fatalf("Join client: %v", err)
 	}
 
-	// Immediate-эмиссии для остальных нет: только full state джойнеру.
+	// No immediate emission to the others: only the full state to the joiner.
 	if got := master.Snapshot(); len(got) != 0 {
 		t.Fatalf("master events after join = %v, want none until tick", testpeer.Opcodes(got))
 	}
@@ -100,8 +101,8 @@ func TestOnJoin_JoinDeltaReachesAllPeersOnNextTick(t *testing.T) {
 	}
 }
 
-// Per-message эмиссии нет: OnMessage только мутирует state, дельта
-// доезжает patch-тиком всем — включая master-отправителя (эхо).
+// No per-message emission: OnMessage only mutates the state, the delta
+// reaches everyone on a patch tick — including the master-sender (echo).
 func TestOnMessage_FullEntities_PatchReachesAllPeersOnTick(t *testing.T) {
 	t.Parallel()
 
@@ -256,8 +257,9 @@ func TestOnMessage_PatchEntities_UpdatesExistingEntity(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("OnMessage full entities seed: %v", err)
 	}
-	// Converge: seed-дельта уходит тиком Added, иначе следующий тик унесёт
-	// её же — Updated-патч клиенты увидят только после этой эмиссии.
+	// Converge: the seed delta goes out on the tick as Added, otherwise the
+	// next tick carries it again — clients will see the Updated patch only
+	// after this emission.
 	mustConverge(t, h)
 	master.Clear()
 	client.Clear()
@@ -359,7 +361,7 @@ func TestOnTickPatchState_NoChangesNoSend(t *testing.T) {
 	master := testpeer.New(1, "master")
 	client := testpeer.New(2, "client")
 	mustJoin(t, h.room, master, client)
-	// Converge: первый тик после join несёт накопленную join-дельту.
+	// Converge: the first tick after the join carries the accumulated join delta.
 	mustConverge(t, h)
 	master.Clear()
 	client.Clear()
@@ -504,8 +506,8 @@ func TestOnMessage_UnknownOpcode_ReturnsError(t *testing.T) {
 	}
 }
 
-// Input-дельта клиента доезжает patch-тиком всем — отправитель тоже
-// получает эхо своего патча (универсальный broadcast).
+// The client's input delta reaches everyone on a patch tick — the sender
+// also gets an echo of its own patch (universal broadcast).
 func TestOnMessage_PatchInput_PatchReachesAllPeersOnTick(t *testing.T) {
 	t.Parallel()
 
@@ -605,9 +607,9 @@ func mustJoin(t *testing.T, room *realtime.Room, peers ...*testpeer.Peer) {
 	}
 }
 
-// mustConverge — один patch-тик: выносит накопленную дельту (join/leave/
-// message-мутации раз отправки теперь только на тике, P34) и коммитит
-// prevState — дальше каждый тик несёт только свежую дельту.
+// mustConverge — one patch tick: flushes the accumulated delta (join/leave/
+// message mutations, since sends now only happen on the tick, P34) and
+// commits prevState — afterwards each tick carries only the fresh delta.
 func mustConverge(t *testing.T, h *harness) {
 	t.Helper()
 	if err := h.policy.OnTickPatchState(); err != nil {
@@ -615,8 +617,8 @@ func mustConverge(t *testing.T, h *harness) {
 	}
 }
 
-// pingUnknown — неинициализированный ping (RTT ещё не измерен): в election
-// такой кандидат проигрывает любому peer с известным ping'ом.
+// pingUnknown — an uninitialized ping (RTT not yet measured): in an
+// election such a candidate loses to any peer with a known ping.
 const pingUnknown = int64(-1)
 
 func mustEncodeRPC(t *testing.T, target state.RpcTarget, peerID domain.PeerID) []byte {

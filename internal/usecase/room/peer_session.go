@@ -5,11 +5,11 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 )
 
-// PeerSession — session-handle admitted-соединения (P20): возвращается из
-// admit-потоков (join/reconnect), handler несёт его до teardown.
-// DisconnectPeer удаляет из комнаты именно этот peer-объект — identity-check
-// в lifecycle гарантирует, что stale teardown старого conn после Replace
-// не выкинет нового peer'а (ErrPeerStale).
+// PeerSession — session handle of an admitted connection (P20): returned
+// by the admit flows (join/reconnect), the handler carries it until
+// teardown. DisconnectPeer removes exactly this peer object from the room —
+// the lifecycle identity check guarantees that a stale teardown of the old
+// conn after Replace won't evict the new peer (ErrPeerStale).
 type PeerSession struct {
 	RoomID domain.RoomID
 	PeerID domain.PeerID

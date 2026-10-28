@@ -2,7 +2,7 @@ package domain
 
 import "time"
 
-// ReservationSlot — состояние слота peer в reservation (без деталей adapter).
+// ReservationSlot — state of a peer slot in reservation (without adapter details).
 type ReservationSlot int
 
 const (
@@ -11,31 +11,31 @@ const (
 	ReservationSlotAdmitted
 )
 
-// AdmittedSlot — admitted-слот peer в reservation (для orphan sweep и resume).
+// AdmittedSlot — admitted peer slot in reservation (for orphan sweep and resume).
 type AdmittedSlot struct {
 	PeerID PeerID
-	// NickName — ник из слота: единственный источник ника при resume (P20).
+	// NickName — nickname from the slot: the only nickname source on resume (P20).
 	NickName string
-	// LastSeen — единый timestamp grace слота: момент admit, последнего
-	// disconnect-mark (MarkDisconnected) или resume-refresh (Reconnect) —
-	// все три пишут одно поле (P20); от него считается grace-дедлайн.
+	// LastSeen — single grace timestamp of the slot: the moment of admit,
+	// the last disconnect-mark (MarkDisconnected) or resume-refresh (Reconnect) —
+	// all three write the same field (P20); the grace deadline is computed from it.
 	LastSeen time.Time
 }
 
-// RoomSlotDetail — read-only деталь слота reservation в любом состоянии
-// (P31, sweep never-joined комнат): если ListAdmittedPeers возвращает
-// только admitted-слоты, RoomSlotDetail покрывает и reserve-слоты
-// (ожидающий ticket) для предиката «все reserve истекли или слотов нет».
+// RoomSlotDetail — read-only detail of a reservation slot in any state
+// (P31, sweep of never-joined rooms): while ListAdmittedPeers returns
+// only admitted slots, RoomSlotDetail also covers reserve slots
+// (pending ticket) for the "all reserves expired or there are no slots" predicate.
 type RoomSlotDetail struct {
 	PeerID PeerID
-	// State — текущее состояние слота (ReservationSlotReserved /
-	// ReservationSlotAdmitted; никогда None — отсутствующие слоты не
-	// перечисляются).
+	// State — current slot state (ReservationSlotReserved /
+	// ReservationSlotAdmitted; never None — missing slots are not
+	// enumerated).
 	State ReservationSlot
-	// ExpiresAt — дедлайн reserved-слота (TTL тикета); нулевое у admitted
-	// (у вошедшего слота дедлайна тикета больше нет).
+	// ExpiresAt — deadline of a reserved slot (ticket TTL); zero for admitted
+	// (an admitted slot no longer has a ticket deadline).
 	ExpiresAt time.Time
-	// LastSeen — timestamp grace admitted-слота (та же семантика, что у
-	// AdmittedSlot.LastSeen); нулевое у reserved-слота.
+	// LastSeen — grace timestamp of an admitted slot (same semantics as
+	// AdmittedSlot.LastSeen); zero for a reserved slot.
 	LastSeen time.Time
 }

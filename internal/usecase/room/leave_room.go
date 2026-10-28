@@ -49,19 +49,21 @@ func (uc *LeaveRoomUseCase) LeaveRoom(ctx context.Context, roomID domain.RoomID,
 		return err
 	}
 
-	// room.Leave изымает peer из комнаты даже при ошибке политики —
-	// Stop и Revoke выполняются всегда, ошибка leave не проглатывается.
+	// room.Leave removes the peer from the room even on a policy error —
+	// Stop and Revoke always run, the leave error is not swallowed.
 	leaveErr := room.Leave(peer)
 	if errors.Is(leaveErr, domain.ErrPeerStale) {
-		// Resume вытеснил объект раньше leave (P20): идентичность и слот у
-		// нового peer'а — ни Stop, ни Revoke делать нельзя.
+		// Resume displaced the object before the leave (P20): the identity
+		// and the slot belong to the new peer — neither Stop nor Revoke is
+		// allowed.
 		uc.logging.Debug("leave room: stale peer object", "roomID", roomID, "peerID", peerID)
 		return nil
 	}
 	if errors.Is(leaveErr, domain.ErrRoomShouldClose) {
-		// Authoritative-host (P29): ушедший master убивает комнату — teardown
-		// (OpRoomClosed оставшимся → disconnect всех → unregister) ревокает и
-		// слот ушедшего, отдельный Revoke не нужен.
+		// Authoritative host (P29): a departed master kills the room — the
+		// teardown (OpRoomClosed to the rest → disconnect everyone →
+		// unregister) also revokes the departed peer's slot, no separate
+		// Revoke needed.
 		stopErr := peer.Stop()
 		if stopErr != nil {
 			uc.logging.Error("leave room: peer stop failed", "error", stopErr, "roomID", roomID, "peerID", peerID)
@@ -87,8 +89,8 @@ func (uc *LeaveRoomUseCase) LeaveRoom(ctx context.Context, roomID domain.RoomID,
 	}
 
 	uc.logging.Info("peer left room", "roomID", roomID, "peerID", peerID)
-	// P31: ушёл последний peer без grace-слотов — комната умирает сразу,
-	// а не висит трупом в registry до DELETE/shutdown.
+	// P31: the last peer left with no grace slots — the room dies at once
+	// instead of hanging as a corpse in the registry until DELETE/shutdown.
 	closeRoomIfEmpty(ctx, room, uc.roomRegistry, uc.reservation, uc.logging)
 	return nil
 }

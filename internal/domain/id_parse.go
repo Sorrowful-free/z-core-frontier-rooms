@@ -12,7 +12,7 @@ var (
 	ErrInvalidPeerID = errors.New("invalid peer id")
 )
 
-// MaxRoomID и MaxPeerID — верхняя граница wire/API (uint32, Godot-friendly).
+// MaxRoomID and MaxPeerID — upper bound of the wire/API (uint32, Godot-friendly).
 const (
 	MaxRoomID = RoomID(math.MaxUint32)
 	MaxPeerID = PeerID(math.MaxUint32)

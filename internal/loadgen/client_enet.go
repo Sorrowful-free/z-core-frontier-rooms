@@ -15,26 +15,28 @@ import (
 	libenet "github.com/codecat/go-enet"
 )
 
-// enetClientFramesBuf — буфер входящих кадров pump→Recv. Ориентир —
-// TRANSPORT_ENET_INCOMING_QUEUE серверной стороны; переполнение = честный
-// backpressure на pump (Service стоит → серверный peer timeout), не дроп.
+// enetClientFramesBuf — buffer of incoming frames pump→Recv. The reference
+// point is the server side's TRANSPORT_ENET_INCOMING_QUEUE; overflow =
+// honest backpressure on the pump (Service stalls → server-side peer
+// timeout), not a drop.
 const enetClientFramesBuf = 1024
 
-// enetDataConn — DataConn поверх клиентского libenet host'а (P27 inc3).
-// Host'ом владеет adapterenet.HostLoop — ВСЕ libenet-вызовы идут командами
-// через Call/Do (per-host сериализация, как у серверной стороны и e2e
-// enetClient в tests/integration/match_e2e_enet_test.go). Pump-горутина
-// гоняет Service(1) и раскладывает события: EventConnect → admit-пакет
-// (сырой decoded ticket, channel 0 reliable), EventReceive → кадр в
-// frames-канал, EventDisconnect → конец сессии (close(dead) → Recv EOF).
+// enetDataConn — DataConn over a client libenet host (P27 inc3).
+// The host is owned by adapterenet.HostLoop — ALL libenet calls go as
+// commands through Call/Do (per-host serialization, same as the server side
+// and the e2e enetClient in tests/integration/match_e2e_enet_test.go). The
+// pump goroutine drives Service(1) and dispatches events: EventConnect →
+// admit packet (raw decoded ticket, channel 0 reliable), EventReceive →
+// frame into the frames channel, EventDisconnect → end of session
+// (close(dead) → Recv EOF).
 type enetDataConn struct {
 	loop *adapterenet.HostLoop
 	peer libenet.Peer
 
 	frames    chan enetFrame
-	connected chan struct{} // закрывает pump на EventConnect (handshake + admit ушёл)
-	dead      chan struct{} // закрывает pump на выходе — Recv отдаёт ошибку
-	err       error         // терминальная причина; пишется до close(dead) → видна читателю dead
+	connected chan struct{} // closed by pump on EventConnect (handshake + admit sent)
+	dead      chan struct{} // closed by pump on exit — Recv returns an error
+	err       error         // terminal cause; written before close(dead) → visible to the dead reader
 
 	closeOnce sync.Once
 }
@@ -44,16 +46,19 @@ type enetFrame struct {
 	payload []byte
 }
 
-// dialEnet — ENet-ветка dialDataConn: свой host (peerLimit=1) → Connect на
-// EnetAddr:EnetPort (порт строго из ticket-ответа, P18 strict binding) →
-// ожидание EventConnect с ctx-дедлайном → admit-пакетом идёт сырой ticket.
-// EnetPort==0 — сервер собран/настроен без enet listeners → dial-ошибка.
+// dialEnet — the ENet branch of dialDataConn: own host (peerLimit=1) →
+// Connect to EnetAddr:EnetPort (port strictly from the ticket response, P18
+// strict binding) → wait for EventConnect with the ctx deadline → the raw
+// ticket goes as the admit packet.
+// EnetPort==0 — the server was built/configured without enet listeners →
+// dial error.
 func dialEnet(ctx context.Context, p DialParams) (DataConn, error) {
 	if p.EnetPort == 0 {
 		return nil, errors.New("enet dial: ticket has no enet_port binding")
 	}
-	// Admit = бинарный токен первым пакетом (WS-ветка отдаёт base64url в
-	// query и сервер декодирует сам; на ENet декодирует клиент).
+	// Admit = the binary token as the first packet (the WS branch sends
+	// base64url in the query and the server decodes it; on ENet the client
+	// decodes).
 	ticket, err := base64.RawURLEncoding.DecodeString(p.Token)
 	if err != nil {
 		return nil, fmt.Errorf("enet dial: decode ticket token: %w", err)
@@ -87,17 +92,17 @@ func dialEnet(ctx context.Context, p DialParams) (DataConn, error) {
 		}
 		return nil, fmt.Errorf("enet dial %s:%d: disconnected during handshake", p.EnetAddr, p.EnetPort)
 	case <-ctx.Done():
-		// Handshake не уложился в dial-таймаут: Stop идемпотентен, pump
-		// выйдет сам по ошибке Call после остановки loop'а.
+		// The handshake didn't fit in the dial timeout: Stop is idempotent,
+		// pump exits on its own via a Call error after the loop stops.
 		loop.Stop()
 		return nil, ctx.Err()
 	}
 }
 
-// pump — клиентский service-loop: Service(1) командой в свой HostLoop +
-// dispatch событий. Первый EventConnect несёт admit (ticket) на channel 0
-// reliable — зеркало e2e enetClient. Выход: EventDisconnect (любая причина)
-// либо ошибка Call после loop.Stop (Close).
+// pump — the client service loop: Service(1) as a command in its own
+// HostLoop + event dispatch. The first EventConnect carries the admit
+// (ticket) on channel 0 reliable — mirroring the e2e enetClient. Exit:
+// EventDisconnect (any reason) or a Call error after loop.Stop (Close).
 func (c *enetDataConn) pump(ticket []byte) {
 	defer close(c.dead)
 	admitted := false
@@ -137,8 +142,9 @@ func (c *enetDataConn) pump(ticket []byte) {
 	}
 }
 
-// Send — кадр [op|payload] на channel 0 reliable: то же, что сервер шлёт
-// в EnetConnection.Send (packetFlagsFromDelivery → PacketFlagReliable).
+// Send — a [op|payload] frame on channel 0 reliable: same as the server
+// sends in EnetConnection.Send (packetFlagsFromDelivery →
+// PacketFlagReliable).
 func (c *enetDataConn) Send(op domain.OpCode, payload []byte) error {
 	frame := append([]byte{byte(op)}, payload...)
 	return c.loop.Do(func() error {
@@ -146,8 +152,8 @@ func (c *enetDataConn) Send(op domain.OpCode, payload []byte) error {
 	})
 }
 
-// Recv — следующий кадр или разрыв. После dead дочитывает остаток буфера,
-// затем отдаёт терминальную ошибку pump'а (или EOF на штатном Close).
+// Recv — the next frame or a drop. After dead it drains the rest of the
+// buffer, then returns the pump's terminal error (or EOF on a clean Close).
 func (c *enetDataConn) Recv() (domain.OpCode, []byte, error) {
 	select {
 	case f := <-c.frames:
@@ -165,9 +171,9 @@ func (c *enetDataConn) Recv() (domain.OpCode, []byte, error) {
 	return 0, nil, io.EOF
 }
 
-// Close — abrupt-разрыв: DisconnectNow (best-effort reset, сервер увидит
-// disconnect), затем loop.Stop — drain очереди + host.Destroy + ожидание
-// выхода loop-горутины. Идемпотентно (closeOnce + идемпотентный Stop).
+// Close — abrupt drop: DisconnectNow (best-effort reset, the server sees a
+// disconnect), then loop.Stop — queue drain + host.Destroy + waiting for the
+// loop goroutine to exit. Idempotent (closeOnce + idempotent Stop).
 func (c *enetDataConn) Close() error {
 	c.closeOnce.Do(func() {
 		_ = c.loop.Do(func() error { c.peer.DisconnectNow(0); return nil })

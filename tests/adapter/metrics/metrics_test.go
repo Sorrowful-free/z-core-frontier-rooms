@@ -88,7 +88,7 @@ func TestMetrics_Counters(t *testing.T) {
 	}
 }
 
-// P19b: новые сигналы - queue depth gauges, tick/send/host-метрики,
+// P19b: new signals — queue depth gauges, tick/send/host metrics,
 // reservation gauge, sweep runs, HTTP request histogram.
 func TestMetrics_Signals(t *testing.T) {
 	t.Parallel()

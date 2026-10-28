@@ -1,17 +1,17 @@
 package state
 
-// StatePolicyConfig — конфигурация state room-policy (P33): режим
-// master-миграции задаётся глобально на деплой (env
-// STATE_POLICY_ALLOW_MASTER_MIGRATION), не per-room.
+// StatePolicyConfig — configuration of the state room policy (P33):
+// the master-migration mode is set globally per deploy (env
+// STATE_POLICY_ALLOW_MASTER_MIGRATION), not per-room.
 type StatePolicyConfig struct {
-	// AllowMasterMigration — true (дефолт): уход master'а ведёт к
-	// перевыборам среди оставшихся peer'ов; false — комната умирает с
-	// уходом master'а (OnLeave отвечает
-	// domain.ErrRoomShouldClose, teardown — в usecase).
+	// AllowMasterMigration — true (default): the master's departure
+	// leads to re-election among the remaining peers; false — the room
+	// dies with the master's departure (OnLeave answers
+	// domain.ErrRoomShouldClose, teardown is in the usecase).
 	AllowMasterMigration bool
 }
 
-// Validate: полей для проверки нет — метод для единообразия ModuleConfig.
+// Validate: there are no fields to check — the method exists for ModuleConfig uniformity.
 func (c StatePolicyConfig) Validate() error {
 	return nil
 }

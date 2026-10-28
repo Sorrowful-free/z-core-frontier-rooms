@@ -10,11 +10,12 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/reservation"
 )
 
-// Значение label `sweep` для SweepRan/OrphanAdmittedRevoked (bounded в адаптере).
+// Value of the `sweep` label for SweepRan/OrphanAdmittedRevoked (bounded in the adapter).
 const sweepKindOrphanAdmitted = "orphan_admitted"
 
-// SweepOrphanAdmittedUseCase — grace-expiry admitted-слотов без peer в room
-// (P20): слот без peer'а и lastSeen (AdmittedSlot.LastSeen) + ReconnectTTL прошёл → Revoke.
+// SweepOrphanAdmittedUseCase — grace expiry of admitted slots with no peer
+// in the room (P20): a slot with no peer and a lastSeen
+// (AdmittedSlot.LastSeen) whose ReconnectTTL has elapsed → Revoke.
 type SweepOrphanAdmittedUseCase struct {
 	roomRegistry registry.RoomRegistry
 	reservation  reservation.Reservation
@@ -39,12 +40,12 @@ func NewSweepOrphanAdmittedUseCase(
 	}
 }
 
-// RunOnce проходит по комнатам и revoke orphan admitted (нет peer, TTL истёк).
+// RunOnce iterates over rooms and revokes orphan admitted slots (no peer, TTL expired).
 func (uc *SweepOrphanAdmittedUseCase) RunOnce(ctx context.Context) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	// Проход sweep считается отдельно от обработанных записей (P19b).
+	// A sweep pass is counted separately from processed records (P19b).
 	uc.metrics.SweepRan(sweepKindOrphanAdmitted)
 
 	rooms, err := uc.roomRegistry.GetList(ctx)
@@ -84,9 +85,9 @@ func (uc *SweepOrphanAdmittedUseCase) RunOnce(ctx context.Context) (int, error) 
 			roomRevoked = true
 		}
 
-		// P31: revoke последнего grace-слота — именно здесь «пустая»
-		// наступает по истечении TTL последнего reconnect-окна: ни живых
-		// peers, ни admitted-слотов → комната умирает.
+		// P31: revoking the last grace slot — this is where "empty" is
+		// reached when the TTL of the last reconnect window expires: no live
+		// peers, no admitted slots → the room dies.
 		if roomRevoked {
 			closeRoomIfEmpty(ctx, room, uc.roomRegistry, uc.reservation, uc.logger)
 		}
@@ -98,7 +99,7 @@ func (uc *SweepOrphanAdmittedUseCase) RunOnce(ctx context.Context) (int, error) 
 	return revoked, nil
 }
 
-// StartOrphanAdmittedSweep запускает фоновый sweep; interval <= 0 — no-op (nil handle).
+// StartOrphanAdmittedSweep starts the background sweep; interval <= 0 — no-op (nil handle).
 func StartOrphanAdmittedSweep(
 	ctx context.Context,
 	uc *SweepOrphanAdmittedUseCase,

@@ -109,9 +109,9 @@ func (p *rejectMessagePolicy) OnTickPatchState() error { return nil }
 
 var _ portpolicy.RoomPolicy = (*rejectMessagePolicy)(nil)
 
-// Комнаты тут с incomingQueue=0: unbuffered `Deliver` успешен только когда
-// room-loop уже ждёт в select. Между ответом Join и повторным входом в select
-// есть гонка - ретраим ErrQueueFull до дедлайна.
+// Rooms here use incomingQueue=0: an unbuffered `Deliver` succeeds only when
+// the room loop is already waiting in select. There is a race between the Join
+// reply and re-entering select — retry ErrQueueFull until the deadline.
 func deliverRoomEvent(t *testing.T, room *adapterrealtime.Room, ev events.RoomEvent) {
 	t.Helper()
 	deadline := time.Now().Add(500 * time.Millisecond)

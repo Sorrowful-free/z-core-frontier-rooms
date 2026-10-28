@@ -7,15 +7,15 @@ import (
 
 const minHTTPAPIKeyLen = 16
 
-// HTTPAuthConfig — аутентификация REST control plane (API key).
+// HTTPAuthConfig — REST control plane authentication (API key).
 type HTTPAuthConfig struct {
-	// APIKey — ожидаемый ключ; используется, если Disabled == false.
+	// APIKey — expected key; used when Disabled == false.
 	APIKey string
-	// Disabled — отключить проверку (только local dev).
+	// Disabled — disable the check (local dev only).
 	Disabled bool
 }
 
-// Validate проверяет конфигурацию перед стартом.
+// Validate checks the configuration before startup.
 func (c HTTPAuthConfig) Validate() error {
 	if c.Disabled {
 		return nil

@@ -12,26 +12,29 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/reservation"
 )
 
-// Значение label `sweep` для SweepRan (bounded в адаптере).
+// Value of the `sweep` label for SweepRan (bounded in the adapter).
 const sweepKindEmptyRooms = "empty_rooms"
 
-// SweepEmptyRoomsUseCase — смерть never-joined комнат (P31): комната создана
-// (POST /rooms + host-тикет), но никто не вошёл — reserve-слот чистится
-// только лениво при следующем Reserve, а сама комната висела бы в registry
-// вечно. Transition-проверки (closeRoomIfEmpty на уходе peer'а) этот класс
-// не накрывают — peer'ов никогда не было, нужен time-based sweep.
+// SweepEmptyRoomsUseCase — death of never-joined rooms (P31): a room was
+// created (POST /rooms + host ticket) but nobody entered — the reserve slot
+// is only cleaned lazily on the next Reserve, while the room itself would
+// hang in the registry forever. Transition checks (closeRoomIfEmpty on peer
+// departure) do not cover this class — there never were any peers, so a
+// time-based sweep is needed.
 //
-// Предикат kill: peers == 0 ∧ ни одного admitted-слота ∧ все reserve-слоты
-// истекли (expiresAt < now) или слотов нет. Живой reserve (unexpired
-// ticket-claim) комнату держит — createdAt у комнаты нет и не нужен:
-// дедлайн самого свежего тикета и есть порог. Zero ExpiresAt не истекает
-// (тот же контракт, что у sweepExpiredLocked в adapter/reservation).
+// Kill predicate: peers == 0 ∧ no admitted slots ∧ all reserve slots
+// expired (expiresAt < now) or there are no slots. A live reserve
+// (unexpired ticket claim) keeps the room alive — the room has no
+// createdAt and doesn't need one: the newest ticket's deadline is the
+// threshold. A zero ExpiresAt never expires (same contract as
+// sweepExpiredLocked in adapter/reservation).
 //
-// Kill идёт через closeRoomIfEmpty: повторная проверка admitted перед
-// DeleteRoom сужает окно гонки с параллельным admit'ом (admit между
-// листингом слотов и kill вернёт len>0 → no-op). Свежий Reserve между
-// листингом и kill проверка не ловит — joiner получит reject вместо
-// комнаты (accepted-гонка, симметрично transition-пути).
+// The kill goes through closeRoomIfEmpty: re-checking admitted before
+// DeleteRoom narrows the race window with a parallel admit (an admit
+// between the slot listing and the kill returns len>0 → no-op). A fresh
+// Reserve between the listing and the kill is not caught by the check —
+// the joiner gets a reject instead of a room (accepted race, symmetric to
+// the transition path).
 type SweepEmptyRoomsUseCase struct {
 	roomRegistry registry.RoomRegistry
 	reservation  reservation.Reservation
@@ -53,13 +56,13 @@ func NewSweepEmptyRoomsUseCase(
 	}
 }
 
-// RunOnce проходит по комнатам и убивает пустые без живых слотов.
-// Возвращает число убитых комнат за проход.
+// RunOnce iterates over rooms and kills empty ones with no live slots.
+// Returns the number of rooms killed in this pass.
 func (uc *SweepEmptyRoomsUseCase) RunOnce(ctx context.Context) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	// Проход sweep считается отдельно от обработанных записей (P19b).
+	// A sweep pass is counted separately from processed records (P19b).
 	uc.metrics.SweepRan(sweepKindEmptyRooms)
 
 	rooms, err := uc.roomRegistry.GetList(ctx)
@@ -81,9 +84,9 @@ func (uc *SweepEmptyRoomsUseCase) RunOnce(ctx context.Context) (int, error) {
 
 		slots, err := uc.reservation.ListRoomSlots(ctx, roomID)
 		if err != nil {
-			// Комната уже unregister'нута из reservation параллельным
-			// teardown — слотов нет, предикат kill выполнен. Прочие
-			// ошибки — состояние неизвестно, пропуск до следующего прохода.
+			// The room was already unregistered from reservation by a
+			// parallel teardown — no slots, the kill predicate holds. Other
+			// errors — state unknown, skip until the next pass.
 			if !errors.Is(err, domain.ErrReservationNotFound) {
 				uc.logger.Error("empty rooms sweep: list slots failed", "error", err, "roomID", roomID)
 				continue
@@ -104,10 +107,10 @@ func (uc *SweepEmptyRoomsUseCase) RunOnce(ctx context.Context) (int, error) {
 	return killed, nil
 }
 
-// hasLiveReservationSlot — true, если хоть один слот ещё удерживает комнату:
-// admitted (живой или в grace — reconnect ещё возможен) либо reserve с
-// неистёкшим дедлайном тикета. ExpiresAt.IsZero() не истекает, как в
-// sweepExpiredLocked adapter'а.
+// hasLiveReservationSlot — true if at least one slot still holds the room:
+// admitted (live or in grace — reconnect is still possible) or a reserve
+// with an unexpired ticket deadline. ExpiresAt.IsZero() never expires, same
+// as in the adapter's sweepExpiredLocked.
 func hasLiveReservationSlot(slots []domain.RoomSlotDetail, now time.Time) bool {
 	for _, slot := range slots {
 		switch slot.State {
@@ -122,9 +125,9 @@ func hasLiveReservationSlot(slots []domain.RoomSlotDetail, now time.Time) bool {
 	return false
 }
 
-// StartEmptyRoomsSweep запускает фоновый sweep; interval <= 0 — no-op (nil
-// handle). Каденс — тот же RESERVATION_ORPHAN_SWEEP_INTERVAL, что у
-// orphan-sweep: 0 отключает оба.
+// StartEmptyRoomsSweep starts the background sweep; interval <= 0 — no-op
+// (nil handle). The cadence is the same RESERVATION_ORPHAN_SWEEP_INTERVAL as
+// the orphan sweep: 0 disables both.
 func StartEmptyRoomsSweep(
 	ctx context.Context,
 	uc *SweepEmptyRoomsUseCase,

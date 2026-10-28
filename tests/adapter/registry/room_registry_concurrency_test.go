@@ -17,8 +17,8 @@ import (
 	portpolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime/policy"
 )
 
-// gatingRoomFactory держит CreateRoom в gate, пока тест не выпустит всех —
-// так оба конкурентных вызова гарантированно пересекаются до записи в реестр.
+// gatingRoomFactory holds CreateRoom at a gate until the test releases it —
+// so both concurrent calls are guaranteed to overlap before the registry write.
 type gatingRoomFactory struct {
 	inner   realtime.RoomFactory
 	arrived chan struct{}
@@ -101,7 +101,7 @@ func TestCreateRoom_ConcurrentSameID_SingleWinner(t *testing.T) {
 		t.Fatalf("rooms = %d, want 1", len(rooms))
 	}
 
-	// проигравшая комната остановлена: её ctx отменён
+	// the losing room is stopped: its ctx is cancelled
 	stopped := 0
 	for _, room := range factory.created {
 		select {
@@ -115,7 +115,7 @@ func TestCreateRoom_ConcurrentSameID_SingleWinner(t *testing.T) {
 	}
 }
 
-// stallStopPolicy зависает в OnStop до release — имитация медленного room.Stop.
+// stallStopPolicy blocks in OnStop until release — simulates a slow room.Stop.
 type stallStopPolicy struct {
 	entered chan struct{}
 	release chan struct{}
@@ -178,7 +178,7 @@ func TestDeleteRoom_SlowStop_GetListNotBlocked(t *testing.T) {
 		t.Fatal("room Stop not entered")
 	}
 
-	// GetList не должен ждать in-flight Stop: комната уже снята с реестра.
+	// GetList must not wait for the in-flight Stop: the room is already removed from the registry.
 	type listResult struct {
 		count int
 		err   error

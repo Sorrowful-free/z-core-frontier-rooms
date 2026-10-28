@@ -2,16 +2,16 @@ package domain
 
 import "encoding/binary"
 
-// Группы OpCode (1 байт):
-//   0x01–0x3F — игровой трафик / relay (зарезервировано)
-//   0x40–0x4F — ошибки join / admit (клиент мапит код → UI)
-//   0x50–0x5F — внутренние ошибки сервера при join
-//   0x60–0x6F — ошибки внутри комнаты (после admit)
-//   0x70–0x7F — ошибки reservation (бронь / admit слота)
-//   0x80+ — room notifications (не ошибки, P20): peer в grace / вернулся,
-//   payload — peerID u64 BE; 0x82 OpRoomClosed (P29) — комната закрыта
-//   сервером, payload пустой, за кадром следует disconnect.
-// Payload для кодов ошибок (join, reservation, in-room): пустой.
+// OpCode groups (1 byte):
+//   0x01–0x3F — game traffic / relay (reserved)
+//   0x40–0x4F — join / admit errors (client maps code → UI)
+//   0x50–0x5F — internal server errors during join
+//   0x60–0x6F — in-room errors (after admit)
+//   0x70–0x7F — reservation errors (slot reservation / admit)
+//   0x80+ — room notifications (not errors, P20): peer in grace / returned,
+//   payload — peerID u64 BE; 0x82 OpRoomClosed (P29) — room closed by the
+//   server, empty payload, a disconnect follows the frame.
+// Payload for error codes (join, reservation, in-room): empty.
 
 const (
 	OpEmptyToken    OpCode = 0x40
@@ -25,7 +25,7 @@ const (
 	OpInternal        OpCode = 0x50
 	OpPeerStartFailed OpCode = 0x51
 
-	// In-room (0x60–0x6F) — после admit; расширять по мере появления сценариев.
+	// In-room (0x60–0x6F) — after admit; extend as scenarios appear.
 	OpInRoomInternal        OpCode = 0x60
 	OpInRoomNotMaster       OpCode = 0x61
 	OpInRoomInvalidPayload  OpCode = 0x62
@@ -34,7 +34,7 @@ const (
 	OpInRoomNoMaster        OpCode = 0x65
 	OpInRoomUnknownOpcode   OpCode = 0x66
 
-	// Reservation (0x70–0x7F) — control plane / join admit по слоту.
+	// Reservation (0x70–0x7F) — control plane / slot-based join admit.
 	OpReservationNotFound        OpCode = 0x70
 	OpReservationFull            OpCode = 0x71
 	OpReservationSlotHeld        OpCode = 0x72
@@ -42,24 +42,24 @@ const (
 	OpReservationExpired         OpCode = 0x74
 	OpReservationAlreadyAdmitted OpCode = 0x75
 	OpPeerAlreadyInRoom          OpCode = 0x76
-	// OpWrongHost - admit на ENet host'е, не назначенном ticket'ом (claims.hostID, P18).
+	// OpWrongHost - admit on an ENet host not assigned by the ticket (claims.hostID, P18).
 	OpWrongHost           OpCode = 0x77
 	OpReservationInternal OpCode = 0x7F
 
-	// Room notifications (0x80+): рассылает use case через room.Send —
-	// peer ушёл в grace (может вернуться) / воскрес под тем же peerID (P20).
+	// Room notifications (0x80+): sent by the use case via room.Send —
+	// a peer went into grace (may return) / revived under the same peerID (P20).
 	OpPeerDisconnected OpCode = 0x80
 	OpPeerReconnected  OpCode = 0x81
-	// OpRoomClosed - комната закрыта сервером. Источники (P31):
-	// no-migration деплой (P33), ушёл хост; DELETE /rooms/:id; shutdown
-	// процесса. Payload пустой; после кадра соединение закрывается.
-	// Рассылает usecase через peer.Deliver оставшимся peer'ам до их
-	// disconnect (empty-death слушать некому — кадра нет).
+	// OpRoomClosed - room closed by the server. Sources (P31):
+	// no-migration deploy (P33), host left; DELETE /rooms/:id; process
+	// shutdown. Empty payload; the connection is closed after the frame.
+	// Sent by the usecase via peer.Deliver to the remaining peers before
+	// their disconnect (an empty-death has no one to listen — no frame).
 	OpRoomClosed OpCode = 0x82
 )
 
-// NewPeerNotificationFrame — кадр room-notification (0x80+): payload —
-// peerID u64 BE, доставка reliable (порядок «state-патч → opcode» важен).
+// NewPeerNotificationFrame — room-notification frame (0x80+): payload —
+// peerID u64 BE, reliable delivery (the "state patch → opcode" order matters).
 func NewPeerNotificationFrame(op OpCode, peerID PeerID) Frame {
 	payload := make([]byte, 8)
 	binary.BigEndian.PutUint64(payload, uint64(peerID))

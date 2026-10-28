@@ -15,24 +15,27 @@ import (
 	libenet "github.com/codecat/go-enet"
 )
 
-// Все вызовы libenet (Host/Peer/Packet) сериализует HostLoop владеющего host'а
-// (adapter/transport/enet/hostloop_cgo.go): host.Service идёт blocking-
-// командой Call в loop, peer/packet-операции внутри dispatch - Call/Do в тот
-// же loop. Сам dispatch исполняется на run-горутине, НЕ на loop-горутине:
-// admit/teardown путь (AdmitPeer/DisconnectPeer → dispatchLifecycle) синхронно ждёт
-// room-горутину, а та в OnJoin/OnLeave делает EnetConnection.Ping - blocking
-// Call в этот же loop. Dispatch на loop-горутине замыкал бы cross-deadlock
-// executor↔room; на run-горутине блокировка безобидна, executor при этом
-// свободен и обслуживает Ping/conn-операции.
-// sessions и поля peerSession трогает только run-горутина - mutex не нужен.
+// All libenet calls (Host/Peer/Packet) are serialized by the owning host's
+// HostLoop (adapter/transport/enet/hostloop_cgo.go): host.Service goes as a
+// blocking Call command into the loop; peer/packet operations inside dispatch
+// - Call/Do into the same loop. Dispatch itself runs on the run goroutine,
+// NOT on the loop goroutine: the admit/teardown path (AdmitPeer/
+// DisconnectPeer → dispatchLifecycle) synchronously waits on the room
+// goroutine, which in OnJoin/OnLeave performs EnetConnection.Ping - a
+// blocking Call into the same loop. Dispatch on the loop goroutine would
+// close a cross-deadlock executor↔room; on the run goroutine the blocking is
+// harmless, and the executor stays free to serve Ping/conn operations.
+// Only the run goroutine touches sessions and peerSession fields - no mutex
+// needed.
 //
-// P18: run исполняется по одной горутине на host (порт), все host'ы делят
-// общий ctx mux'а (Listen). Потолок одного host'а - PeerLimit и pps его
-// HostLoop'а; capacity комнаты к host'у не привязана (room - транспорт-агностик).
+// P18: run executes one goroutine per host (port); all hosts share the mux's
+// common ctx (Listen). A single host's ceiling is PeerLimit and its
+// HostLoop's pps; room capacity is not tied to a host (the room is
+// transport-agnostic).
 func (h *RoomsHandler) run(ctx context.Context, host *enetHost) error {
-	// Initialize идемпотентен (refcount в libenet): N run-горутин mux'а зовут
-	// его без лока; Deinitialize снимает только свой refcount, реальный
-	// teardown - после выхода всех loop'ов.
+	// Initialize is idempotent (refcount inside libenet): the mux's N run
+	// goroutines call it without a lock; Deinitialize only drops its own
+	// refcount, the real teardown happens after all loops exit.
 	libenet.Initialize()
 	defer libenet.Deinitialize()
 
@@ -45,12 +48,12 @@ func (h *RoomsHandler) run(ctx context.Context, host *enetHost) error {
 	if err != nil {
 		return fmt.Errorf("enet host create port %d: %w", host.port, err)
 	}
-	// Stop идемпотентен и ждёт выхода executor'а (drain + host.Destroy);
-	// до Deinitialize - обратный порядок.
+	// Stop is idempotent and waits for the executor to exit (drain +
+	// host.Destroy); before Deinitialize - reverse order.
 	defer loop.Stop()
-	// Peer→host привязка: у каждого host'а СВОЯ фабрика (WithLoop клонирует
-	// инжектированную - shared factory c BindLoop на N host'ах гоняла бы
-	// conn'ы чужого loop'а).
+	// Peer→host binding: each host gets its OWN factory (WithLoop clones the
+	// injected one - a shared factory with BindLoop across N hosts would route
+	// conns into another host's loop).
 	connFactory := h.connectionFactory
 	if f, ok := h.connectionFactory.(*transportenet.EnetConnectionFactory); ok {
 		connFactory = f.WithLoop(loop)
@@ -63,9 +66,10 @@ func (h *RoomsHandler) run(ctx context.Context, host *enetHost) error {
 	for {
 		if err := ctx.Err(); err != nil {
 			h.closeSessions(sessions)
-			// Best-effort drain: conn.Close из closeSessions закинул graceful
-			// DisconnectLater в очередь loop'а (FIFO - исполнится до service-
-			// команд ниже); пара service-итераций выгонит их на провод до Destroy.
+			// Best-effort drain: conn.Close from closeSessions queued a
+			// graceful DisconnectLater on the loop (FIFO - it will execute
+			// before the service commands below); a couple of service
+			// iterations push them out on the wire before Destroy.
 			h.drainHost(loop)
 			return err
 		}
@@ -76,8 +80,8 @@ func (h *RoomsHandler) run(ctx context.Context, host *enetHost) error {
 			return loop.Host().Service(h.cfg.ServiceTimeoutMs)
 		})
 		if err != nil {
-			// Loop остановлен извне: shutdown-последовательность выше уже
-			// отработала либо не нужна (host на пути к Destroy).
+			// Loop stopped from the outside: the shutdown sequence above has
+			// already run or is not needed (the host is on its way to Destroy).
 			h.closeSessions(sessions)
 			return transportenet.ErrHostLoopStopped
 		}
@@ -85,9 +89,9 @@ func (h *RoomsHandler) run(ctx context.Context, host *enetHost) error {
 	}
 }
 
-// dispatchEvent - обработка одного события Service на run-горутине; обращения
-// к peer/packet - через Call/Do в loop (Event-аксессоры GetType/GetPeer/
-// GetPacket/GetData читают Go-копию события и диспатча не требуют).
+// dispatchEvent - handles one Service event on the run goroutine; peer/packet
+// access - via Call/Do into the loop (the Event accessors GetType/GetPeer/
+// GetPacket/GetData read the Go copy of the event and need no dispatch).
 func (h *RoomsHandler) dispatchEvent(
 	ctx context.Context,
 	host *enetHost,
@@ -125,16 +129,17 @@ func (h *RoomsHandler) dispatchEvent(
 				return
 			}
 			if err := h.admit(ctx, host, sess, data); err != nil {
-				// Счётчик считает отправленные reject-кадры, не попытки
-				// (P19b): эмит только при успешном send, ошибка - в лог.
+				// The counter counts sent reject frames, not attempts
+				// (P19b): emitted only on a successful send; an error goes to
+				// the log.
 				if sendErr := deliveryerrors.SendJoinReject(sess.conn, err); sendErr != nil {
 					h.logger.Warn("enet join reject send failed", "error", sendErr, "enet_peer_id", id)
 				} else {
 					h.metrics.JoinRejected(deliveryerrors.JoinRejectOpCode(err))
 				}
-				// Graceful close: conn.Close кладёт DisconnectLater в очередь
-				// loop'а - сначала на провод уходит queued reliable reject
-				// (тот же FIFO), затем disconnect (P7: reject доезжает).
+				// Graceful close: conn.Close queues DisconnectLater on the
+				// loop - first the queued reliable reject goes out on the wire
+				// (same FIFO), then the disconnect (P7: the reject arrives).
 				_ = sess.close()
 				delete(sessions, id)
 			}
@@ -173,10 +178,11 @@ func (h *RoomsHandler) dispatchEvent(
 	}
 }
 
-// admit - первый пакет peer'а: единый admit-вход (P20). Strict binding (P18)
-// проверяет фасад: claims.HostID ticket'а обязан совпасть с host'ом,
-// принявшим соединение, иначе join-reject (ErrWrongHost → OpWrongHost 0x77)
-// до траты слота reservation. Ticket без hostID проходит на любом host'е.
+// admit - the peer's first packet: the single admit entry point (P20).
+// Strict binding (P18) is checked by the facade: the ticket's claims.HostID
+// must match the host that accepted the connection, otherwise join-reject
+// (ErrWrongHost → OpWrongHost 0x77) before spending a reservation slot.
+// A ticket without hostID passes on any host.
 func (h *RoomsHandler) admit(ctx context.Context, host *enetHost, sess *peerSession, token []byte) error {
 	if len(token) == 0 {
 		h.logger.Warn("enet connect: empty token", "enet_peer_id", sess.id)
@@ -200,10 +206,10 @@ func (h *RoomsHandler) packetTooLarge(size int) bool {
 	return max > 0 && size > max
 }
 
-// disconnectSession - DisconnectPeer (если admitted, P20) + graceful close +
-// удаление из map. conn.Close кладёт graceful peer.Disconnect в очередь
-// loop'а: queued outbound пакеты уходят до разрыва (FIFO сохраняет порядок
-// reject → disconnect).
+// disconnectSession - DisconnectPeer (if admitted, P20) + graceful close +
+// removal from the map. conn.Close queues a graceful peer.Disconnect on the
+// loop: queued outbound packets go out before the break (FIFO preserves the
+// reject → disconnect order).
 func (h *RoomsHandler) disconnectSession(
 	ctx context.Context,
 	sessions map[uint16]*peerSession,
@@ -219,9 +225,9 @@ func (h *RoomsHandler) disconnectSession(
 	delete(sessions, id)
 }
 
-// disconnectExpiredAdmits отключает peers, занявших PeerLimit-слот на EventConnect,
-// но не прошедших admit за cfg.AdmitTimeout. Admitted сессии не трогает -
-// их чистит idle peer sweep.
+// disconnectExpiredAdmits disconnects peers that took a PeerLimit slot on
+// EventConnect but did not pass admit within cfg.AdmitTimeout. Admitted
+// sessions are left alone - the idle peer sweep reaps them.
 func (h *RoomsHandler) disconnectExpiredAdmits(sessions map[uint16]*peerSession) {
 	deadline := time.Now().Add(-h.cfg.AdmitTimeout)
 	for id, sess := range sessions {
@@ -234,12 +240,12 @@ func (h *RoomsHandler) disconnectExpiredAdmits(sessions map[uint16]*peerSession)
 	}
 }
 
-// closeSessions закрывает все сессии при shutdown: conn.Close закрывает
-// closed-канал (будит Receive-горутины peer'ов) и кладёт graceful disconnect в
-// очередь loop'а - drainHost после него выгонит их на провод. LeaveRoom/Revoke
-// для admitted peers здесь не выполняется - их снимает registry shutdown
-// (DeleteForShutdown) до вызова Stop; EventDisconnect, который drainHost
-// проглатывает, leave-путь тоже не прогоняет.
+// closeSessions closes all sessions at shutdown: conn.Close closes the
+// closed channel (waking the peers' Receive goroutines) and queues a graceful
+// disconnect on the loop - drainHost afterwards pushes them out on the wire.
+// LeaveRoom/Revoke for admitted peers is not performed here - the registry
+// shutdown (DeleteForShutdown) removes them before Stop is called; the
+// EventDisconnect that drainHost swallows does not run the leave path either.
 func (h *RoomsHandler) closeSessions(sessions map[uint16]*peerSession) {
 	for id, sess := range sessions {
 		_ = sess.close()
@@ -247,11 +253,12 @@ func (h *RoomsHandler) closeSessions(sessions map[uint16]*peerSession) {
 	}
 }
 
-// drainHost - best-effort: всего 2 service-итерации (~2xServiceTimeoutMs) через
-// очередь loop'а перед Stop/Destroy. Peer с большим backlog может не успеть
-// отправить очередь и получит hard disconnect вместо graceful - приемлемо:
-// shutdown-путь уже сигналит о завершении процесса, и ждать произвольно долго
-// нельзя. Ошибки Call (loop уже остановлен) игнорируем - путь best-effort.
+// drainHost - best-effort: only 2 service iterations (~2xServiceTimeoutMs)
+// through the loop's queue before Stop/Destroy. A peer with a large backlog
+// may not manage to flush its queue and will get a hard disconnect instead of
+// a graceful one - acceptable: the shutdown path already signals process
+// termination, and waiting arbitrarily long is not an option. Call errors
+// (loop already stopped) are ignored - the path is best-effort.
 func (h *RoomsHandler) drainHost(loop *transportenet.HostLoop) {
 	for range 2 {
 		_, _ = transportenet.Call(loop, func() libenet.Event {

@@ -1,4 +1,4 @@
 package domain
 
-// MaxRoomCapacity — верхняя граница вместимости комнаты (wire/state кодируют capacity как int8).
+// MaxRoomCapacity — upper bound of room capacity (wire/state encode capacity as int8).
 const MaxRoomCapacity = 127

@@ -11,7 +11,7 @@ import (
 const (
 	RoomStateMaxPeers  = 255
 	RoomStateMaxInputs = RoomStateMaxPeers
-	// Entities кодируются одним u16-счётчиком — лимит общий с EntitiesStateMaxEntities.
+	// Entities are encoded with a single u16 counter — the limit is shared with EntitiesStateMaxEntities.
 	RoomStateMaxEntities = EntitiesStateMaxEntities
 )
 

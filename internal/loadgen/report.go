@@ -8,13 +8,13 @@ import (
 	"time"
 )
 
-// Report — итог прогона (report.json по LOADGEN_REPORT). Без pass/fail-
-// вердикта: чистый сбор; drain-дедлайн — событие (drain_complete=false +
-// rooms_dump), не exit code.
+// Report — outcome of a run (report.json per LOADGEN_REPORT). No pass/fail
+// verdict: pure collection; a drain deadline is an event
+// (drain_complete=false + rooms_dump), not an exit code.
 type Report struct {
 	StartedAt   time.Time `json:"started_at"`
 	FinishedAt  time.Time `json:"finished_at"`
-	Interrupted bool      `json:"interrupted"` // прогон оборван ctx (SIGINT)
+	Interrupted bool      `json:"interrupted"` // run interrupted by ctx (SIGINT)
 
 	Config reportConfig `json:"config"`
 
@@ -53,8 +53,9 @@ type Report struct {
 	RoomClosedRecv        int64 `json:"room_closed_received"`
 	UnexpectedDisconnects int64 `json:"unexpected_disconnects"`
 
-	// NetemClients — фактическое распределение клиентов по профилям
-	// (сверка с config.netem_share, контракт ±5%); nil — share не задан.
+	// NetemClients — actual distribution of clients across profiles
+	// (to be checked against config.netem_share, contract ±5%); nil — share
+	// not set.
 	NetemClients map[string]int64 `json:"netem_clients,omitempty"`
 
 	DrainComplete bool            `json:"drain_complete"`
@@ -64,8 +65,9 @@ type Report struct {
 	ActiveSlots   float64         `json:"server_active_slots_final"`
 	RoomsDump     json.RawMessage `json:"rooms_dump,omitempty"`
 
-	// ServerMetrics — raw prometheus exposition до/после прогона; заполняет
-	// оркестратор (scripts/loadtest-run.sh мерджит снимки в отчёт).
+	// ServerMetrics — raw prometheus exposition before/after the run; filled
+	// by the orchestrator (scripts/loadtest-run.sh merges the snapshots into
+	// the report).
 	ServerMetrics json.RawMessage `json:"server_metrics,omitempty"`
 }
 
@@ -82,11 +84,12 @@ type reportConfig struct {
 	DrainTimeoutS  float64 `json:"drain_timeout_s"`
 	ReconnectRate  float64 `json:"reconnect_rate"`
 	ReconnectEvery float64 `json:"reconnect_every_s"`
-	// NetemShare — сконфигурированные доли профилей (LOADGEN_NETEM_SHARE).
+	// NetemShare — configured profile shares (LOADGEN_NETEM_SHARE).
 	NetemShare map[string]int `json:"netem_share,omitempty"`
 }
 
-// latencyStats — перцентили по всем замерам (выборка мала: ≤ clients count).
+// latencyStats — percentiles over all samples (the sample set is small:
+// ≤ clients count).
 type latencyStats struct {
 	Count int     `json:"count"`
 	P50   float64 `json:"p50"`
@@ -118,7 +121,7 @@ func latencyOf(samples []float64) latencyStats {
 	}
 }
 
-// opCounts — map[opcode]int64 → map["0xNN"]int64 для JSON.
+// opCounts — map[opcode]int64 → map["0xNN"]int64 for JSON.
 func opCounts(src map[uint8]int64) map[string]int64 {
 	if len(src) == 0 {
 		return nil
@@ -206,7 +209,7 @@ func (f *Fleet) buildReport(started time.Time, plans []roomPlan, drain drainResu
 	}
 }
 
-// netemShareMap — []weightedOption → {"profile": weight} для отчёта.
+// netemShareMap — []weightedOption → {"profile": weight} for the report.
 func netemShareMap(opts []weightedOption) map[string]int {
 	if len(opts) == 0 {
 		return nil
@@ -225,7 +228,7 @@ func nilIfEmpty(m map[string]int64) map[string]int64 {
 	return m
 }
 
-// Write — атомарная запись report.json (tmp + rename).
+// Write — atomic write of report.json (tmp + rename).
 func (r *Report) Write(path string) error {
 	data, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {

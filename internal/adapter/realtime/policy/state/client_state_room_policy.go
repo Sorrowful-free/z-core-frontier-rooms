@@ -8,10 +8,10 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
 )
 
-// OnMessage-обработчики больше не эмитят patch: они мутируют p.state
-// точечно (COW-записи, без clone/diff/send), дельта доезжает клиентам
-// ближайшим patch-тиком (tick-coalesced эмиссия, P34). Единственный
-// регулярный эмиттер OpCodePatchState — OnTickPatchState.
+// OnMessage handlers no longer emit a patch: they mutate p.state
+// point-wise (COW writes, no clone/diff/send), and the delta reaches
+// clients on the next patch tick (tick-coalesced patch, P34). The only
+// regular OpCodePatchState emitter is OnTickPatchState.
 
 func (p *StateRoomPolicy) onClientFullEntities(roomEvent events.RoomEvent) error {
 	if !p.master.isMaster(roomEvent.PeerID) {
@@ -36,9 +36,9 @@ func (p *StateRoomPolicy) onClientPatchEntities(roomEvent events.RoomEvent) erro
 		return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
 	}
 
-	// Двухфазный apply: staged-результаты по ключам патча (clone только
-	// затронутых entity), запись в state разом — O(|patch|) и атомарность
-	// «ошибка = нет побочек».
+	// Two-phase apply: staged results per patch key (clone only the
+	// touched entities), written into state at once — O(|patch|) and
+	// "error = no side effects" atomicity.
 	staged := make(map[state.EntityID]state.EntityState, len(patch.Added)+len(patch.Updated))
 	for id, entity := range patch.Added {
 		staged[id] = entity
@@ -90,7 +90,7 @@ func (p *StateRoomPolicy) onClientPatchInput(roomEvent events.RoomEvent) error {
 	if !ok {
 		inputState = state.InputState{Values: state.NewMapState[state.ValueId, state.ValueState]()}
 	} else {
-		// COW: запись шарится с prevState-снапшотом — clone-then-replace.
+		// COW: the record is shared with the prevState snapshot — clone-then-replace.
 		inputState = inputState.Clone()
 	}
 	if err := inputState.ApplyPatch(*patch); err != nil {
@@ -129,9 +129,10 @@ func (p *StateRoomPolicy) onClientRpc(roomEvent events.RoomEvent) error {
 		peerEvent.PeerID = rpc.PeerID
 	case state.RpcTargetMaster:
 		if !masterID.IsValid() {
-			// master мог остаться nil после упавшего election - машина
-			// делает lazy election по живому state (фейл логируется в
-			// masterless-эпизод), затем одна повторная проверка.
+			// master may still be nil after a failed election — the
+			// machine runs a lazy election against the live state (a
+			// failure is logged into the masterless episode), then one
+			// re-check.
 			if err := p.master.dispatch(masterEvent{kind: evRpcMaster}, p.room, &p.state); err == nil {
 				masterID = p.master.peerID()
 			}

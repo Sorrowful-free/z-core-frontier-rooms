@@ -6,13 +6,13 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
 
-// RoomState — authoritative состояние комнаты.
+// RoomState — authoritative room state.
 //
-// COW-инвариант: записанные в мапы значения (`InputState.Values`,
-// `EntityState.Components`, `ValueState`) после записи не мутируются
-// in-place — любая мутация только clone-then-replace. Это позволяет
-// Snapshot разделять значения со state: shallow-копия остаётся
-// корректной прошлой версией для diff.
+// COW invariant: values written into the maps (`InputState.Values`,
+// `EntityState.Components`, `ValueState`) are not mutated in-place after
+// being written — any mutation is clone-then-replace only. This lets
+// Snapshot share values with the state: a shallow copy remains a valid
+// past version for diffing.
 type RoomState struct {
 	ID       domain.RoomID
 	Capacity int8
@@ -114,8 +114,8 @@ func (s *RoomState) ApplyPatch(patch RoomStatePatch) error {
 	}
 
 	err = ApplyMapStatePatch(s.Inputs, patch.Inputs, func(i1 InputState, i2 InputStatePatch) (*InputState, error) {
-		// i1 шарит Values-мапу с хранимой записью — клонируем до патча,
-		// иначе ApplyPatch мутирует state in-place (COW-инвариант).
+		// i1 shares the Values map with the stored entry — clone before
+		// patching, otherwise ApplyPatch mutates the state in-place (COW invariant).
 		next := i1.Clone()
 		if err := next.ApplyPatch(i2); err != nil {
 			return nil, err
@@ -140,10 +140,10 @@ func (s *RoomState) ApplyPatch(patch RoomStatePatch) error {
 	return nil
 }
 
-// Snapshot — shallow-снапшот для чтения (diff, encode): struct-копия +
-// maps.Clone трёх верхних мап. Значения разделяются со state и остаются
-// корректными благодаря COW-инварианту RoomState. Для мутации копии —
-// Clone.
+// Snapshot — shallow snapshot for reading (diff, encode): struct copy +
+// maps.Clone of the three top-level maps. Values are shared with the
+// state and remain valid thanks to the RoomState COW invariant. To mutate
+// a copy — Clone.
 func (s *RoomState) Snapshot() *RoomState {
 	return &RoomState{
 		ID:       s.ID,

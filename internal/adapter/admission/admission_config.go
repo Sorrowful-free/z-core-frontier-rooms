@@ -12,18 +12,18 @@ const (
 	defaultAdmissionTTL      = time.Hour
 )
 
-// DefaultAdmissionTTL — TTL по умолчанию, если ADMISSION_TTL не задан.
+// DefaultAdmissionTTL — default TTL used when ADMISSION_TTL is not set.
 func DefaultAdmissionTTL() time.Duration {
 	return defaultAdmissionTTL
 }
 
-// AdmissionConfig — параметры конструирования Admission (секрет, TTL).
+// AdmissionConfig — parameters for constructing Admission (secret, TTL).
 type AdmissionConfig struct {
 	Secret []byte
 	TTL    time.Duration
 }
 
-// Validate проверяет конфигурацию перед использованием в NewAdmission.
+// Validate checks the configuration before use in NewAdmission.
 func (c AdmissionConfig) Validate() error {
 	if len(c.Secret) == 0 {
 		return errors.New("admission config: secret is required")

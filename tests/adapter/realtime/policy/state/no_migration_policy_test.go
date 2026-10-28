@@ -15,9 +15,9 @@ import (
 	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
-// newNoMigrationHarness — та же сборка, что newHarness, но комната получает
-// StateRoomPolicy с allowMasterMigration=false (P33)
-// через продовую фабрику с StatePolicyConfig.
+// newNoMigrationHarness — the same assembly as newHarness, but the room
+// gets a StateRoomPolicy with allowMasterMigration=false (P33) via the
+// production factory with a StatePolicyConfig.
 func newNoMigrationHarness(t *testing.T, roomID domain.RoomID, capacity int) *harness {
 	t.Helper()
 
@@ -54,8 +54,8 @@ func TestStateRoomPolicyFactory_BuildsStateRoomPolicy(t *testing.T) {
 	}
 }
 
-// P33: в no-migration деплое уход master'а убивает комнату — OnLeave
-// отвечает ErrRoomShouldClose без перевыборов и remove-патча.
+// P33: in a no-migration deployment the master's leave kills the room —
+// OnLeave answers ErrRoomShouldClose with no re-election and no remove patch.
 func TestNoMigrationPolicy_MasterLeave_RoomShouldClose(t *testing.T) {
 	t.Parallel()
 
@@ -73,14 +73,15 @@ func TestNoMigrationPolicy_MasterLeave_RoomShouldClose(t *testing.T) {
 	if h.room.HasPeer(master.GetID()) {
 		t.Fatal("master must be removed from room peers")
 	}
-	// Перевыборов/патча оставшемуся peer'у нет — комната умирает.
+	// No re-election/patch to the remaining peer — the room is dying.
 	if got := len(client.Snapshot()); got != 0 {
 		t.Fatalf("client events after master leave = %d, want 0 (no re-elect patch)", got)
 	}
 }
 
-// P33: уход master'а из пустеющей комнаты (он был единственным) — тот же
-// death-сигнал: комнату закрывает teardown, а не живёт пустой.
+// P33: the master leaving an emptying room (it was the only one) — the
+// same death signal: the room is closed by teardown instead of living on
+// empty.
 func TestNoMigrationPolicy_LastPeerMasterLeave_RoomShouldClose(t *testing.T) {
 	t.Parallel()
 
@@ -93,8 +94,8 @@ func TestNoMigrationPolicy_LastPeerMasterLeave_RoomShouldClose(t *testing.T) {
 	}
 }
 
-// P33: уход non-master — обычный путь StateRoomPolicy: remove-патч master'у,
-// ошибок нет, комната живёт.
+// P33: a non-master leaving — the regular StateRoomPolicy path: a remove
+// patch to the master, no errors, the room lives on.
 func TestNoMigrationPolicy_NonMasterLeave_RegularStateFlow(t *testing.T) {
 	t.Parallel()
 
@@ -109,7 +110,7 @@ func TestNoMigrationPolicy_NonMasterLeave_RegularStateFlow(t *testing.T) {
 	if err := h.room.Leave(client); err != nil {
 		t.Fatalf("Leave client: %v", err)
 	}
-	// Remove-патч уходит не с leave, а ближайшим patch-тиком (P34).
+	// The remove patch goes out not with the leave but on the next patch tick (P34).
 	mustConverge(t, h)
 
 	patches := master.EventsByOpcode(state.OpCodePatchState)

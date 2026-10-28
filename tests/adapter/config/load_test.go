@@ -331,7 +331,7 @@ func TestLoadFromEnv_TransportWSWriteDeadline(t *testing.T) {
 	}
 }
 
-// P30: потолок drain'а peer.outbound при Stop — «Send до Close».
+// P30: cap on draining peer.outbound during Stop — "Send before Close".
 func TestLoadFromEnv_TransportPeerCloseDrainTimeout(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", validSecret())
 	setHTTPAuthDisabled(t)
@@ -345,7 +345,7 @@ func TestLoadFromEnv_TransportPeerCloseDrainTimeout(t *testing.T) {
 		t.Fatalf("peer close drain timeout = %v, want 500ms", cfg.Transport.PeerCloseDrainTimeout)
 	}
 
-	// 0 — drain выключен (валидно, семантика «механизм off»).
+	// 0 — drain disabled (valid, "mechanism off" semantics).
 	t.Setenv("TRANSPORT_PEER_CLOSE_DRAIN_TIMEOUT", "0")
 	cfg, err = appconfig.LoadFromEnv()
 	if err != nil {
@@ -430,8 +430,8 @@ func TestLoadFromEnv_EnetOverrides(t *testing.T) {
 	}
 }
 
-// P33: STATE_POLICY_ALLOW_MASTER_MIGRATION — пусто → true (дефолт),
-// явные true/false, мусор → ошибка ParseBool.
+// P33: STATE_POLICY_ALLOW_MASTER_MIGRATION — empty → true (default),
+// explicit true/false, garbage → ParseBool error.
 func TestLoadFromEnv_StatePolicyDefault(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", validSecret())
 	setHTTPAuthDisabled(t)
@@ -484,7 +484,7 @@ func TestLoadFromEnv_StatePolicyInvalid(t *testing.T) {
 	}
 }
 
-// P18: ENET_LISTEN_PORTS CSV (несколько host'ов).
+// P18: ENET_LISTEN_PORTS CSV (multiple hosts).
 func TestLoadFromEnv_EnetListenPorts(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", validSecret())
 	setHTTPAuthDisabled(t)
@@ -535,7 +535,7 @@ func TestLoadFromEnv_EnetInvalid(t *testing.T) {
 	}
 }
 
-// P19: ADMIN_LISTEN_ADDR - пустой дефолт = admin listener выключен.
+// P19: ADMIN_LISTEN_ADDR — empty default = admin listener disabled.
 func TestLoadFromEnv_MetricsDefaults(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", validSecret())
 	setHTTPAuthDisabled(t)

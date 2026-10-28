@@ -16,22 +16,24 @@ import (
 	portenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/enet"
 )
 
-// Политика IssueTicket (A — строгая):
-//   - нет peer в room и нет слота в reservation → Reserve + Issue;
-//   - peer в room → ErrPeerAlreadyInRoom (Join/Replace, не новый ticket);
-//   - слот reserved с тем же nickName или слот уже занят → ErrTicketSlotHeld;
-//   - orphan admitted (слот есть, peer не в room) → Revoke + один повтор Reserve;
-//   - capacity в reservation → ErrReservationFull;
-//   - комната не в registry → ErrRoomNotFound;
-//   - комната не в reservation store → ErrReservationNotFound.
+// IssueTicket policy (A — strict):
+//   - no peer in room and no slot in reservation → Reserve + Issue;
+//   - peer in room → ErrPeerAlreadyInRoom (Join/Replace, not a new ticket);
+//   - slot reserved with the same nickName or slot already taken → ErrTicketSlotHeld;
+//   - orphan admitted (slot exists, peer not in room) → Revoke + one Reserve retry;
+//   - capacity reached in reservation → ErrReservationFull;
+//   - room not in registry → ErrRoomNotFound;
+//   - room not in reservation store → ErrReservationNotFound.
 type IssueTicketResult struct {
 	Token []byte
-	// ReconnectToken - reconnect-токен (P20): credential resume под тем же
-	// peerID в пределах grace; hostID - та же привязка, что у join-ticket'а.
+	// ReconnectToken - reconnect token (P20): resume credential under the
+	// same peerID within the grace window; hostID - same binding as the
+	// join ticket's.
 	ReconnectToken []byte
 	Room           RoomSummary
-	// EnetPort - порт назначенного ENet host'а (P18): клиент коннектится на него.
-	// 0 - привязки нет (hostRegistry не подключён, например WS-only окружение).
+	// EnetPort - port of the assigned ENet host (P18): the client connects
+	// to it. 0 - no binding (hostRegistry not wired, e.g. a WS-only
+	// environment).
 	EnetPort uint16
 }
 
@@ -40,8 +42,8 @@ type IssueTicketUseCase struct {
 	allocator    identity.Allocator
 	admission    admission.Admission
 	reservation  reservation.Reservation
-	// hostRegistry - балансировщик ENet host'ов (P18); nil - ticket'ы без
-	// привязки (claims.HostID = HostIDUnbound, admit только по WS).
+	// hostRegistry - ENet host balancer (P18); nil - tickets without a
+	// binding (claims.HostID = HostIDUnbound, admit over WS only).
 	hostRegistry portenet.HostRegistry
 	logger       logging.Logger
 }
@@ -87,7 +89,7 @@ func (uc *IssueTicketUseCase) IssueTicket(ctx context.Context, roomID domain.Roo
 		return IssueTicketResult{}, err
 	}
 
-	// Назначение host'а до Reserve: ошибка балансировщика не оставляет слота.
+	// Host assignment before Reserve: a balancer error leaves no slot behind.
 	var assignment portenet.HostAssignment
 	if uc.hostRegistry != nil {
 		assignment, err = uc.hostRegistry.AssignHost(ctx)

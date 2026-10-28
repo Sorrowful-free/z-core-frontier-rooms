@@ -15,14 +15,16 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport"
 )
 
-// ReconnectRoomUseCase — resume-поток за AdmitPeerUseCase (P20): воскрешение
-// peer'а под тем же peerID в пределах grace admitted-слота. Отличия от
-// join-потока: reservation.Admit не вызывается (слот уже admitted — атомарная
-// проверка и refresh lastSeen в reservation.Reconnect), слот не ревокается
-// ни при каком фейле (peer в grace), nick берётся из слота — в
-// reconnect-токене его нет. Grace-дедлайн (P24) проверяется до refresh'а по read-only
-// SlotDetails — см. ReconnectRoom. Гонка double-resume одного токена
-// дожимается Replace (newest-wins, Q10) — см. placePeer.
+// ReconnectRoomUseCase — the resume flow behind AdmitPeerUseCase (P20):
+// reviving a peer under the same peerID within the grace of an admitted
+// slot. Differences from the join flow: reservation.Admit is not called
+// (the slot is already admitted — the atomic check and lastSeen refresh
+// live in reservation.Reconnect), the slot is never revoked on any failure
+// (the peer is in grace), and the nick is taken from the slot — the
+// reconnect token doesn't carry one. The grace deadline (P24) is checked
+// before the refresh via read-only SlotDetails — see ReconnectRoom. The
+// double-resume race on one token is settled by Replace (newest-wins, Q10)
+// — see placePeer.
 type ReconnectRoomUseCase struct {
 	peerFactory  realtime.PeerFactory
 	roomRegistry registry.RoomRegistry
@@ -60,29 +62,32 @@ func (uc *ReconnectRoomUseCase) ReconnectRoom(ctx context.Context, connection tr
 		return PeerSession{}, err
 	}
 
-	// Read-only просмотр слота (P24): честный lastSeen ДО refresh'а —
-	// deadline считается по нему, отклонённая попытка не продлевает grace.
+	// Read-only slot lookup (P24): the honest lastSeen BEFORE the refresh —
+	// the deadline is computed from it, so a rejected attempt does not
+	// extend the grace.
 	slot, err := uc.reservation.SlotDetails(ctx, claims.RoomID, claims.PeerID)
 	if err != nil {
 		uc.logging.Error("reconnect room: reservation slot details failed", "error", err, "roomID", claims.RoomID, "peerID", claims.PeerID)
 		return PeerSession{}, err
 	}
 
-	// Deadline-гейт (P24): admitted-слот без живого peer'а и с истёкшим
-	// lastSeen + reconnectTTL → ErrReservationExpired — grace конечна и без
-	// прохода sweep; предикат общий со sweep — см. graceExpired. Живой peer
-	// (HasPeer) гейтом не затрагивается: lastSeen давно подключённого
-	// peer'а старый законно, Replace (newest-wins, Q10) идёт без гейта.
-	// reconnectTTL <= 0 → любой !HasPeer resume expired — TTL=0 запрещает
-	// именно воскрешение, не перехват живого соединения.
+	// Deadline gate (P24): an admitted slot with no live peer and an
+	// expired lastSeen + reconnectTTL → ErrReservationExpired — grace is
+	// finite even without a sweep pass; the predicate is shared with the
+	// sweep — see graceExpired. A live peer (HasPeer) is untouched by the
+	// gate: a long-connected peer's old lastSeen is legitimately stale, and
+	// Replace (newest-wins, Q10) proceeds without the gate.
+	// reconnectTTL <= 0 → any !HasPeer resume is expired — TTL=0 forbids
+	// resurrection specifically, not takeover of a live connection.
 	if !room.HasPeer(claims.PeerID) && graceExpired(slot.LastSeen, uc.reconnectTTL, time.Now()) {
 		expiredErr := fmt.Errorf("%w: room %d peer %d", domain.ErrReservationExpired, claims.RoomID, claims.PeerID)
 		uc.logging.Error("reconnect room: grace deadline expired", "error", expiredErr, "roomID", claims.RoomID, "peerID", claims.PeerID)
 		return PeerSession{}, expiredErr
 	}
 
-	// Атомарно под mutex комнаты reservation (T5): admitted-слот + refresh
-	// lastSeen, иначе reject — гонка sweep-revoke ↔ resume закрыта.
+	// Atomic under the room's reservation mutex (T5): admitted slot +
+	// lastSeen refresh, otherwise reject — the sweep-revoke ↔ resume race
+	// is closed.
 	slot, err = uc.reservation.Reconnect(ctx, claims.RoomID, claims.PeerID)
 	if err != nil {
 		uc.logging.Error("reconnect room: reservation reconnect failed", "error", err, "roomID", claims.RoomID, "peerID", claims.PeerID)
@@ -94,9 +99,10 @@ func (uc *ReconnectRoomUseCase) ReconnectRoom(ctx context.Context, connection tr
 		return PeerSession{}, err
 	}
 
-	// OpPeerReconnected остальным (Q5): FIFO outbound каждого получателя
-	// держит порядок «add-патч → opcode». Ошибка рассылки не роняет
-	// resume — peer уже в комнате, reject закрыл бы живое соединение.
+	// OpPeerReconnected to the others (Q5): each recipient's FIFO outbound
+	// keeps the "add patch → opcode" order. A broadcast error does not sink
+	// the resume — the peer is already in the room and a reject would kill
+	// a live connection.
 	if err := room.Send(events.PeerEvent{
 		ExcludePeerID: claims.PeerID,
 		Frame:         domain.NewPeerNotificationFrame(domain.OpPeerReconnected, claims.PeerID),

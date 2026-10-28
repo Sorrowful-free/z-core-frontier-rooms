@@ -11,7 +11,7 @@ import (
 	fwebsocket "github.com/fasthttp/websocket"
 )
 
-// peerIDOfNick — peerID по нику через registry (внешнее наблюдение).
+// peerIDOfNick — peerID by nick via the registry (external observation).
 func peerIDOfNick(t *testing.T, e *env.Env, roomID domain.RoomID, nick string) domain.PeerID {
 	t.Helper()
 	room, err := e.Registry.GetRoom(context.Background(), roomID)
@@ -27,8 +27,8 @@ func peerIDOfNick(t *testing.T, e *env.Env, roomID domain.RoomID, nick string) d
 	return domain.PeerIDInvalid
 }
 
-// waitOp ждёт кадр с заданным opcode на host-коннекте, пропуская state-патчи;
-// возвращает payload (peerID u64 BE для 0x80/0x81).
+// waitOp waits for a frame with the given opcode on the host connection,
+// skipping state patches; returns the payload (peerID u64 BE for 0x80/0x81).
 func waitOp(t *testing.T, conn *fwebsocket.Conn, op domain.OpCode, timeout time.Duration) []byte {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -46,9 +46,10 @@ func waitOp(t *testing.T, conn *fwebsocket.Conn, op domain.OpCode, timeout time.
 	return nil
 }
 
-// TestIntegration_Reconnect_WS — P20: разрыв → OpPeerDisconnected → resume
-// reconnect-токеном под тем же peerID → OpPeerReconnected; nick восстанавливается
-// из слота (в reconnect-токене его нет), повторный join-тикет остаётся одноразовым.
+// TestIntegration_Reconnect_WS — P20: disconnect → OpPeerDisconnected → resume
+// with the reconnect token under the same peerID → OpPeerReconnected; the nick
+// is restored from the slot (the reconnect token has none), a repeated join
+// ticket stays single-use.
 func TestIntegration_Reconnect_WS(t *testing.T) {
 	t.Parallel()
 
@@ -65,8 +66,8 @@ func TestIntegration_Reconnect_WS(t *testing.T) {
 
 	joinerPeerID := peerIDOfNick(t, e, roomID, "joiner")
 
-	// Разрыв: peer удаляется из комнаты сразу (delete-peer модель), остальные
-	// получают OpPeerDisconnected{peerID}, слот уходит в grace.
+	// Disconnect: the peer is removed from the room at once (delete-peer model),
+	// the others get OpPeerDisconnected{peerID}, the slot goes into grace.
 	if err := joinerConn.Close(); err != nil {
 		t.Fatalf("joiner conn close: %v", err)
 	}
@@ -77,7 +78,7 @@ func TestIntegration_Reconnect_WS(t *testing.T) {
 		t.Fatalf("OpPeerDisconnected payload = %x, want peerID %d", payload, joinerPeerID)
 	}
 
-	// Resume reconnect-токеном: тот же peerID, тот же nick (из слота).
+	// Resume with the reconnect token: same peerID, same nick (from the slot).
 	resumed := e.DialWS(t, "token="+reconnectToken)
 	defer resumed.Close()
 	e.WaitPeerCount(t, roomID, 2)

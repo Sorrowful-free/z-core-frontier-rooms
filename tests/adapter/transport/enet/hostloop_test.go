@@ -11,8 +11,8 @@ import (
 	adapterenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"
 )
 
-// HostLoop: контракт очереди и shutdown (P15). Все прогоны — на реальном
-// libenet host с addr=nil (клиентский, без listen-порта).
+// HostLoop: the queue and shutdown contract (P15). All runs use a real
+// libenet host with addr=nil (client-side, no listen port).
 
 func mustLoop(t *testing.T) *adapterenet.HostLoop {
 	t.Helper()
@@ -62,12 +62,12 @@ func TestHostLoopStopRejectsBlockingSubmit(t *testing.T) {
 	if _, err := adapterenet.Call(loop, func() int { return 1 }); !errors.Is(err, adapterenet.ErrHostLoopStopped) {
 		t.Fatalf("Call after Stop = %v, want ErrHostLoopStopped", err)
 	}
-	// Идемпотентность: повторный Stop возвращается, не паникует.
+	// Idempotency: a repeated Stop returns, does not panic.
 	loop.Stop()
 }
 
-// Принятые до Stop команды исполняются в drain, не теряются и не висят:
-// submit → Stop → обработанные счётчики должны дойти до 0 потерь.
+// Commands accepted before Stop execute during the drain — not lost and
+// not hanging: submit → Stop → the processed counters must reach 0 losses.
 func TestHostLoopStopDrainsAccepted(t *testing.T) {
 	t.Parallel()
 
@@ -83,12 +83,13 @@ func TestHostLoopStopDrainsAccepted(t *testing.T) {
 				done <- struct{}{}
 				return nil
 			}); err != nil {
-				done <- struct{}{} // Stop-отказ тоже освобождает ждущего
+				done <- struct{}{} // a Stop rejection also releases the waiter
 			}
 		}()
 	}
-	// Даём части команд попасть в очередь до Stop — не барьер, гонка сама
-	// часть сценария: важно, что ПРИНЯТЫЕ исполняются, отвергнутые — ошибка.
+	// Let some commands reach the queue before Stop — not a barrier; the
+	// race itself is part of the scenario: what matters is that ACCEPTED
+	// commands execute, rejected ones error.
 	time.Sleep(20 * time.Millisecond)
 	loop.Stop()
 
@@ -110,8 +111,9 @@ func TestHostLoopStopDrainsAccepted(t *testing.T) {
 	t.Logf("drained %d of %d submitted (rest rejected after Stop)", ran.Load(), n)
 }
 
-// Сериализация: команды одного loop'а исполняются по одной — параллельных
-// исполнений не быть (прямая проверка свойства, ради которого loop существует).
+// Serialization: commands of one loop execute one at a time — there must
+// be no parallel executions (a direct check of the property the loop
+// exists for).
 func TestHostLoopSerializesCommands(t *testing.T) {
 	t.Parallel()
 

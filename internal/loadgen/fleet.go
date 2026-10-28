@@ -16,9 +16,9 @@ import (
 	"time"
 )
 
-// Fleet — флот виртуальных клиентов: ramp-создание комнат через REST,
-// sustain, drain с серверным poll'ом, сбор отчёта. Сервер — внешний адрес
-// (LOADGEN_*_ADDR), не subprocess.
+// Fleet — a fleet of virtual clients: ramp room creation via REST, sustain,
+// drain with server-side polling, report collection. The server is an
+// external address (LOADGEN_*_ADDR), not a subprocess.
 type Fleet struct {
 	cfg *Config
 	m   *Metrics
@@ -30,19 +30,19 @@ type Fleet struct {
 	peers   []*peer
 
 	nickSeq atomic.Int64
-	started time.Time // write-once в Run до старта горутин
+	started time.Time // write-once in Run before goroutines start
 }
 
-// roomPlan — расписанная комната: размеры из ROOM_MIX.
+// roomPlan — a scheduled room: sizes from ROOM_MIX.
 type roomPlan struct {
 	capacity  int
 	occupancy int
 }
 
-// NewFleet собирает флот. log — live-прогресс (stdout из cmd/loadgen).
-// Control-plane HTTP тоже маркируется (клиенты за плохой сетью и на
-// control-plane): каждый новый conn Transport'а получает SO_MARK по
-// weighted pick из NETEM_SHARE; пустой share — немаркированный dial.
+// NewFleet builds the fleet. log — live progress (stdout from cmd/loadgen).
+// Control-plane HTTP is marked too (clients behind a bad network also on
+// the control plane): each new Transport conn gets an SO_MARK from a
+// weighted pick of NETEM_SHARE; an empty share means an unmarked dial.
 func NewFleet(cfg *Config, log io.Writer) *Fleet {
 	return &Fleet{
 		cfg: cfg,
@@ -64,8 +64,9 @@ func NewFleet(cfg *Config, log io.Writer) *Fleet {
 	}
 }
 
-// Run — полный прогон: ramp → sustain → drain → report. По ctx (SIGINT)
-// ramp/sustain прерываются, drain и отчёт всё равно отрабатывают (partial).
+// Run — the full run: ramp → sustain → drain → report. On ctx (SIGINT)
+// ramp/sustain are interrupted, but drain and the report still run
+// (partial).
 func (f *Fleet) Run(ctx context.Context) *Report {
 	started := time.Now()
 	f.started = started
@@ -87,8 +88,8 @@ func (f *Fleet) Run(ctx context.Context) *Report {
 	return rep
 }
 
-// pickWeighted — выбор значения из взвешенного mix'а (веса не обязаны
-// суммироваться в 100).
+// pickWeighted — pick a value from a weighted mix (weights are not required
+// to sum to 100).
 func pickWeighted(rnd *rand.Rand, opts []weightedOption) string {
 	total := 0
 	for _, o := range opts {
@@ -104,7 +105,7 @@ func pickWeighted(rnd *rand.Rand, opts []weightedOption) string {
 	return opts[len(opts)-1].Value
 }
 
-// pickRoomMix — то же для ROOM_MIX.
+// pickRoomMix — same for ROOM_MIX.
 func pickRoomMix(rnd *rand.Rand, mix []RoomMixEntry) RoomMixEntry {
 	total := 0
 	for _, e := range mix {
@@ -120,8 +121,8 @@ func pickRoomMix(rnd *rand.Rand, mix []RoomMixEntry) RoomMixEntry {
 	return mix[len(mix)-1]
 }
 
-// buildPlans — детерминированный план комнат: размер раздаётся
-// взвешенно-случайно из ROOM_MIX.
+// buildPlans — a deterministic room plan: sizes are dealt weighted-randomly
+// from ROOM_MIX.
 func (f *Fleet) buildPlans() []roomPlan {
 	plans := make([]roomPlan, 0, f.cfg.Rooms)
 	for i := 0; i < f.cfg.Rooms; i++ {
@@ -143,7 +144,7 @@ func (f *Fleet) ramp(ctx context.Context, plans []roomPlan) {
 
 	for i, plan := range plans {
 		if ctx.Err() != nil {
-			return // прервано — оставшееся не создаём, идём в drain
+			return // interrupted — don't create the rest, go to drain
 		}
 		if i > 0 {
 			select {
@@ -156,8 +157,8 @@ func (f *Fleet) ramp(ctx context.Context, plans []roomPlan) {
 	}
 }
 
-// spawnRoom — POST /rooms (host-ticket) → POST /rooms/:id/tickets ×
-// (occupancy-1) → спавн peer'ов с транспортами из TRANSPORT_MIX.
+// spawnRoom — POST /rooms (host ticket) → POST /rooms/:id/tickets ×
+// (occupancy-1) → spawn peers with transports from TRANSPORT_MIX.
 func (f *Fleet) spawnRoom(ctx context.Context, plan roomPlan) {
 	hostNick := f.nextNick()
 	hostTicket, err := f.createRoom(ctx, plan, hostNick)
@@ -198,10 +199,10 @@ func (f *Fleet) spawnRoom(ctx context.Context, plan roomPlan) {
 	}
 }
 
-// pickNetemGlobal — weighted pick netem-профиля через concurrency-safe
-// пакетный rand (DialContext Transport'а зовётся из его фоновых горутин —
-// f.rnd там трогать нельзя; для peer-спавна годится тот же pick). Пустой
-// share → "" (без маркировки).
+// pickNetemGlobal — weighted pick of a netem profile via the
+// concurrency-safe package-level rand (the Transport's DialContext is
+// called from its background goroutines — f.rnd must not be touched there;
+// the same pick works for peer spawns too). Empty share → "" (no marking).
 func pickNetemGlobal(opts []weightedOption) string {
 	if len(opts) == 0 {
 		return ""
@@ -223,7 +224,7 @@ func pickNetemGlobal(opts []weightedOption) string {
 func (f *Fleet) spawnPeer(ctx context.Context, spec peerSpec) {
 	profile := pickNetemGlobal(f.cfg.NetemShare)
 	mark, err := netemMarkFor(profile)
-	if err != nil { // имена провалидированы в LoadConfigFromEnv — unreachable
+	if err != nil { // names are validated in LoadConfigFromEnv — unreachable
 		f.m.httpError("netem")
 		return
 	}
@@ -248,8 +249,8 @@ func (f *Fleet) peersSnapshot() []*peer {
 	return append([]*peer(nil), f.peers...)
 }
 
-// enetHost — дефолт LOADGEN_ENET_ADDR: host-часть WS-адреса (ENet живёт на
-// том же хосте, что и HTTP/WS).
+// enetHost — default for LOADGEN_ENET_ADDR: the host part of the WS address
+// (ENet lives on the same host as HTTP/WS).
 func enetHost(wsAddr string) string {
 	host, _, ok := strings.Cut(wsAddr, ":")
 	if !ok || host == "" {
@@ -260,8 +261,8 @@ func enetHost(wsAddr string) string {
 
 // --- HTTP control plane ------------------------------------------------------
 
-// ticketResponse — поля issueTicketResponse (delivery/http/dto.go), нужные
-// клиенту: join + reconnect токены, enet_port, room.
+// ticketResponse — the issueTicketResponse fields (delivery/http/dto.go)
+// the client needs: join + reconnect tokens, enet_port, room.
 type ticketResponse struct {
 	Token          string `json:"token"`
 	ReconnectToken string `json:"reconnect_token"`
@@ -344,7 +345,7 @@ func (f *Fleet) postJSON(ctx context.Context, path string, body any, wantStatus 
 
 // --- sustain -----------------------------------------------------------------
 
-// sustain — жизнь флота до DURATION (или ctx).
+// sustain — fleet lifetime until DURATION (or ctx).
 func (f *Fleet) sustain(ctx context.Context) {
 	timer := time.NewTimer(f.cfg.Duration)
 	defer timer.Stop()
@@ -356,7 +357,7 @@ func (f *Fleet) sustain(ctx context.Context) {
 
 // --- drain -------------------------------------------------------------------
 
-// drainResult — итог drain-фазы для отчёта.
+// drainResult — outcome of the drain phase for the report.
 type drainResult struct {
 	complete    bool
 	elapsed     time.Duration
@@ -366,17 +367,18 @@ type drainResult struct {
 	activeSlots float64
 }
 
-// drain — abrupt close всех соединений (клиенты комнат не удаляются — сервер
-// обязан сам собрать пустые комнаты и слоты), затем poll admin /metrics до
-// нуля по rooms_active_rooms + rooms_reservation_active_slots с дедлайном
-// DRAIN_TIMEOUT. Не дошло до 0 → GET /rooms дамп в отчёт.
+// drain — abrupt close of all connections (clients do not delete rooms —
+// the server must collect empty rooms and slots itself), then poll admin
+// /metrics until rooms_active_rooms + rooms_reservation_active_slots reach
+// zero, within the DRAIN_TIMEOUT deadline. If it doesn't reach 0 → a GET
+// /rooms dump goes into the report.
 func (f *Fleet) drain() drainResult {
 	start := time.Now()
 	for _, p := range f.peersSnapshot() {
 		p.closeForGood()
 	}
-	// Peer-горутины завершаются по closeReq — conn уже закрыт; дожимаем wg
-	// через done-каналы (bounded: Recv падает сразу после Close).
+	// Peer goroutines exit on closeReq — the conn is already closed; we wait
+	// for them via done channels (bounded: Recv fails right after Close).
 	waitDone := make(chan struct{})
 	go func() {
 		for _, p := range f.peersSnapshot() {
@@ -424,8 +426,9 @@ func (f *Fleet) drain() drainResult {
 	return res
 }
 
-// scrapeGauges — читает prometheus exposition с ADMIN_LISTEN_ADDR и вытаскивает
-// rooms_active_rooms / rooms_active_peers / rooms_reservation_active_slots.
+// scrapeGauges — reads the prometheus exposition from ADMIN_LISTEN_ADDR and
+// extracts rooms_active_rooms / rooms_active_peers /
+// rooms_reservation_active_slots.
 func (f *Fleet) scrapeGauges() (rooms, peers, slots float64, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -460,7 +463,7 @@ func (f *Fleet) scrapeGauges() (rooms, peers, slots float64, err error) {
 	return rooms, peers, slots, nil
 }
 
-// scrapeValue — «name{labels}? value» → value для нужной метрики.
+// scrapeValue — "name{labels}? value" → value for the wanted metric.
 func scrapeValue(line, name string) (float64, bool) {
 	if !strings.HasPrefix(line, name) {
 		return 0, false

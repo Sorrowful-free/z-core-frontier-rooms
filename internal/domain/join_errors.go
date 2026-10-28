@@ -2,7 +2,7 @@ package domain
 
 import "errors"
 
-// Sentinel-ошибки join/admit; delivery мапит их в OpCode (см. opcodes.go).
+// Join/admit sentinel errors; delivery maps them to OpCode (see opcodes.go).
 
 var (
 	ErrEmptyToken         = errors.New("empty token")
@@ -15,11 +15,11 @@ var (
 	ErrPeerStartFailed    = errors.New("peer start failed")
 	ErrRoomFull           = errors.New("room full")
 	ErrPeerAlreadyInRoom  = errors.New("peer already in room")
-	// ErrTicketSlotHeld — слот peer уже занят в reservation (reserved или admitted); повторный Issue запрещён (политика A).
+	// ErrTicketSlotHeld — the peer slot is already taken in reservation (reserved or admitted); a repeated Issue is forbidden (policy A).
 	ErrTicketSlotHeld = errors.New("ticket slot held")
-	// ErrWrongHost - ticket привязан к другому ENet host'у (claims.hostID != host admit'а); admit отклоняется (P18).
+	// ErrWrongHost - ticket is bound to a different ENet host (claims.hostID != the admitting host); admit is rejected (P18).
 	ErrWrongHost = errors.New("ticket bound to another enet host")
-	// ErrPeerStale — leave пришёл с peer-объектом, уже вытесненным из комнаты
-	// (Replace/resume): stale teardown старого соединения, ожидаемая гонка (P20).
+	// ErrPeerStale — leave arrived with a peer object already evicted from the room
+	// (Replace/resume): stale teardown of the old connection, an expected race (P20).
 	ErrPeerStale = errors.New("peer stale")
 )

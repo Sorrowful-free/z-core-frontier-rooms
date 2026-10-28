@@ -1,7 +1,7 @@
-// Package admin — admin listener процесса (P19): отдельный Fiber-инстанс
-// вне публичного API. Сейчас единственный маршрут — `GET /metrics`
-// (prometheus exposition текста через `prometheus.Gatherer`; без
-// `net/http`/promhttp — ручной gather + expfmt).
+// Package admin — the process admin listener (P19): a separate Fiber instance
+// outside the public API. Currently the only route is `GET /metrics`
+// (prometheus text exposition via `prometheus.Gatherer`; no
+// `net/http`/promhttp — manual gather + expfmt).
 package admin
 
 import (
@@ -14,9 +14,9 @@ import (
 	"github.com/prometheus/common/expfmt"
 )
 
-// NewMetricsApp собирает Fiber-приложение admin listener'а:
-// `GET /metrics` → exposition всех метрик gatherer'а. logger — для
-// error-path gather/encode (P19b: ошибки не глотаются без следа).
+// NewMetricsApp builds the Fiber app for the admin listener:
+// `GET /metrics` → exposition of all gatherer metrics. logger is for
+// the gather/encode error path (P19b: errors are not swallowed silently).
 func NewMetricsApp(gatherer prometheus.Gatherer, logger logging.Logger) *fiber.App {
 	app := fiber.New()
 	app.Get("/metrics", newMetricsHandler(gatherer, logger))

@@ -3,9 +3,9 @@ package events
 import "github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 
 type PeerEvent struct {
-	// PeerID — целевой peer; PeerIDInvalid — broadcast по комнате.
+	// PeerID — target peer; PeerIDInvalid — broadcast to the room.
 	PeerID domain.PeerID
-	// ExcludePeerID — при broadcast не доставлять этому peer (обычно отправитель).
+	// ExcludePeerID — on broadcast, do not deliver to this peer (usually the sender).
 	ExcludePeerID domain.PeerID
 	Frame         domain.Frame
 }

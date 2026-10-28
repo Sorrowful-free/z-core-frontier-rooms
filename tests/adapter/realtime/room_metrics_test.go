@@ -15,8 +15,8 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/prom"
 )
 
-// newMetricsRoom - комната с продовым wiring метрик: StateRoomPolicyFactory
-// (master-машина получает metrics полем) + RoomFactory (lifecycle-эмиты).
+// newMetricsRoom — a room with production metrics wiring: StateRoomPolicyFactory
+// (the master machine gets metrics as a field) + RoomFactory (lifecycle emits).
 func newMetricsRoom(t *testing.T, m *metricsadapter.Metrics) realtime.Room {
 	t.Helper()
 	logger := stdlib.New("test")
@@ -33,8 +33,8 @@ func newMetricsRoom(t *testing.T, m *metricsadapter.Metrics) realtime.Room {
 	return room
 }
 
-// P19b фикс 1: первый элекшн комнаты - то же назначение master, что и
-// перевыборы, и обязан считаться в master_elections_total.
+// P19b fix 1: a room's first election is the same master assignment as a
+// re-election and must be counted in master_elections_total.
 func TestRoomMetrics_FirstElectionCounted(t *testing.T) {
 	t.Parallel()
 
@@ -69,10 +69,11 @@ func TestRoomMetrics_FirstElectionCounted(t *testing.T) {
 	}
 }
 
-// P19b фикс 2: повторный leave не должен дважды декрементить active_peers -
-// метрика привязана к факту изъятия peer'а из map на room-loop'е, а не к
-// вызову Leave. Оба конкурентных caller'а могут проскочить pre-check до
-// сериализации на loop'е - гарда внутри lifecycle оставляет один decrement.
+// P19b fix 2: a repeated leave must not decrement active_peers twice —
+// the metric is bound to the fact of the peer's removal from the map on the
+// room loop, not to the Leave call. Both concurrent callers can slip past
+// the pre-check before serializing on the loop — the guard inside the
+// lifecycle leaves a single decrement.
 func TestRoomMetrics_LeaveDriftGuard(t *testing.T) {
 	t.Parallel()
 
@@ -95,7 +96,7 @@ func TestRoomMetrics_LeaveDriftGuard(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_ = room.Leave(peer) // второй вызов ошибочен - игнорируем
+			_ = room.Leave(peer) // the second call errors — ignored
 		}()
 	}
 	wg.Wait()
@@ -108,11 +109,12 @@ func TestRoomMetrics_LeaveDriftGuard(t *testing.T) {
 	}
 }
 
-// P31: teardown комнаты с N peers — Room.Stop вычитает оставшихся из
-// active_peers разом (-len(r.peers)): kill-пути комнаты (closeRoom,
-// DELETE, empty-death, shutdown) убивают peers мимо Leave и их +1 на
-// join иначе завышали бы gauge навсегда. Peers, ушедшие через Leave,
-// уже получили свой -1 и в r.peers не лежат — двойного вычета нет.
+// P31: teardown of a room with N peers — Room.Stop subtracts the remaining
+// ones from active_peers in one go (-len(r.peers)): room kill paths
+// (closeRoom, DELETE, empty-death, shutdown) kill peers bypassing Leave, and
+// their +1 on join would otherwise inflate the gauge forever. Peers that
+// left via Leave already got their -1 and are not in r.peers — no double
+// subtraction.
 func TestRoomMetrics_StopRebalancesActivePeers(t *testing.T) {
 	t.Parallel()
 
@@ -132,8 +134,8 @@ func TestRoomMetrics_StopRebalancesActivePeers(t *testing.T) {
 		t.Fatalf("active_peers after joins = %v, want %d", got, n)
 	}
 
-	// Один уходит обычным Leave: -1 уже эмитнут на lifecycle — Stop не
-	// должен вычесть его повторно.
+	// One leaves via a normal Leave: the -1 was already emitted on the
+	// lifecycle — Stop must not subtract it again.
 	peers := room.GetPeers()
 	if err := room.Leave(peers[0]); err != nil {
 		t.Fatalf("leave: %v", err)

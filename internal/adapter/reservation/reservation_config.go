@@ -10,17 +10,17 @@ const (
 	DefaultOrphanSweepInterval = 10 * time.Second
 )
 
-// ReservationConfig — reconnect grace admitted-слотов без peer в room (P20).
+// ReservationConfig — reconnect grace for admitted slots with no peer in the room (P20).
 type ReservationConfig struct {
-	// ReconnectTTL — grace от lastSeen слота до revoke orphan;
-	// 0 — сразу при sweep. Единый timestamp lastSeen обслуживает и
-	// TTL слота, и grace после разрыва.
+	// ReconnectTTL — grace from the slot's lastSeen until orphan revoke;
+	// 0 — immediate at sweep. The single lastSeen timestamp serves both
+	// the slot TTL and post-disconnect grace.
 	ReconnectTTL time.Duration
-	// OrphanSweepInterval — период sweep; 0 — отключить фоновый sweep.
+	// OrphanSweepInterval — sweep period; 0 — disable the background sweep.
 	OrphanSweepInterval time.Duration
 }
 
-// Validate проверяет, что длительности не отрицательные.
+// Validate checks that durations are non-negative.
 func (c ReservationConfig) Validate() error {
 	if c.ReconnectTTL < 0 {
 		return fmt.Errorf("reservation config: reconnect TTL must be >= 0")

@@ -6,7 +6,7 @@ import (
 
 const DefaultHTTPAddr = ":3000"
 
-// ServerConfig — HTTP/Fiber listen и прочие параметры процесса.
+// ServerConfig — HTTP/Fiber listen and other process parameters.
 type ServerConfig struct {
 	HTTPAddr string
 }

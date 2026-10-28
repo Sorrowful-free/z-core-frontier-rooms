@@ -12,7 +12,7 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-// P31: never-joined комната — reserve истёк → sweep убивает комнату.
+// P31: never-joined room — the reserve expired → the sweep kills the room.
 func TestSweepEmptyRooms_ExpiredReserve_KillsRoom(t *testing.T) {
 	t.Parallel()
 
@@ -29,8 +29,8 @@ func TestSweepEmptyRooms_ExpiredReserve_KillsRoom(t *testing.T) {
 
 	registry.EXPECT().GetList(gomock.Any()).Return([]realtime.Room{room}, nil)
 	room.EXPECT().GetID().Return(roomID).AnyTimes()
-	// GetPeers вызывается дважды: предикат sweep'а и перепроверка
-	// closeRoomIfEmpty перед kill.
+	// GetPeers is called twice: the sweep predicate and the closeRoomIfEmpty
+	// recheck before the kill.
 	room.EXPECT().GetPeers().Return(nil).Times(2)
 	reservation.EXPECT().ListRoomSlots(gomock.Any(), roomID).Return([]domain.RoomSlotDetail{{
 		PeerID:    peerID,
@@ -54,8 +54,8 @@ func TestSweepEmptyRooms_ExpiredReserve_KillsRoom(t *testing.T) {
 	}
 }
 
-// P31: never-joined комната — живой reserve (unexpired ticket) держит
-// комнату: join ещё может состояться, kill запрещён.
+// P31: never-joined room — a live reserve (unexpired ticket) keeps the
+// room alive: the join may still happen, kill is forbidden.
 func TestSweepEmptyRooms_LiveReserve_SkipsRoom(t *testing.T) {
 	t.Parallel()
 
@@ -75,7 +75,7 @@ func TestSweepEmptyRooms_LiveReserve_SkipsRoom(t *testing.T) {
 		State:     domain.ReservationSlotReserved,
 		ExpiresAt: time.Now().Add(time.Hour),
 	}}, nil)
-	// DeleteRoom/UnregisterRoom не ожидаются — gomock упадёт на вызове.
+	// DeleteRoom/UnregisterRoom are not expected — gomock fails on a call.
 
 	uc := useroom.NewSweepEmptyRoomsUseCase(registry, reservation, logger, nil)
 	killed, err := uc.RunOnce(context.Background())
@@ -87,7 +87,7 @@ func TestSweepEmptyRooms_LiveReserve_SkipsRoom(t *testing.T) {
 	}
 }
 
-// P31: admitted grace-слот держит комнату — reconnect ещё возможен.
+// P31: an admitted grace slot keeps the room alive — a reconnect is still possible.
 func TestSweepEmptyRooms_AdmittedGrace_SkipsRoom(t *testing.T) {
 	t.Parallel()
 
@@ -105,8 +105,8 @@ func TestSweepEmptyRooms_AdmittedGrace_SkipsRoom(t *testing.T) {
 	reservation.EXPECT().ListRoomSlots(gomock.Any(), roomID).Return([]domain.RoomSlotDetail{{
 		PeerID:   domain.PeerID(30),
 		State:    domain.ReservationSlotAdmitted,
-		LastSeen: time.Now().Add(-time.Hour), // даже «старый» grace не sweep'ится здесь —
-		// его дедлайн разбирает orphan-sweep; пока слот admitted, он живой.
+		LastSeen: time.Now().Add(-time.Hour), // even a "stale" grace is not swept here —
+		// its deadline is handled by the orphan sweep; while the slot is admitted, it is alive.
 	}}, nil)
 
 	uc := useroom.NewSweepEmptyRoomsUseCase(registry, reservation, logger, nil)
@@ -119,8 +119,8 @@ func TestSweepEmptyRooms_AdmittedGrace_SkipsRoom(t *testing.T) {
 	}
 }
 
-// P31: комната без единого слота (reserve истёк и вычислен лениво раньше)
-// — kill.
+// P31: a room without a single slot (the reserve expired and was lazily
+// reaped earlier) — kill.
 func TestSweepEmptyRooms_NoSlots_KillsRoom(t *testing.T) {
 	t.Parallel()
 
@@ -153,8 +153,8 @@ func TestSweepEmptyRooms_NoSlots_KillsRoom(t *testing.T) {
 	}
 }
 
-// P31: reservation уже unregister'нута параллельным teardown → слотов нет
-// → kill комнаты-трупа в registry.
+// P31: the reservation was already unregistered by a parallel teardown → no
+// slots → kill the dead room in the registry.
 func TestSweepEmptyRooms_ReservationGone_KillsRoom(t *testing.T) {
 	t.Parallel()
 
@@ -187,7 +187,7 @@ func TestSweepEmptyRooms_ReservationGone_KillsRoom(t *testing.T) {
 	}
 }
 
-// P31: комната с живыми peers пропускается без листинга слотов.
+// P31: a room with live peers is skipped without listing the slots.
 func TestSweepEmptyRooms_RoomWithPeers_Skipped(t *testing.T) {
 	t.Parallel()
 
@@ -200,7 +200,7 @@ func TestSweepEmptyRooms_RoomWithPeers_Skipped(t *testing.T) {
 
 	registry.EXPECT().GetList(gomock.Any()).Return([]realtime.Room{room}, nil)
 	room.EXPECT().GetPeers().Return([]realtime.Peer{peer})
-	// ListRoomSlots не ожидается — peers > 0, ранний выход.
+	// ListRoomSlots is not expected — peers > 0, early exit.
 
 	uc := useroom.NewSweepEmptyRoomsUseCase(registry, reservation, logger, nil)
 	killed, err := uc.RunOnce(context.Background())

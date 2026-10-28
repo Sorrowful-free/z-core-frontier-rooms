@@ -20,7 +20,7 @@ const (
 	resumeBackoff   = 300 * time.Millisecond
 )
 
-// Probe-id'ы payload'ов: один input-value и один position-component на клиента.
+// Payload probe IDs: one input value and one position component per client.
 const (
 	inputValueProbe = state.ValueId(1)
 	posComponentID  = state.ComponentID(1)
@@ -28,25 +28,26 @@ const (
 	entityTypeProbe = state.EntityTypeID(1)
 )
 
-// peer — сценарный движок одного клиента комнаты (P27). Жизненный цикл:
+// peer — scenario engine of a single room client (P27). Lifecycle:
 //
-//	dial (join-ticket) → read-loop (ОБЯЗАТЕЛЕН: fasthttp/websocket отвечает
-//	на ping только внутри ReadMessage — мёртвый reader = idle-eviction через
-//	TRANSPORT_PEER_IDLE_TIMEOUT) + send-loop по LOADGEN_MODE →
-//	разрыв → resume reconnect-токеном (если клиент в RECONNECT_RATE) → …
-//	→ closeReq (drain) — без resume.
+//	dial (join ticket) → read loop (MANDATORY: fasthttp/websocket only
+//	answers pings inside ReadMessage — a dead reader means idle eviction
+//	via TRANSPORT_PEER_IDLE_TIMEOUT) + send loop per LOADGEN_MODE →
+//	disconnect → resume with the reconnect token (if the client is in
+//	RECONNECT_RATE) → … → closeReq (drain) — no resume.
 //
-// Join = первый кадр 0x01 FullState; до него однобайтовый OpCode 0x40–0x7F —
-// join/resume reject, дальше сервер закрывает conn.
+// Join = the first 0x01 FullState frame; before it a one-byte OpCode
+// 0x40–0x7F is a join/resume reject, after which the server closes the
+// conn.
 type peer struct {
 	nick           string
 	roomID         int64
 	transport      string
 	joinToken      string
 	reconnectToken string
-	enetAddr       string // host для будущего ENet-dial (inc 3)
-	enetPort       uint16 // назначенный enet_port из ticket (0 — нет)
-	netemMark      uint32 // SO_MARK профиля из NETEM_SHARE (0 — без маркировки)
+	enetAddr       string // host for the future ENet dial (inc 3)
+	enetPort       uint16 // assigned enet_port from the ticket (0 — none)
+	netemMark      uint32 // SO_MARK of the profile from NETEM_SHARE (0 — no marking)
 
 	cfg *Config
 	m   *Metrics
@@ -61,17 +62,17 @@ type peer struct {
 
 	peerID           atomic.Uint32
 	isMaster         atomic.Bool
-	joined           atomic.Bool // был admit хотя бы раз (0x01 в первой сессии)
-	reconnectEnabled atomic.Bool // выбран в RECONNECT_RATE — resume после разрыва
-	closeReq         atomic.Bool // финальный разрыв без resume (drain / auth-kill)
-	dropReq          atomic.Bool // плановый разрыв reconnect-цикла (не «unexpected»)
+	joined           atomic.Bool // admitted at least once (0x01 in the first session)
+	reconnectEnabled atomic.Bool // picked by RECONNECT_RATE — resume after a drop
+	closeReq         atomic.Bool // final drop without resume (drain / auth-kill)
+	dropReq          atomic.Bool // planned drop of the reconnect cycle (not "unexpected")
 
 	mu            sync.Mutex
-	room          *state.RoomState // локальная реплика — для peerID/isMaster
-	sawRoomClosed bool             // 0x82 в текущей сессии → close conn ожидаем
-	joinRejected  bool             // reject-кадр в текущей сессии
+	room          *state.RoomState // local replica — for peerID/isMaster
+	sawRoomClosed bool             // 0x82 in the current session → conn close expected
+	joinRejected  bool             // reject frame in the current session
 
-	done chan struct{} // закрыт по выходу из run
+	done chan struct{} // closed on exit from run
 }
 
 func newPeer(cfg *Config, m *Metrics, spec peerSpec) *peer {
@@ -99,7 +100,7 @@ func newPeer(cfg *Config, m *Metrics, spec peerSpec) *peer {
 	return p
 }
 
-// peerSpec — параметры спавна клиента (fleet собирает из ticket-ответов).
+// peerSpec — client spawn parameters (fleet builds them from ticket responses).
 type peerSpec struct {
 	nick           string
 	roomID         int64
@@ -111,7 +112,7 @@ type peerSpec struct {
 	netemMark      uint32
 }
 
-// run — внешний цикл сессий: dial → session → (resume | exit).
+// run — outer session loop: dial → session → (resume | exit).
 func (p *peer) run(ctx context.Context) {
 	defer close(p.done)
 	go p.controlLoop(ctx)
@@ -135,15 +136,16 @@ func (p *peer) run(ctx context.Context) {
 		p.mu.Lock()
 		rejected := p.joinRejected
 		p.mu.Unlock()
-		// Reject = слот/комната мертвы — повторные resume бессмысленны и
-		// лишь штормят admit (0x43-шторм после смерти комнаты).
+		// Reject = the slot/room is dead — further resumes are pointless and
+		// only storm admit (a 0x43 storm after the room's death).
 		if rejected || p.closeReq.Load() || ctx.Err() != nil || !p.reconnectEnabled.Load() {
 			return
 		}
 		if p.reconnectToken == "" {
 			return
 		}
-		// Backoff перед resume — не долбить admit в узком окне после разрыва.
+		// Backoff before resume — don't hammer admit in the narrow window
+		// after a drop.
 		select {
 		case <-ctx.Done():
 			return
@@ -153,8 +155,8 @@ func (p *peer) run(ctx context.Context) {
 	}
 }
 
-// dial — dialDataConn + метрики (join attempt/latency только первой сессии;
-// ошибка резюма — тот же dial_errors{transport}).
+// dial — dialDataConn + metrics (join attempt/latency only for the first
+// session; a resume error is the same dial_errors{transport}).
 func (p *peer) dial(ctx context.Context, token string, resumed bool) (DataConn, error) {
 	if !resumed {
 		p.m.JoinAttempts.Add(1)
@@ -177,15 +179,15 @@ func (p *peer) dial(ctx context.Context, token string, resumed bool) (DataConn, 
 	return conn, nil
 }
 
-// session — одна жизнь соединения: read-loop (блокирует) + send-loop.
-// Выход — ошибка Recv (разрыв/close) или ctx.
+// session — one lifetime of a connection: read loop (blocking) + send loop.
+// Exit — a Recv error (drop/close) or ctx.
 func (p *peer) session(ctx context.Context, conn DataConn, resumed bool, sessionStart time.Time) {
 	p.connMu.Lock()
 	p.conn = conn
 	p.connMu.Unlock()
-	// Гонка «closeReq/dropReq пришёл во время dial»: закрытие по флагу нашло
-	// conn=nil и было no-op — дожимаем здесь, иначе свежее соединение
-	// переживёт drain и оставит peer/слот на сервере.
+	// The "closeReq/dropReq arrived during dial" race: flag-driven close saw
+	// conn=nil and was a no-op — we follow through here, otherwise the fresh
+	// connection survives the drain and leaves a peer/slot on the server.
 	if p.closeReq.Load() || p.dropReq.Load() || ctx.Err() != nil {
 		_ = conn.Close()
 	}
@@ -193,9 +195,9 @@ func (p *peer) session(ctx context.Context, conn DataConn, resumed bool, session
 	p.sawRoomClosed = false
 	p.joinRejected = false
 	p.mu.Unlock()
-	// Сервер чистит Inputs/Entities peer'а на disconnect (OnLeave удаляет
-	// записи) — патчи новой сессии строим от пустого prev, иначе Added/Updated
-	// разъедутся с серверным state.
+	// The server cleans the peer's Inputs/Entities on disconnect (OnLeave
+	// removes the records) — the new session's patches are built from an
+	// empty prev, otherwise Added/Updated diverge from the server state.
 	prevInput := state.InputState{Values: state.NewMapState[state.ValueId, state.ValueState]()}
 	prevEntities := state.NewMapState[state.EntityID, state.EntityState]()
 
@@ -212,7 +214,7 @@ func (p *peer) session(ctx context.Context, conn DataConn, resumed bool, session
 		p.connMu.Unlock()
 	}()
 
-	gotFull := false // 0x01 в этой сессии (join/resume reject — кадры до него)
+	gotFull := false // 0x01 in this session (join/resume rejects are frames before it)
 	for {
 		op, payload, err := conn.Recv()
 		if err != nil {
@@ -229,25 +231,26 @@ func (p *peer) session(ctx context.Context, conn DataConn, resumed bool, session
 			if resumed {
 				p.m.ResumeRejects.Add(1)
 			}
-			continue // сервер закроет conn — выход по ошибке Recv
+			continue // the server will close the conn — exit on a Recv error
 		}
 		if !gotFull && resumed {
-			// Первый не-reject кадр resume-сессии — admit прошёл.
+			// The first non-reject frame of a resume session — admit passed.
 			p.m.ReconnectSuccess.Add(1)
 		}
 		gotFull = p.handleFrame(op, payload, sessionStart) || gotFull
 	}
 }
 
-// isRejectOp — join/admit/reservation reject-кадры (0x40–0x7F, payload пуст):
-// приходят единственным кадром до admit. 0x60–0x6F пересекаются по диапазону,
-// но до admit недостижимы — различие по «first frame».
+// isRejectOp — join/admit/reservation reject frames (0x40–0x7F, empty
+// payload): they arrive as the only frame before admit. 0x60–0x6F overlap
+// the range but are unreachable before admit — the distinction is by
+// "first frame".
 func isRejectOp(op domain.OpCode) bool {
 	return op >= domain.OpEmptyToken && op <= domain.OpReservationInternal
 }
 
-// handleFrame — декод/учёт входящего кадра. Возвращает true, если это был
-// 0x01 FullState (граница «admit прошёл»).
+// handleFrame — decode/accounting of an incoming frame. Returns true if it
+// was a 0x01 FullState (the "admit passed" boundary).
 func (p *peer) handleFrame(op domain.OpCode, payload []byte, sessionStart time.Time) bool {
 	switch op {
 	case state.OpCodeFullState:
@@ -278,9 +281,9 @@ func (p *peer) handleFrame(op domain.OpCode, payload []byte, sessionStart time.T
 	case domain.OpPeerReconnected:
 		p.m.PeerReconnectedRecv.Add(1)
 	case domain.OpRoomClosed:
-		// Сервер убил комнату (P31/P33): close комнаты, DELETE,
-		// no-migration деплой — сервер закроет conn следом, это ожидаемый
-		// teardown, не unexpected disconnect.
+		// The server killed the room (P31/P33): room close, DELETE,
+		// no-migration deploy — the server closes the conn next; this is an
+		// expected teardown, not an unexpected disconnect.
 		p.m.RoomClosedRecv.Add(1)
 		p.mu.Lock()
 		p.sawRoomClosed = true
@@ -291,15 +294,15 @@ func (p *peer) handleFrame(op domain.OpCode, payload []byte, sessionStart time.T
 	return false
 }
 
-// onRecvErr — классификация конца сессии.
+// onRecvErr — classification of the end of a session.
 func (p *peer) onRecvErr(ctx context.Context, gotFull bool) {
 	p.mu.Lock()
 	rejected, roomClosed := p.joinRejected, p.sawRoomClosed
 	p.mu.Unlock()
 	switch {
 	case ctx.Err() != nil, p.closeReq.Load(), p.dropReq.Swap(false), rejected, roomClosed:
-		// Ожидаемые разрывы: shutdown, drain, плановый reconnect-drop,
-		// close после reject-кадра, close после 0x82 (комната мертва).
+		// Expected drops: shutdown, drain, a planned reconnect drop, a close
+		// after a reject frame, a close after 0x82 (the room is dead).
 	default:
 		if gotFull {
 			p.m.UnexpectedDisconnects.Add(1)
@@ -309,12 +312,12 @@ func (p *peer) onRecvErr(ctx context.Context, gotFull bool) {
 	}
 }
 
-// controlLoop — фоновые события клиента: плановые разрывы reconnect-стресса и
-// принудительный close по ctx (session разбудится ошибкой Recv).
+// controlLoop — background client events: planned drops of the reconnect
+// stress and a forced close on ctx (session wakes up with a Recv error).
 func (p *peer) controlLoop(ctx context.Context) {
 	if p.reconnectEnabled.Load() {
-		// Первый разрыв — в случайной точке окна, чтобы не стрелять волной;
-		// дальше — период RECONNECT_EVERY.
+		// The first drop is at a random point in the window so clients don't
+		// fire as a wave; afterwards — the RECONNECT_EVERY period.
 		t := time.NewTimer(time.Duration(p.rnd.Float64() * float64(p.cfg.ReconnectEvery)))
 		defer t.Stop()
 		for {
@@ -326,8 +329,8 @@ func (p *peer) controlLoop(ctx context.Context) {
 				return
 			case <-t.C:
 				if p.joined.Load() {
-					// conn может быть nil (mid-dial/между сессиями): dropReq
-					// дожимается проверкой в начале session.
+					// conn may be nil (mid-dial/between sessions): dropReq is
+					// followed through by the check at the start of session.
 					p.m.ReconnectAttempts.Add(1)
 					p.dropReq.Store(true)
 					p.closeConn()
@@ -351,13 +354,13 @@ func (p *peer) closeConn() {
 	}
 }
 
-// closeForGood — abrupt-разрыв без resume: drain-фаза флота.
+// closeForGood — abrupt drop without resume: the fleet's drain phase.
 func (p *peer) closeForGood() {
 	p.closeReq.Store(true)
 	p.closeConn()
 }
 
-// --- replica state: свой peerID и isMaster ---------------------------------
+// --- replica state: own peerID and isMaster --------------------------------
 
 func (p *peer) applyFull(full *state.RoomState) {
 	p.mu.Lock()
@@ -370,7 +373,7 @@ func (p *peer) applyPatch(patch *state.RoomStatePatch) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.room == nil {
-		return // patch до первого full — full-state resync вылечит реплику
+		return // patch before the first full — a full-state resync heals the replica
 	}
 	if err := p.room.ApplyPatch(*patch); err != nil {
 		p.m.decodeError()
@@ -379,7 +382,7 @@ func (p *peer) applyPatch(patch *state.RoomStatePatch) {
 	p.observeLocked()
 }
 
-// observeLocked — peerID по nick'у и флаг isMaster для send-loop.
+// observeLocked — peerID by nick and the isMaster flag for the send loop.
 func (p *peer) observeLocked() {
 	rs := p.room
 	if rs == nil {
@@ -404,10 +407,10 @@ func (p *peer) observeLocked() {
 
 // --- send loop --------------------------------------------------------------
 
-// sendLoop — PatchInput всем клиентам (INPUT_HZ), PatchEntities — пока сервер
-// держит нас master'ом (ENTITIES_HZ). mode=occupancy — ничего не шлём.
-// peerID валиден только после admit + первого full state — до этого кадры
-// бессмысленны (peer ещё не в комнате).
+// sendLoop — PatchInput for all clients (INPUT_HZ), PatchEntities while the
+// server keeps us as master (ENTITIES_HZ). mode=occupancy — nothing is sent.
+// peerID is valid only after admit + the first full state — before that
+// frames are pointless (the peer is not in the room yet).
 func (p *peer) sendLoop(ctx context.Context, conn DataConn, prevInput *state.InputState,
 	prevEntities *state.EntitiesState, quit, quitDone chan struct{}) {
 	defer close(quitDone)
@@ -442,8 +445,8 @@ func (p *peer) sendLoop(ctx context.Context, conn DataConn, prevInput *state.Inp
 	}
 }
 
-// sendInput — PatchInput (0x06) со значением "nick:<rand>:<tick>"; MakePatch
-// от prev → Added на первом кадре сессии, дальше Updated.
+// sendInput — PatchInput (0x06) with the value "nick:<rand>:<tick>";
+// MakePatch from prev → Added on the session's first frame, Updated after.
 func (p *peer) sendInput(conn DataConn, tick uint64, prev *state.InputState) {
 	next := state.InputState{Values: state.MapState[state.ValueId, state.ValueState]{
 		inputValueProbe: state.ValueState(fmt.Sprintf("%s:%x:%d", p.nick, p.rnd.Uint64(), tick)),
@@ -462,8 +465,8 @@ func (p *peer) sendInput(conn DataConn, tick uint64, prev *state.InputState) {
 	}
 }
 
-// sendEntities — PatchEntities (0x04): entity id = свой peer id, Owner = свой
-// peer id, позиция — u64 counter (как в match_e2e драйвере).
+// sendEntities — PatchEntities (0x04): entity id = own peer id, Owner = own
+// peer id, position is a u64 counter (same as in the match_e2e driver).
 func (p *peer) sendEntities(conn DataConn, tick uint64, prev *state.EntitiesState) {
 	selfID := domain.PeerID(p.peerID.Load())
 	pos := make([]byte, 8)

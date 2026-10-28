@@ -1,6 +1,6 @@
-// Package prom - asserts поверх prometheus.Gatherer для метрико-тестов:
-// чтение значения метрики по имени семейства и подмножеству label'ов.
-// Консолидирует per-test копии gather-цикла (P19b).
+// Package prom - asserts on top of prometheus.Gatherer for metrics tests:
+// reading a metric value by family name and a subset of labels.
+// Consolidates per-test copies of the gather loop (P19b).
 package prom
 
 import (
@@ -10,9 +10,9 @@ import (
 	dto "github.com/prometheus/client_model/go"
 )
 
-// Value возвращает значение метрики семейства name, чьи label'ы покрывают
-// wantLabels (gauge/counter - значение; summary/histogram - sample count,
-// т.е. число наблюдений). t.Fatalf, если метрика не найдена.
+// Value returns the value of a metric from family name whose labels cover
+// wantLabels (gauge/counter - the value; summary/histogram - sample count,
+// i.e. the number of observations). t.Fatalf if the metric is not found.
 func Value(t *testing.T, g prometheus.Gatherer, name string, wantLabels map[string]string) float64 {
 	t.Helper()
 	families, err := g.Gather()

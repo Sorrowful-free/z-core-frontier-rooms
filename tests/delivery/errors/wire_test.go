@@ -10,8 +10,8 @@ import (
 func TestIsJoinRejectOpCode(t *testing.T) {
 	t.Parallel()
 
-	// Reject-диапазоны: 0x40–0x5F (join) и 0x70–0x7F (reservation) —
-	// оба закрывают соединение. Границы + named OpCode для читаемости.
+	// Reject ranges: 0x40–0x5F (join) and 0x70–0x7F (reservation) — both
+	// close the connection. Boundaries + named OpCodes for readability.
 	cases := []struct {
 		name string
 		op   domain.OpCode

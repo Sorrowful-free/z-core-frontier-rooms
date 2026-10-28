@@ -16,10 +16,11 @@ type EnetConnectionFactory struct {
 	loop   atomic.Pointer[HostLoop]
 }
 
-// NewEnetConnectionFactory принимает HostLoop в конструкторе (peer→host
-// привязка: у libenet.Peer нет GetHost). На серверном пути host'ы (P18: один
-// на порт) создаются внутри delivery при старте listener'а - позже конструктора
-// фабрики - поэтому допустимо nil + WithLoop на каждый host до accept'а peer'ов.
+// NewEnetConnectionFactory takes a HostLoop in the constructor (peer→host
+// binding: libenet.Peer has no GetHost). On the server path hosts (P18: one
+// per port) are created inside delivery at listener startup - later than the
+// factory constructor - so nil + WithLoop per host before accepting peers is
+// allowed.
 func NewEnetConnectionFactory(loop *HostLoop, logger logging.Logger) *EnetConnectionFactory {
 	f := &EnetConnectionFactory{logger: logger}
 	if loop != nil {
@@ -28,16 +29,16 @@ func NewEnetConnectionFactory(loop *HostLoop, logger logging.Logger) *EnetConnec
 	return f
 }
 
-// WithLoop возвращает фабрику, привязанную к данному HostLoop: delivery/enet
-// вызывает её один раз на host при старте его run-горутины. Привязка иммутабельна
-// снаружи - shared BindLoop на нескольких host'ах направлял бы conn'ы одного
-// host'а в очередь чужого loop'а (нарушение confinement libenet).
+// WithLoop returns a factory bound to the given HostLoop: delivery/enet calls
+// it once per host when starting its run goroutine. The binding is immutable
+// from the outside - a shared BindLoop across several hosts would route one
+// host's conns into another loop's queue (libenet confinement violation).
 func (f *EnetConnectionFactory) WithLoop(loop *HostLoop) *EnetConnectionFactory {
 	return NewEnetConnectionFactory(loop, f.logger)
 }
 
-// CreateConnection - под enet+cgo portenet.Peer разворачивается в libenet.Peer
-// (tagged alias), поэтому сигнатура совпадает с stub-веткой и остаётся типобезопасной.
+// CreateConnection - under enet+cgo portenet.Peer expands to libenet.Peer
+// (tagged alias), so the signature matches the stub branch and stays type-safe.
 func (f *EnetConnectionFactory) CreateConnection(peer portenet.Peer, incoming chan domain.Frame) transport.Connection {
 	return NewEnetConnection(f.loop.Load(), peer, incoming)
 }

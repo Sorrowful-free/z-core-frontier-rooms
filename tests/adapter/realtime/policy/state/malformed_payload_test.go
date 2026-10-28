@@ -10,8 +10,8 @@ import (
 	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
-// Каждый in-room opcode × garbage payload → ErrInRoomInvalidPayload,
-// wire-опкод ошибки — OpInRoomInvalidPayload.
+// Every in-room opcode × garbage payload → ErrInRoomInvalidPayload,
+// the wire error opcode is OpInRoomInvalidPayload.
 func TestOnMessage_GarbagePayload_ReturnsErrInRoomInvalidPayload(t *testing.T) {
 	t.Parallel()
 
@@ -26,7 +26,7 @@ func TestOnMessage_GarbagePayload_ReturnsErrInRoomInvalidPayload(t *testing.T) {
 		opcode domain.OpCode
 		sender domain.PeerID
 	}{
-		// entities-опкоды — master-gated, отправитель обязан быть master.
+		// entities opcodes are master-gated — the sender must be the master.
 		{"full entities", state.OpCodeFullEntities, master.GetID()},
 		{"patch entities", state.OpCodePatchEntities, master.GetID()},
 		{"full input", state.OpCodeFullInput, member.GetID()},
@@ -49,11 +49,11 @@ func TestOnMessage_GarbagePayload_ReturnsErrInRoomInvalidPayload(t *testing.T) {
 	}
 }
 
-// Wire-конверт InputStatePatch валиден (DecodePatch успешен), но внутренний
-// value-patch противоречит состоянию input'а отправителя — ApplyPatch внутри
-// onClientPatchInput обязан завернуть ошибку в ErrInRoomInvalidPayload.
-// Мягкий apply (P34): ошибкой остаётся только Updated на отсутствующем
-// ключе — Added на существующем это upsert, Removed на отсутствующем ignore.
+// The InputStatePatch wire envelope is valid (DecodePatch succeeds), but
+// the inner value patch contradicts the sender's input state — ApplyPatch
+// inside onClientPatchInput must wrap the error in ErrInRoomInvalidPayload.
+// Soft apply (P34): the only error left is Updated on a missing key —
+// Added on an existing key is an upsert, Removed on a missing key is ignored.
 func TestOnMessage_PatchInput_UpdatedMissingKey_ReturnsErrInRoomInvalidPayload(t *testing.T) {
 	t.Parallel()
 
@@ -82,8 +82,8 @@ func TestOnMessage_PatchInput_UpdatedMissingKey_ReturnsErrInRoomInvalidPayload(t
 	}
 }
 
-// PatchEntities от master'а с Updated на несуществующую entity — та же
-// строгая ветка мягкого apply: ErrInRoomInvalidPayload, state не тронут.
+// PatchEntities from the master with Updated on a nonexistent entity — the
+// same strict branch of soft apply: ErrInRoomInvalidPayload, state untouched.
 func TestOnMessage_PatchEntities_UpdatedMissingEntity_ReturnsErrInRoomInvalidPayload(t *testing.T) {
 	t.Parallel()
 
@@ -113,10 +113,10 @@ func TestOnMessage_PatchEntities_UpdatedMissingEntity_ReturnsErrInRoomInvalidPay
 	assertWeakInvariants(t, shadow.view)
 }
 
-// Мягкий apply (P34): Added на существующем ключе — upsert (значение
-// перезаписывается), Removed на отсутствующем — ignore. Нужно для
-// wire-семантики: реплика может опережать поток дельт (full state
-// джойнеру + эхо патчей отправителю).
+// Soft apply (P34): Added on an existing key is an upsert (the value is
+// overwritten), Removed on a missing key is ignored. Needed for the wire
+// semantics: a replica may run ahead of the delta stream (full state to the
+// joiner + echo of patches to the sender).
 func TestOnMessage_PatchInput_SoftApply_UpsertAndIgnore(t *testing.T) {
 	t.Parallel()
 
@@ -132,7 +132,7 @@ func TestOnMessage_PatchInput_SoftApply_UpsertAndIgnore(t *testing.T) {
 		name      string
 		seedInput bool
 		patch     *state.InputStatePatch
-		wantValue state.ValueState // ожидаемое значение Values[1] после apply
+		wantValue state.ValueState // expected Values[1] after apply
 	}{
 		{
 			name: "removed value not in input",

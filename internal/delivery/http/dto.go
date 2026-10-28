@@ -20,11 +20,11 @@ type issueTicketRequest struct {
 
 type issueTicketResponse struct {
 	Token string `json:"token"`
-	// ReconnectToken - reconnect-токен (P20): resume под тем же peerID
-	// в пределах grace-окна после разрыва.
+	// ReconnectToken - reconnect token (P20): resume under the same peerID
+	// within the grace window after a disconnect.
 	ReconnectToken string `json:"reconnect_token"`
-	// EnetPort - UDP-порт назначенного ENet host'а (strict binding, P18);
-	// отсутствует, когда привязки нет (ENet listener не поднят).
+	// EnetPort - UDP port of the assigned ENet host (strict binding, P18);
+	// absent when there is no binding (ENet listener is not up).
 	EnetPort uint16       `json:"enet_port,omitempty"`
 	Room     roomResponse `json:"room"`
 }
@@ -50,9 +50,9 @@ type errorResponse struct {
 	Message string `json:"message"`
 }
 
-// leaveRoomRequest — POST /rooms/:id/leave (P32): self-leave по
-// reconnect-токену (base64url, как в ticket-ответе); peerID+roomID
-// берутся из claims токена.
+// leaveRoomRequest — POST /rooms/:id/leave (P32): self-leave via
+// reconnect token (base64url, same as in the ticket response); peerID+roomID
+// are taken from the token claims.
 type leaveRoomRequest struct {
 	ReconnectToken string `json:"reconnect_token"`
 }

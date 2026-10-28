@@ -2,11 +2,11 @@ package domain
 
 import "errors"
 
-// ErrIncomingFrameTooLarge — входящий кадр (OpCode + payload) превышает лимит data plane.
+// ErrIncomingFrameTooLarge — incoming frame (OpCode + payload) exceeds the data plane limit.
 var ErrIncomingFrameTooLarge = errors.New("incoming frame too large")
 
-// DecodeIncomingFrame разбирает сырой кадр data plane: OpCode (1 байт) + payload.
-// max > 0 — верхняя граница len(data); 0 — без лимита.
+// DecodeIncomingFrame parses a raw data plane frame: OpCode (1 byte) + payload.
+// max > 0 — upper bound on len(data); 0 — no limit.
 func DecodeIncomingFrame(data []byte, max int) (Frame, error) {
 	if max > 0 && len(data) > max {
 		return Frame{}, ErrIncomingFrameTooLarge

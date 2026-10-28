@@ -10,8 +10,9 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport"
 )
 
-// placePeerJoin — хвост join-потока (P20): ErrPeerAlreadyInRoom от Join
-// отклоняется — занятый peerID для join-тикета легально недостижим.
+// placePeerJoin — tail of the join flow (P20): ErrPeerAlreadyInRoom from
+// Join is rejected — an occupied peerID is legitimately unreachable for a
+// join ticket.
 func placePeerJoin(
 	peerFactory realtime.PeerFactory,
 	room realtime.Room,
@@ -23,10 +24,11 @@ func placePeerJoin(
 	return placePeer(peerFactory, room, connection, peerID, nickName, logger, false)
 }
 
-// placePeerResume — хвост resume-потока (P20): ErrPeerAlreadyInRoom от
-// Join — это проигрыш гонки double-resume одного reconnect-токена, победитель
-// уже вставил peer'а; дожимаем Replace — newest-wins (Q10), вытесненный
-// объект остановит old.Stop() внутри Replace.
+// placePeerResume — tail of the resume flow (P20): ErrPeerAlreadyInRoom
+// from Join is a lost double-resume race on the same reconnect token — the
+// winner already placed its peer; we follow through with Replace —
+// newest-wins (Q10), the displaced object is stopped via old.Stop() inside
+// Replace.
 func placePeerResume(
 	peerFactory realtime.PeerFactory,
 	room realtime.Room,
@@ -38,12 +40,12 @@ func placePeerResume(
 	return placePeer(peerFactory, room, connection, peerID, nickName, logger, true)
 }
 
-// placePeer — общий хвост admit-потоков join/resume (P20): CreatePeer →
-// размещение (Replace по живому peer'у | Join) → Start с rollback'ом
-// Leave+Stop → PeerSession. Судьба слота reservation при ошибке — на
-// caller'е (join ревокает, resume — нет). Вызывающие идут через тонкие
-// wrapper'ы placePeerJoin/placePeerResume — raceReplace-флаг не
-// передаётся снаружи.
+// placePeer — shared tail of the join/resume admit flows (P20): CreatePeer →
+// placement (Replace over a live peer | Join) → Start with Leave+Stop
+// rollback → PeerSession. The fate of the reservation slot on error is the
+// caller's concern (join revokes it, resume does not). Callers go through
+// the thin wrappers placePeerJoin/placePeerResume — the raceReplace flag is
+// not passed from outside.
 func placePeer(
 	peerFactory realtime.PeerFactory,
 	room realtime.Room,
@@ -58,8 +60,9 @@ func placePeer(
 		return PeerSession{}, err
 	}
 
-	// Новейшее соединение всегда побеждает (Q10): живой peer — Replace
-	// (старый conn потом встретит identity-check teardown'а), нет — Join.
+	// The newest connection always wins (Q10): a live peer → Replace
+	// (the old conn will later hit the teardown identity check), none →
+	// Join.
 	if room.HasPeer(peerID) {
 		if err := room.Replace(peer); err != nil {
 			logger.Error("place peer: replace failed", "error", err, "peerID", peerID)

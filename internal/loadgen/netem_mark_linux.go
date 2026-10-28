@@ -4,7 +4,7 @@ package loadgen
 
 import "syscall"
 
-// setSockMark — SO_MARK на сокете через RawConn.Control (Linux).
+// setSockMark — SO_MARK on the socket via RawConn.Control (Linux).
 func setSockMark(c syscall.RawConn, mark uint32) error {
 	var sockErr error
 	err := c.Control(func(fd uintptr) {

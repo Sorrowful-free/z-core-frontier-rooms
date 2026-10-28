@@ -61,10 +61,10 @@ func mustJoinBench(b *testing.B, room *realtime.Room, peers ...*testpeer.Peer) {
 	}
 }
 
-// benchEncodeInputPatch — Updated-пейлоад: Added-патч по существующему
-// ключу — upsert, а чередование двух значений гарантирует настоящую
-// мутацию на каждой итерации (иначе замер уходит в error/no-op ветку —
-// «Added-ловушка», см. probe_perf_bench_test.go).
+// benchEncodeInputPatch — an Updated payload: an Added patch on an
+// existing key is an upsert, and alternating two values guarantees a real
+// mutation on every iteration (otherwise the measurement slips into the
+// error/no-op branch — the "Added trap", see probe_perf_bench_test.go).
 func benchEncodeInputPatch(b *testing.B, inputCodec *codec.InputStateCodec, val byte) []byte {
 	b.Helper()
 	inputPatch := &state.InputStatePatch{
@@ -78,8 +78,8 @@ func benchEncodeInputPatch(b *testing.B, inputCodec *codec.InputStateCodec, val 
 	return payload
 }
 
-// benchSeedInput — кладёт Inputs[peerID] с ключом 1 через FullInput,
-// чтобы Updated-патчи шли по валидному пути.
+// benchSeedInput — puts Inputs[peerID] with key 1 via FullInput so that
+// Updated patches take the valid path.
 func benchSeedInput(b *testing.B, h *benchHarness, peerID domain.PeerID) {
 	b.Helper()
 	full := &state.InputState{Values: state.MapState[state.ValueId, state.ValueState]{

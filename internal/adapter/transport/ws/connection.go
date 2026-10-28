@@ -76,9 +76,9 @@ func (c *WsConnection) Close() error {
 func (c *WsConnection) Send(frame domain.Frame) error {
 	payload := append([]byte{byte(frame.OpCode)}, frame.Payload...)
 	if c.writeDeadline > 0 {
-		// Зависший write не должен блокировать peer.outbound навсегда.
-		// NB: ping-loop WriteControl может перезаписать deadline на более
-		// короткий — приемлемо: преждевременный timeout = logged drop.
+		// A stuck write must not block peer.outbound forever.
+		// NB: ping-loop WriteControl may overwrite the deadline with a
+		// shorter one — acceptable: a premature timeout = logged drop.
 		if err := c.conn.SetWriteDeadline(time.Now().Add(c.writeDeadline)); err != nil {
 			return err
 		}
@@ -106,8 +106,8 @@ func (c *WsConnection) Ping() int64 {
 	return c.pingMs.Load()
 }
 
-// IsAlive — false: соединение закрыто или живость (входящие кадры + pong) не подтверждалась дольше idleTimeout.
-// idleTimeout <= 0 — проверка только closed (механизм выключен).
+// IsAlive — false: the connection is closed or liveness (incoming frames + pong) has not been confirmed for longer than idleTimeout.
+// idleTimeout <= 0 — only the closed check (mechanism disabled).
 func (c *WsConnection) IsAlive() bool {
 	select {
 	case <-c.closed:
@@ -132,7 +132,7 @@ func (c *WsConnection) runPingLoop() {
 			payload := make([]byte, 8)
 			binary.BigEndian.PutUint64(payload, uint64(time.Now().UnixNano()))
 			if err := c.conn.WriteControl(fwebsocket.PingMessage, payload, time.Now().Add(wsPingWriteWait)); err != nil {
-				// conn не отвечает на запись — помечаем закрытым, иначе zombie остаётся IsAlive.
+				// conn does not accept writes — mark it closed, otherwise a zombie stays IsAlive.
 				_ = c.Close()
 				return
 			}

@@ -4,7 +4,8 @@ package enet
 
 import libenet "github.com/codecat/go-enet"
 
-// Peer — tagged alias на тип peer из go-enet. Под enet+cgo это libenet.Peer,
-// в stub-сборке (peer_stub.go) — any, поэтому сигнатура EnetConnectionFactory
-// едина для всех build-тегов, а cgo-вызовы остаются типобезопасными.
+// Peer — tagged alias to the peer type from go-enet. Under enet+cgo it is
+// libenet.Peer; in the stub build (peer_stub.go) it is any, so the
+// EnetConnectionFactory signature is unified across all build tags while
+// cgo calls stay type-safe.
 type Peer = libenet.Peer

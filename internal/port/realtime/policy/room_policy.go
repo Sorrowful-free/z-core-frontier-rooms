@@ -14,7 +14,7 @@ type RoomPolicy interface {
 	OnLeave(peer realtime.Peer) error
 	OnMessage(roomEvent events.RoomEvent) error
 
-	// TickIntervals — интервалы периодической синхронизации state; 0 отключает тикер.
+	// TickIntervals — intervals of periodic state sync; 0 disables the ticker.
 	TickIntervals() (fullStateInterval, patchStateInterval time.Duration)
 	OnTickFullState() error
 	OnTickPatchState() error

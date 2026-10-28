@@ -1,5 +1,5 @@
-// Package env — общий composition root для тестов delivery/integration:
-// wiring in-memory адаптеров, use cases и HTTP/WS handlers поверх одного fiber.App.
+// Package env — a shared composition root for delivery/integration tests:
+// wiring of in-memory adapters, use cases and HTTP/WS handlers on top of a single fiber.App.
 package env
 
 import (
@@ -45,8 +45,8 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-// Env — white-box тестовое окружение: публичные поля дают прямой доступ
-// к собранным портам для asserts (peers, слоты reservation и т.д.).
+// Env — a white-box test environment: public fields give direct access
+// to the assembled ports for asserts (peers, reservation slots, etc.).
 type Env struct {
 	App         *fiber.App
 	Registry    portregistry.RoomRegistry
@@ -54,8 +54,8 @@ type Env struct {
 	Admission   portadmission.Admission
 	Allocator   portidentity.Allocator
 
-	// Metrics - реальный prometheus-адаптер (только с WithMetrics);
-	// Admin - admin Fiber-app с GET /metrics на том же fiber.Test-клиенте.
+	// Metrics - a real prometheus adapter (only with WithMetrics);
+	// Admin - an admin Fiber app with GET /metrics on the same fiber.Test client.
 	Metrics *metricsadapter.Metrics
 	Admin   *fiber.App
 
@@ -72,82 +72,84 @@ type options struct {
 	httpLimits        httplimitsadapter.HTTPLimitsConfig
 	transport         adaptertransport.TransportConfig
 	idleSweepInterval time.Duration
-	reconnectTTL      time.Duration // reconnect grace admitted-слотов (P20/P24)
+	reconnectTTL      time.Duration // reconnect grace of admitted slots (P20/P24)
 	statePolicy       statepolicy.StatePolicyConfig
-	metrics           bool     // WithMetrics: реальный adapter/metrics + admin app
-	enet              bool     // выставляется tagged-опцией WithEnet (env_enet.go)
-	enetPorts         []uint16 // 0-элемент = auto (свободный порт)
+	metrics           bool     // WithMetrics: real adapter/metrics + admin app
+	enet              bool     // set by the tagged WithEnet option (env_enet.go)
+	enetPorts         []uint16 // 0 element = auto (free port)
 }
 
-// Option переопределяет дефолтный конфиг env (auth Disabled, limits zero, transport zero).
+// Option overrides the default env config (auth Disabled, limits zero, transport zero).
 type Option func(*options)
 
-// WithHTTPAuth задаёт конфиг API-key middleware REST control plane.
+// WithHTTPAuth sets the API-key middleware config of the REST control plane.
 func WithHTTPAuth(cfg httpauthadapter.HTTPAuthConfig) Option {
 	return func(o *options) {
 		o.httpAuth = cfg
 	}
 }
 
-// WithHTTPLimits задаёт конфиг rate/max-rooms лимитов REST control plane.
+// WithHTTPLimits sets the rate/max-rooms limits config of the REST control plane.
 func WithHTTPLimits(cfg httplimitsadapter.HTTPLimitsConfig) Option {
 	return func(o *options) {
 		o.httpLimits = cfg
 	}
 }
 
-// WithTransport задаёт конфиг data plane (WS read limit, очереди, idle).
+// WithTransport sets the data plane config (WS read limit, queues, idle).
 func WithTransport(cfg adaptertransport.TransportConfig) Option {
 	return func(o *options) {
 		o.transport = cfg
 	}
 }
 
-// WithMetrics подключает продовую телеметрию (P19b): реальный
-// metricsadapter.Metrics вливается во все метрико-ёмкие компоненты
-// (фабрики, registry, reservation, handlers, sweeps), на публичный app
-// ставится HTTP metrics middleware, а Env.Admin получает admin app
-// с GET /metrics (тот же fiber.Test-клиент, что и Env.App).
+// WithMetrics enables production telemetry (P19b): a real
+// metricsadapter.Metrics is injected into all metrics-bearing components
+// (factories, registry, reservation, handlers, sweeps), the public app
+// gets the HTTP metrics middleware, and Env.Admin receives an admin app
+// with GET /metrics (the same fiber.Test client as Env.App).
 func WithMetrics() Option {
 	return func(o *options) {
 		o.metrics = true
 	}
 }
 
-// WithIdleSweep поднимает продовый idle-eviction пайплайн
-// (EvictIdlePeersUseCase + StartIdlePeerSweep, см. cmd/rooms/main.go) с заданным
-// интервалом sweep'а. Без опции sweep не запускается. Работает только вместе с
-// transport.PeerIdleTimeout > 0 — иначе IsAlive всегда true и эвиктить нечего.
+// WithIdleSweep brings up the production idle-eviction pipeline
+// (EvictIdlePeersUseCase + StartIdlePeerSweep, see cmd/rooms/main.go) with the
+// given sweep interval. Without the option the sweep does not run. It works only
+// together with transport.PeerIdleTimeout > 0 — otherwise IsAlive is always true
+// and there is nothing to evict.
 func WithIdleSweep(interval time.Duration) Option {
 	return func(o *options) {
 		o.idleSweepInterval = interval
 	}
 }
 
-// WithStatePolicy задаёт конфиг state room-policy (P33): режим
-// master-миграции процесса — AllowMasterMigration=false означает, что
-// комната умирает с уходом master'а (no-migration, ErrRoomShouldClose).
-// Дефолт — {AllowMasterMigration: true}.
+// WithStatePolicy sets the state room-policy config (P33): the process
+// master-migration mode — AllowMasterMigration=false means the
+// room dies when the master leaves (no-migration, ErrRoomShouldClose).
+// Default — {AllowMasterMigration: true}.
 func WithStatePolicy(cfg statepolicy.StatePolicyConfig) Option {
 	return func(o *options) {
 		o.statePolicy = cfg
 	}
 }
 
-// WithReconnectTTL задаёт reconnect grace admitted-слотов без peer в room
-// (P20/P24): deadline-гейт resume в ReconnectRoomUseCase считает expiry от
-// lastSeen disconnect'а + TTL. Без опции — продовый дефолт
-// (adapterreservation.DefaultReconnectTTL). Ноль — любой resume !HasPeer
-// expired. Orphan sweep в env не поднят, так что просроченная grace живёт
-// до явного resume — ветка 0x74 детерминирована, sweep-опция не нужна.
+// WithReconnectTTL sets the reconnect grace of admitted slots without a peer
+// in the room (P20/P24): the deadline gate of resume in ReconnectRoomUseCase
+// computes expiry from the disconnect lastSeen + TTL. Without the option — the
+// production default (adapterreservation.DefaultReconnectTTL). Zero — any resume
+// of !HasPeer is expired. The orphan sweep is not running in env, so an expired
+// grace lives until an explicit resume — the 0x74 branch is deterministic, no
+// sweep option is needed.
 func WithReconnectTTL(ttl time.Duration) Option {
 	return func(o *options) {
 		o.reconnectTTL = ttl
 	}
 }
 
-// New собирает полное окружение и регистрирует cleanup
-// (закрытие listener'а, shutdown app, shutdown registry — чтобы не висели горутины комнат/peer'ов).
+// New assembles the full environment and registers cleanup
+// (listener close, app shutdown, registry shutdown — so room/peer goroutines don't linger).
 func New(t *testing.T, opts ...Option) *Env {
 	t.Helper()
 
@@ -159,8 +161,8 @@ func New(t *testing.T, opts ...Option) *Env {
 			EnetIncomingQueueSize: adaptertransport.DefaultEnetIncomingQueueSize,
 			MaxIncomingFrameBytes: adaptertransport.DefaultMaxIncomingFrameBytes,
 			WSWriteDeadline:       adaptertransport.DefaultWSWriteDeadline,
-			// Drain-дефолт как у прода: teardown-тесты (0x82 до close, P30)
-			// опираются на гарантию «Send до Close».
+			// Drain default same as production: teardown tests (0x82 before close, P30)
+			// rely on the "Send before Close" guarantee.
 			PeerCloseDrainTimeout: adaptertransport.DefaultPeerCloseDrainTimeout,
 		},
 		reconnectTTL: adapterreservation.DefaultReconnectTTL,
@@ -175,8 +177,8 @@ func New(t *testing.T, opts ...Option) *Env {
 		t.Fatalf("httplimits.New: %v", err)
 	}
 
-	// Телеметрия opt-in (WithMetrics): реальный prometheus-адаптер;
-	// без опции - nil → Noop в каждом конструкторе, как раньше.
+	// Telemetry is opt-in (WithMetrics): a real prometheus adapter;
+	// without the option - nil → Noop in every constructor, as before.
 	var metricsAdapter *metricsadapter.Metrics
 	var m portmetrics.Metrics
 	if cfg.metrics {
@@ -188,8 +190,8 @@ func New(t *testing.T, opts ...Option) *Env {
 	}
 
 	logger := stdlib.New("test-env")
-	// Продовая фабрика policy (та же сборка, что cmd/rooms): metrics и
-	// режим master-миграции попадают в policy полем внутри фабрики.
+	// Production policy factory (same wiring as cmd/rooms): metrics and
+	// the master-migration mode reach the policy as a field inside the factory.
 	roomFactory := adapterrealtime.NewRoomFactory(logger,
 		statepolicy.NewStateRoomPolicyFactory(logger, cfg.statePolicy, m),
 		cfg.transport.RoomIncomingQueueSize, m)
@@ -214,26 +216,26 @@ func New(t *testing.T, opts ...Option) *Env {
 	var enetHandler *deliveryenet.RoomsHandler
 	var enetPorts []uint16
 	if cfg.enet {
-		// Продовый ENet mux listener (P18): по host'у на порт; 0-элементы
-		// enetPorts - auto-свободные порты. Символы stub-safe (без тега enet
-		// Listen - no-op), но cfg.enet ставит только tagged WithEnet → в
-		// untagged-сборке блок мёртв.
+		// Production ENet mux listener (P18): one host per port; 0 elements of
+		// enetPorts are auto-assigned free ports. Symbols are stub-safe (without
+		// the enet tag Listen is a no-op), but cfg.enet is set only by the tagged
+		// WithEnet → the block is dead in an untagged build.
 		enetCfg := adapterenet.DefaultEnetConfig()
 		enetCfg.ListenPorts = resolveEnetPorts(t, cfg.enetPorts)
 		enetCfg.MaxIncomingFrameBytes = cfg.transport.MaxIncomingFrameBytes
 		enetCfg.EnetIncomingQueueSize = cfg.transport.EnetIncomingQueueSize
-		// ServiceTimeoutMs = 1: короткие service-итерации, чтобы серверный
-		// HostLoop чаще разгребал очередь команд - шаг poll'ов тестов ~10ms,
-		// лишний latency send-пути не нужен. Глобального apiMu-конвоя P12
-		// больше нет: у каждого host'а своя очередь (P15).
+		// ServiceTimeoutMs = 1: short service iterations so the server
+		// HostLoop drains the command queue more often — the test poll step is
+		// ~10ms, extra send-path latency is unwanted. The global apiMu convoy of
+		// P12 is gone: each host has its own queue (P15).
 		enetCfg.ServiceTimeoutMs = 1
 		enetPorts = enetCfg.ListenPorts
 		enetHandler = deliveryenet.NewRoomsHandler(context.Background(), admitUC, disconnectUC,
 			adapterenet.NewEnetConnectionFactory(nil, logger), enetCfg, logger, m)
 	}
 
-	// Handler (когда ENet включён) - HostRegistry: strict binding ticket'ов
-	// к назначенному host'у; nil - ticket'ы без привязки.
+	// Handler (when ENet is enabled) - HostRegistry: strict binding of tickets
+	// to the assigned host; nil - unbound tickets.
 	var hostRegistry portenet.HostRegistry
 	if enetHandler != nil {
 		hostRegistry = enetHandler
@@ -275,7 +277,7 @@ func New(t *testing.T, opts ...Option) *Env {
 
 	if enetHandler != nil {
 		e.enetHandle = enetHandler.Listen()
-		// Fail-fast на bind error: run() выходит сразу при ошибке NewHost.
+		// Fail-fast on bind error: run() exits immediately on a NewHost error.
 		select {
 		case <-e.enetHandle.Done():
 			t.Fatalf("enet listener exited: %v", e.enetHandle.Err())
@@ -284,11 +286,11 @@ func New(t *testing.T, opts ...Option) *Env {
 	}
 
 	t.Cleanup(func() {
-		// Sweep стопаем первым: RunOnce ходит в registry/leave-поток и не должен
-		// гоняться за shutdown'ом. Handle nil-safe (interval <= 0 → nil).
+		// The sweep is stopped first: RunOnce touches the registry/leave flow and
+		// must not race the shutdown. Handle is nil-safe (interval <= 0 → nil).
 		idleSweep.Stop()
-		// ENet до shutdown app/registry: Stop ждёт выхода host loop'а —
-		// EventDisconnect'ы при разрушении комнат не должны гнаться за ним.
+		// ENet before app/registry shutdown: Stop waits for the host loop exit —
+		// EventDisconnects from room teardown must not race it.
 		if e.enetHandle != nil {
 			e.enetHandle.Stop()
 		}
@@ -304,13 +306,13 @@ func New(t *testing.T, opts ...Option) *Env {
 	return e
 }
 
-// Do выполняет HTTP-запрос через app.Test; body != nil маршалится в JSON.
+// Do performs an HTTP request via app.Test; a non-nil body is marshaled to JSON.
 func (e *Env) Do(t *testing.T, method, target string, body any) (*http.Response, []byte) {
 	t.Helper()
 	return e.DoWithHeaders(t, method, target, body, "", "")
 }
 
-// DoWithHeaders — то же, что Do, плюс один произвольный заголовок (для auth-кейсов).
+// DoWithHeaders — same as Do, plus one arbitrary header (for auth cases).
 func (e *Env) DoWithHeaders(t *testing.T, method, target string, body any, header, value string) (*http.Response, []byte) {
 	t.Helper()
 
@@ -344,8 +346,8 @@ func (e *Env) DoWithHeaders(t *testing.T, method, target string, body any, heade
 	return resp, respBody
 }
 
-// DialWS поднимает реальный listener (lazy, один на Env) и дозвонится на /ws?query.
-// query — уже URL-encoded хвост (например "token=<base64url>"), без '?'.
+// DialWS brings up a real listener (lazy, one per Env) and dials /ws?query.
+// query is an already URL-encoded tail (e.g. "token=<base64url>"), without '?'.
 func (e *Env) DialWS(t *testing.T, query string) *fwebsocket.Conn {
 	t.Helper()
 
@@ -380,7 +382,7 @@ func (e *Env) wsListenAddr(t *testing.T) string {
 	e.wsListener = ln
 	e.wsAddr = ln.Addr().String()
 	go func() {
-		// App.Listener блокируется до closeWSListener/ShutdownWithContext в t.Cleanup.
+		// App.Listener blocks until closeWSListener/ShutdownWithContext in t.Cleanup.
 		_ = e.App.Listener(ln)
 	}()
 	return e.wsAddr
@@ -395,7 +397,7 @@ func (e *Env) closeWSListener() {
 	}
 }
 
-// freeUDPPort резервирует свободный UDP-порт (bind :0 → close) для ENet listener'а.
+// freeUDPPort reserves a free UDP port (bind :0 → close) for the ENet listener.
 func freeUDPPort(t *testing.T) uint16 {
 	t.Helper()
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
@@ -406,8 +408,8 @@ func freeUDPPort(t *testing.T) uint16 {
 	return uint16(conn.LocalAddr().(*net.UDPAddr).Port)
 }
 
-// resolveEnetPorts разрешает 0-элементы списка в свободные порты и проверяет
-// дубликаты (явных и полученных auto-портов). Пустой список → один free порт.
+// resolveEnetPorts resolves 0 elements of the list into free ports and checks
+// for duplicates (both explicit and auto-assigned ports). Empty list → one free port.
 func resolveEnetPorts(t *testing.T, ports []uint16) []uint16 {
 	t.Helper()
 	if len(ports) == 0 {
@@ -430,8 +432,8 @@ func resolveEnetPorts(t *testing.T, ports []uint16) []uint16 {
 	return resolved
 }
 
-// CreateRoom делает POST /rooms {"capacity":4,"nick_name":nick} и возвращает
-// roomID и host ticket (token уже base64url — в WS query идёт как есть).
+// CreateRoom does POST /rooms {"capacity":4,"nick_name":nick} and returns
+// the roomID and host ticket (the token is already base64url — goes into the WS query as-is).
 func (e *Env) CreateRoom(t *testing.T, nick string) (domain.RoomID, string) {
 	t.Helper()
 
@@ -439,8 +441,8 @@ func (e *Env) CreateRoom(t *testing.T, nick string) (domain.RoomID, string) {
 	return roomID, token
 }
 
-// CreateRoomPort - то же, что CreateRoom, плюс назначенный ENet-порт тикета
-// (P18: ответ issue несёт enet_port; 0 - env без ENet listener'а).
+// CreateRoomPort - same as CreateRoom, plus the ticket's assigned ENet port
+// (P18: the issue response carries enet_port; 0 - env without an ENet listener).
 func (e *Env) CreateRoomPort(t *testing.T, nick string) (domain.RoomID, string, uint16) {
 	t.Helper()
 	roomID, token, _, port := e.createRoomPost(t, map[string]any{
@@ -450,8 +452,8 @@ func (e *Env) CreateRoomPort(t *testing.T, nick string) (domain.RoomID, string, 
 	return roomID, token, port
 }
 
-// CreateRoomReconnect - то же, что CreateRoom, плюс reconnect-токен хоста
-// (P20): resume под тем же peerID в пределах grace-окна после разрыва.
+// CreateRoomReconnect - same as CreateRoom, plus the host's reconnect token
+// (P20): resume under the same peerID within the grace window after a drop.
 func (e *Env) CreateRoomReconnect(t *testing.T, nick string) (roomID domain.RoomID, joinToken, reconnectToken string) {
 	t.Helper()
 	roomID, token, reconnect, _ := e.createRoomPost(t, map[string]any{
@@ -488,8 +490,8 @@ func (e *Env) createRoomPost(t *testing.T, payload map[string]any) (domain.RoomI
 	return domain.RoomID(created.Room.ID), created.Token, created.ReconnectToken, created.EnetPort
 }
 
-// IssueTicket делает POST /rooms/:id/tickets {"nick_name":nick} и возвращает
-// joiner ticket. Комната без пароля — VerifyRoomPassword пропускает пустой.
+// IssueTicket does POST /rooms/:id/tickets {"nick_name":nick} and returns
+// the joiner ticket. The room has no password — VerifyRoomPassword accepts an empty one.
 func (e *Env) IssueTicket(t *testing.T, roomID domain.RoomID, nick string) string {
 	t.Helper()
 
@@ -497,8 +499,8 @@ func (e *Env) IssueTicket(t *testing.T, roomID domain.RoomID, nick string) strin
 	return token
 }
 
-// IssueTicketPort - то же, что IssueTicket, плюс назначенный ENet-порт тикета
-// (0 - env без ENet listener'а).
+// IssueTicketPort - same as IssueTicket, plus the ticket's assigned ENet port
+// (0 - env without an ENet listener).
 func (e *Env) IssueTicketPort(t *testing.T, roomID domain.RoomID, nick string) (string, uint16) {
 	t.Helper()
 
@@ -506,8 +508,8 @@ func (e *Env) IssueTicketPort(t *testing.T, roomID domain.RoomID, nick string) (
 	return token, port
 }
 
-// IssueTicketReconnect - то же, что IssueTicketPort, плюс reconnect-токен
-// (P20): credential resume под тем же peerID после разрыва.
+// IssueTicketReconnect - same as IssueTicketPort, plus the reconnect token
+// (P20): credential resume under the same peerID after a drop.
 func (e *Env) IssueTicketReconnect(t *testing.T, roomID domain.RoomID, nick string) (joinToken, reconnectToken string, enetPort uint16) {
 	t.Helper()
 
@@ -534,8 +536,9 @@ func (e *Env) IssueTicketReconnect(t *testing.T, roomID domain.RoomID, nick stri
 	return ticket.Token, ticket.ReconnectToken, ticket.EnetPort
 }
 
-// WaitPeerNick ждёт присутствия (want=true) или отсутствия (want=false) peer'а
-// с nick в комнате. Join/leave идут асинхронно через lifecycle комнаты и transport.
+// WaitPeerNick waits for the presence (want=true) or absence (want=false) of a
+// peer with nick in the room. Join/leave happen asynchronously via the room
+// lifecycle and transport.
 func (e *Env) WaitPeerNick(t *testing.T, roomID domain.RoomID, nick string, want bool) {
 	t.Helper()
 	e.pollPeers(t, roomID, func(peers []portrealtime.Peer) bool {
@@ -548,7 +551,7 @@ func (e *Env) WaitPeerNick(t *testing.T, roomID domain.RoomID, nick string, want
 	}, fmt.Sprintf("peer %q presence, want %v", nick, want))
 }
 
-// WaitPeerCount ждёт, пока в комнате станет ровно want peers.
+// WaitPeerCount waits until the room has exactly want peers.
 func (e *Env) WaitPeerCount(t *testing.T, roomID domain.RoomID, want int) {
 	t.Helper()
 	e.pollPeers(t, roomID, func(peers []portrealtime.Peer) bool {
@@ -556,8 +559,8 @@ func (e *Env) WaitPeerCount(t *testing.T, roomID domain.RoomID, want int) {
 	}, fmt.Sprintf("peer count, want %d", want))
 }
 
-// pollPeers — общий poll-движок ожидания состояния комнаты по списку peers:
-// deadline ~1s, шаг ~10ms, t.Fatalf по таймауту.
+// pollPeers — a shared poll engine waiting for room state via the peers list:
+// deadline ~1s, step ~10ms, t.Fatalf on timeout.
 func (e *Env) pollPeers(t *testing.T, roomID domain.RoomID, ok func(peers []portrealtime.Peer) bool, desc string) {
 	t.Helper()
 

@@ -34,8 +34,8 @@ func TestLeaveRoom_Success(t *testing.T) {
 	room.EXPECT().Leave(peer).Return(nil)
 	peer.EXPECT().Stop().Return(nil)
 	reservation.EXPECT().Revoke(gomock.Any(), roomID, peerID).Return(nil)
-	// P31: проверка «пустая» после изъятия — в комнате остаётся peer,
-	// closeRoomIfEmpty no-op.
+	// P31: the "is empty" check after removal — a peer remains in the room,
+	// closeRoomIfEmpty is a no-op.
 	room.EXPECT().GetPeers().Return([]realtime.Peer{mocks.NewMockPeer(ctrl)})
 	logger.EXPECT().Info(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
 
@@ -45,8 +45,8 @@ func TestLeaveRoom_Success(t *testing.T) {
 	}
 }
 
-// P31: ушёл последний peer и grace-слотов не осталось — комната умирает
-// сразу (DeleteRoom + UnregisterRoom), а не ждёт DELETE/shutdown.
+// P31: the last peer left and no grace slots remain — the room dies
+// immediately (DeleteRoom + UnregisterRoom) instead of waiting for DELETE/shutdown.
 func TestLeaveRoom_LastPeerLeaves_RoomDiesEmpty(t *testing.T) {
 	t.Parallel()
 
@@ -174,8 +174,8 @@ func TestLeaveRoom_LeaveFails_StillStopsPeerAndRevokes(t *testing.T) {
 	)
 	leaveErr := errors.New("leave failed")
 
-	// room.Leave изымает peer из комнаты даже при ошибке политики:
-	// peer.Stop и Revoke обязаны выполниться, ошибка leave — вернуться.
+	// room.Leave removes the peer from the room even on a policy error:
+	// peer.Stop and Revoke must still run, the leave error — be returned.
 	registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil)
 	room.EXPECT().HasPeer(peerID).Return(true)
 	room.EXPECT().GetPeer(peerID).Return(peer, nil)
@@ -214,7 +214,7 @@ func TestLeaveRoom_RevokeNotFoundStillSuccess(t *testing.T) {
 	reservation.EXPECT().
 		Revoke(gomock.Any(), roomID, peerID).
 		Return(domain.ErrReservationNotFound)
-	// P31: проверка «пустая» — комната не пуста, closeRoomIfEmpty no-op.
+	// P31: the "is empty" check — the room is not empty, closeRoomIfEmpty is a no-op.
 	room.EXPECT().GetPeers().Return([]realtime.Peer{mocks.NewMockPeer(ctrl)})
 	logger.EXPECT().Warn(gomock.Any(), gomock.Any()).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
@@ -291,10 +291,10 @@ func TestLeaveRoom_StopAndRevokeFail_ErrorsJoined(t *testing.T) {
 	}
 }
 
-// P33: room.Leave отвечает ErrRoomShouldClose (no-migration, ушёл
-// master) → teardown: OpRoomClosed оставшимся → stop всех → DeleteRoom →
-// UnregisterRoom. Отдельный Revoke ушедшего не нужен — слоты ревокает
-// teardown.
+// P33: room.Leave returns ErrRoomShouldClose (no-migration, the master
+// left) → teardown: OpRoomClosed to the remaining peers → stop all →
+// DeleteRoom → UnregisterRoom. A separate Revoke for the departed peer is not
+// needed — teardown revokes the slots.
 func TestLeaveRoom_RoomShouldClose_ClosesRoom(t *testing.T) {
 	t.Parallel()
 
@@ -330,7 +330,7 @@ func TestLeaveRoom_RoomShouldClose_ClosesRoom(t *testing.T) {
 	survivor.EXPECT().Stop().Return(nil)
 	registry.EXPECT().DeleteRoom(gomock.Any(), roomID).Return(nil)
 	reservation.EXPECT().UnregisterRoom(gomock.Any(), roomID).Return(nil)
-	// Revoke ушедшего master'а не вызывается — UnregisterRoom ревокает все слоты.
+	// Revoke for the departed master is not called — UnregisterRoom revokes all slots.
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 

@@ -10,12 +10,14 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/loadgen"
 )
 
-// loadgen — нагрузочный клиент флота комнат (план docs/plans/P27-loadgen.md).
-// Сервер — внешний адрес (LOADGEN_HTTP_ADDR/LOADGEN_WS_ADDR/LOADGEN_ADMIN_ADDR);
-// оркестрация (подъём rooms, env-пресет, снимки /metrics) — scripts/loadtest-run.sh.
+// loadgen — load client for a fleet of rooms (plan docs/plans/P27-loadgen.md).
+// The server is an external address
+// (LOADGEN_HTTP_ADDR/LOADGEN_WS_ADDR/LOADGEN_ADMIN_ADDR); orchestration
+// (bringing rooms up, env presets, /metrics snapshots) —
+// scripts/loadtest-run.sh.
 //
-// SIGINT/SIGTERM → graceful: ramp/sustain прерываются, drain + report всё
-// равно отрабатывают (partial report, interrupted=true).
+// SIGINT/SIGTERM → graceful: ramp/sustain are interrupted, drain + report
+// still run (partial report, interrupted=true).
 func main() {
 	log.SetPrefix("loadgen: ")
 	cfg, err := loadgen.LoadConfigFromEnv()

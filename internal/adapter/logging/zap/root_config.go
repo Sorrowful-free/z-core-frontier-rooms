@@ -12,7 +12,7 @@ const (
 	DefaultLogMode = LogModeProd
 )
 
-// RootConfig — корневой zap.Logger процесса (cmd/rooms).
+// RootConfig — root zap.Logger of the process (cmd/rooms).
 type RootConfig struct {
 	Mode string
 }

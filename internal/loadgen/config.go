@@ -10,61 +10,65 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
 
-// RoomMixEntry — элемент LOADGEN_ROOM_MIX: комната capacity/occupancy с весом.
+// RoomMixEntry — an element of LOADGEN_ROOM_MIX: a capacity/occupancy room
+// with a weight.
 type RoomMixEntry struct {
 	Capacity  int
 	Occupancy int
 	Weight    int
 }
 
-// weightedOption — элемент взвешенного mix'а («name:weight»): transport/netem.
+// weightedOption — an element of a weighted mix ("name:weight"):
+// transport/netem.
 type weightedOption struct {
 	Value  string
 	Weight int
 }
 
-// Режимы LOADGEN_MODE.
+// LOADGEN_MODE modes.
 const (
-	ModeState     = "state"     // клиенты шлют PatchInput/PatchEntities
-	ModeOccupancy = "occupancy" // клиенты только держат соединение
+	ModeState     = "state"     // clients send PatchInput/PatchEntities
+	ModeOccupancy = "occupancy" // clients only hold the connection
 )
 
-// Config — конфигурация прогона, собирается из env (LOADGEN_*).
+// Config — run configuration, assembled from env (LOADGEN_*).
 type Config struct {
-	// Адреса внешнего сервера (без схемы).
+	// External server addresses (no scheme).
 	HTTPAddr  string // REST control plane
 	WSAddr    string // WS data plane (/ws?token=)
-	AdminAddr string // admin listener (GET /metrics), для drain-поллинга
-	// EnetAddr — host (без порта) ENet listeners; порт — из ticket-ответа
-	// (enet_port, strict binding). Дефолт — host-часть WSAddr.
+	AdminAddr string // admin listener (GET /metrics), for drain polling
+	// EnetAddr — host (no port) of the ENet listeners; the port comes from
+	// the ticket response (enet_port, strict binding). Default — the host
+	// part of WSAddr.
 	EnetAddr string
 
 	Rooms        int
 	RoomMix      []RoomMixEntry
-	TransportMix []weightedOption // "ws"|"enet" (enet — только сборка с -tags enet)
+	TransportMix []weightedOption // "ws"|"enet" (enet — only in a -tags enet build)
 	Mode         string
 
-	InputHz    float64 // PatchInput на клиента (mode=state)
-	EntitiesHz float64 // PatchEntities на master-клиента (mode=state)
-	Ramp       float64 // комнат/сек при наполнении
+	InputHz    float64 // PatchInput per client (mode=state)
+	EntitiesHz float64 // PatchEntities per master client (mode=state)
+	Ramp       float64 // rooms/sec during ramp-up
 	Duration   time.Duration
-	// DrainTimeout — дедлайн ожидания нуля по rooms_active_rooms +
-	// rooms_reservation_active_slots. Дефолт ~2×max(idle=30s, sweep=10s).
+	// DrainTimeout — deadline for waiting until rooms_active_rooms +
+	// rooms_reservation_active_slots reach zero. Default ~2×max(idle=30s,
+	// sweep=10s).
 	DrainTimeout time.Duration
 
-	ReconnectRate  float64       // доля клиентов, делающих abrupt close → resume
-	ReconnectEvery time.Duration // период разрыва у выбранных клиентов
+	ReconnectRate  float64       // fraction of clients doing abrupt close → resume
+	ReconnectEvery time.Duration // drop period for the selected clients
 
-	// NetemShare — распределение клиентов по netem-профилям (inc2,
-	// LOADGEN_NETEM_SHARE="clean:30,bad:50,ugly:20"); пусто — dial'ы без
-	// SO_MARK (host-режим, tc не трогаем).
+	// NetemShare — distribution of clients across netem profiles (inc2,
+	// LOADGEN_NETEM_SHARE="clean:30,bad:50,ugly:20"); empty — dials without
+	// SO_MARK (host mode, tc untouched).
 	NetemShare []weightedOption
 
 	ReportPath string
 	LogEvery   time.Duration
 }
 
-// LoadConfigFromEnv — единая точка загрузки env-конфига loadgen.
+// LoadConfigFromEnv — single load point of the loadgen env config.
 func LoadConfigFromEnv() (*Config, error) {
 	cfg := &Config{
 		HTTPAddr:  envOr("LOADGEN_HTTP_ADDR", "127.0.0.1:3000"),
@@ -127,7 +131,7 @@ func LoadConfigFromEnv() (*Config, error) {
 	return cfg, cfg.Validate()
 }
 
-// Validate — проверки согласованности конфига.
+// Validate — config consistency checks.
 func (c *Config) Validate() error {
 	if c.Rooms <= 0 {
 		return fmt.Errorf("LOADGEN_ROOMS must be > 0, got %d", c.Rooms)
@@ -154,7 +158,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// mapTransport — имя транспорта в mix'е.
+// mapTransport — transport name in a mix.
 func mapTransport(name string) (string, error) {
 	switch name {
 	case "ws", "enet":
@@ -164,7 +168,7 @@ func mapTransport(name string) (string, error) {
 	}
 }
 
-// parseRoomMix — «capacity/occupancy:weight,...» → []RoomMixEntry.
+// parseRoomMix — "capacity/occupancy:weight,..." → []RoomMixEntry.
 func parseRoomMix(s string) ([]RoomMixEntry, error) {
 	var out []RoomMixEntry
 	for _, part := range strings.Split(s, ",") {
@@ -202,7 +206,7 @@ func parseRoomMix(s string) ([]RoomMixEntry, error) {
 	return out, nil
 }
 
-// parseMix — «name:weight,...» → []weightedOption, имена через mapFn.
+// parseMix — "name:weight,..." → []weightedOption, names via mapFn.
 func parseMix(s string, mapFn func(string) (string, error)) ([]weightedOption, error) {
 	var out []weightedOption
 	for _, part := range strings.Split(s, ",") {

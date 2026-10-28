@@ -12,9 +12,9 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/prom"
 )
 
-// P19b фикс 3: просроченный слот, удалённый из Admit, - реальный revoke:
-// счётчик reservation_ops{revoke} сходится к живым слотам, а gauge
-// active_slots - к нулю.
+// P19b fix 3: an expired slot removed from Admit is a real revoke:
+// the reservation_ops{revoke} counter converges to live slots, while the
+// active_slots gauge goes to zero.
 func TestReservationMetrics_ExpiredSlotRevokeCounted(t *testing.T) {
 	t.Parallel()
 
@@ -48,8 +48,8 @@ func TestReservationMetrics_ExpiredSlotRevokeCounted(t *testing.T) {
 	}
 }
 
-// Lazy sweep просроченных слотов при Reserve - тоже освобождение слотов:
-// revoke считается по каждому удалённому, gauge - по сумме.
+// Lazy sweep of expired slots on Reserve is also a slot release:
+// revoke is counted per removed slot, the gauge — by the total.
 func TestReservationMetrics_LazySweepCountsRevokes(t *testing.T) {
 	t.Parallel()
 
@@ -68,7 +68,7 @@ func TestReservationMetrics_LazySweepCountsRevokes(t *testing.T) {
 		t.Fatalf("Reserve a: %v", err)
 	}
 
-	// Второй Reserve запускает lazy sweep и удаляет просроченный слот.
+	// The second Reserve triggers lazy sweep and removes the expired slot.
 	if err := res.Reserve(ctx, domain.RoomID(1), domain.PeerID(11), "b", time.Now().Add(time.Hour)); err != nil {
 		t.Fatalf("Reserve b: %v", err)
 	}

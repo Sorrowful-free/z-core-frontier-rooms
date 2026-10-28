@@ -12,10 +12,11 @@ import (
 	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
-// P34: prevState — shallow-снапшот (значения разделяются со state, COW).
-// Если бы записи мутировались in-place, снапшот «догонял» бы state и
-// diff проглатывал мутации. Wire-проверка: две подряд мутации одного
-// ключа обязаны дать два разных тиковых патча.
+// P34: prevState is a shallow snapshot (values are shared with the state,
+// COW). If entries were mutated in place, the snapshot would "catch up"
+// with the state and the diff would swallow mutations. The wire check: two
+// consecutive mutations of the same key must produce two different tick
+// patches.
 func TestTickPatchState_ConsecutiveMutations_EachEmitted(t *testing.T) {
 	t.Parallel()
 
@@ -44,7 +45,7 @@ func TestTickPatchState_ConsecutiveMutations_EachEmitted(t *testing.T) {
 		}
 	}
 
-	// Первая мутация — новая запись Inputs[member] в diff'е (Added).
+	// The first mutation — a new Inputs[member] entry in the diff (Added).
 	send(0xA1)
 	if err := h.policy.OnTickPatchState(); err != nil {
 		t.Fatalf("OnTickPatchState 1: %v", err)
@@ -66,9 +67,9 @@ func TestTickPatchState_ConsecutiveMutations_EachEmitted(t *testing.T) {
 	}
 	master.Clear()
 
-	// Вторая мутация того же ключа — Updated-дельта. Здесь и ломался бы
-	// in-place снапшот: prevState.Inputs шарил бы уже обновлённую Values-
-	// мапу и diff был бы пустым.
+	// The second mutation of the same key — an Updated delta. This is
+	// where an in-place snapshot would break: prevState.Inputs would share
+	// the already-updated Values map and the diff would be empty.
 	send(0xB2)
 	if err := h.policy.OnTickPatchState(); err != nil {
 		t.Fatalf("OnTickPatchState 2: %v", err)
@@ -90,10 +91,11 @@ func TestTickPatchState_ConsecutiveMutations_EachEmitted(t *testing.T) {
 	}
 }
 
-// Property-вариант: replay-реплика наблюдателя (join-full + все tick-патчи)
-// обязана сойтись с финальным full state — иначе часть дельт потерялась
-// (in-place мутация снапшота) или пришла битой. Покрывает все opcode-пути
-// мутаций state (input/entities), join/leave + election-флаги.
+// Property variant: the observer's replay replica (join full + all tick
+// patches) must converge with the final full state — otherwise some deltas
+// were lost (in-place snapshot mutation) or arrived corrupted. Covers all
+// opcode paths of state mutations (input/entities), join/leave + election
+// flags.
 func TestPolicySnapshotIsolation_Property(t *testing.T) {
 	t.Parallel()
 
@@ -234,8 +236,8 @@ func runSnapshotIsolation(t *testing.T, seed int64) {
 		}
 	}
 
-	// Replay-реплика: join-full observer'а + все патчи по порядку — ровно
-	// то, что увидел бы клиент без resync.
+	// Replay replica: the observer's join full + all patches in order —
+	// exactly what a client without resync would see.
 	var replica *state.RoomState
 	for _, ev := range observer.Snapshot() {
 		switch ev.Frame.OpCode {

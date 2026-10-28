@@ -2,11 +2,12 @@
 
 package enet
 
-// HostLoop - stub-аналог tagged HostLoop (hostloop_cgo.go): нужен только чтобы
-// untagged-сигнатуры (NewEnetConnectionFactory, поля handler'ов) компилировались
-// без libenet. Реального host'а и loop-горутины в stub-сборке нет.
+// HostLoop - stub counterpart of the tagged HostLoop (hostloop_cgo.go): only
+// needed so untagged signatures (NewEnetConnectionFactory, handler fields)
+// compile without libenet. There is no real host or loop goroutine in the
+// stub build.
 type HostLoop struct{}
 
-// Stop - no-op: в stub-сборке loop никогда не публикуется (run - stub),
-// вызов возможен только по nil-safe пути ListenHandle.Stop.
+// Stop - no-op: in the stub build the loop is never published (run is a
+// stub); a call is only possible via the nil-safe ListenHandle.Stop path.
 func (l *HostLoop) Stop() {}

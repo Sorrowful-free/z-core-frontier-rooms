@@ -13,7 +13,7 @@ import (
 	enetadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport/enet"
 )
 
-// Config — корневая конфигурация процесса; поля — типы из соответствующих adapter-пакетов.
+// Config — root process configuration; fields are types from the corresponding adapter packages.
 type Config struct {
 	Logging     zaplogadapter.RootConfig
 	Server      serveradapter.ServerConfig

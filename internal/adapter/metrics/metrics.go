@@ -1,9 +1,10 @@
-// Package metrics — prometheus-реализация `port/metrics.Metrics` (P19).
+// Package metrics — prometheus implementation of `port/metrics.Metrics` (P19).
 //
-// Свой `prometheus.Registry` (не default): тесты и embedder'ы не наследуют
-// чужие коллекторы; сверх сигналов приложения регистрируются стандартные
-// Go- и process-коллекторы. `Gatherer()` отдаёт registry для exposition
-// (`delivery/admin` отдаёт текст метрик по `GET /metrics`).
+// Its own `prometheus.Registry` (not the default): tests and embedders do
+// not inherit foreign collectors; in addition to application signals the
+// standard Go and process collectors are registered. `Gatherer()` exposes
+// the registry for exposition (`delivery/admin` serves the metrics text at
+// `GET /metrics`).
 package metrics
 
 import (
@@ -19,11 +20,11 @@ import (
 
 var _ portmetrics.Metrics = (*Metrics)(nil)
 
-// namespace метрик приложения: `rooms_*`.
+// application metrics namespace: `rooms_*`.
 const namespace = "rooms"
 
-// Bounded label-значения (фиксированное множество — кардинальность
-// не растёт от входных данных).
+// Bounded label values (a fixed set — cardinality does not grow with
+// input data).
 const (
 	labelOpcode = "opcode"
 	labelQueue  = "queue"
@@ -47,7 +48,7 @@ const (
 	sweepIdlePeers      = "idle_peers"
 )
 
-// Summary-объективы для duration-сигналов (tick, host loop queue latency).
+// Summary objectives for duration signals (tick, host loop queue latency).
 var durationObjectives = map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001}
 
 type Metrics struct {
@@ -76,8 +77,8 @@ type Metrics struct {
 	httpRequestDuration      *prometheus.HistogramVec
 }
 
-// New собирает registry со всеми сигналами P19 + Go/process коллекторами.
-// cfg.Validate вызывается до регистрации (правило adapter/config).
+// New builds the registry with all P19 signals + Go/process collectors.
+// cfg.Validate is called before registration (adapter/config rule).
 func New(cfg MetricsConfig) (*Metrics, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -198,7 +199,7 @@ func New(cfg MetricsConfig) (*Metrics, error) {
 	return m, nil
 }
 
-// Gatherer — registry для exposition (`delivery/admin` `GET /metrics`).
+// Gatherer — registry for exposition (`delivery/admin` `GET /metrics`).
 func (m *Metrics) Gatherer() prometheus.Gatherer {
 	return m.registry
 }

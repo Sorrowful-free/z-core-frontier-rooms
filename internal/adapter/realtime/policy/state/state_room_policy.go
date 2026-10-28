@@ -24,14 +24,16 @@ const (
 
 type StateRoomPolicy struct {
 	room realtime.Room
-	// master - машина master-эпизодов: election, IsMaster-флаги и дедуп
-	// masterless-лога сведены в один диспетчер переходов (master_machine.go).
+	// master — the master-episode machine: election, IsMaster flags and
+	// the masterless log dedup are gathered into one transition
+	// dispatcher (master_machine.go).
 	master masterMachine
 
-	// allowMasterMigration — режим master-миграции деплоя (P33): false —
-	// уход master'а убивает комнату (ErrRoomShouldClose на входе OnLeave).
-	// Умолчание true задаётся в NewStateRoomPolicy; продовое значение
-	// вливает StateRoomPolicyFactory полем из StatePolicyConfig.
+	// allowMasterMigration — the deploy's master-migration mode (P33):
+	// false — the master's departure kills the room (ErrRoomShouldClose
+	// at the OnLeave entry). The true default is set in
+	// NewStateRoomPolicy; the production value is injected by
+	// StateRoomPolicyFactory via the field from StatePolicyConfig.
 	allowMasterMigration bool
 
 	prevState state.RoomState
@@ -57,11 +59,13 @@ func normalizeTickInterval(interval, defaultInterval time.Duration) time.Duratio
 
 func NewStateRoomPolicy(logger logging.Logger, stateCodec codec.RoomStateCodec, entitiesCodec codec.EntitiesStateCodec, inputCodec codec.InputStateCodec, rpcCodec codec.RpcStateCodec, fullStateInterval time.Duration, patchStateInterval time.Duration) *StateRoomPolicy {
 	return &StateRoomPolicy{
-		// Умолчание Noop: продовый metrics вливает StateRoomPolicyFactory
-		// полем (сигнатура NewStateRoomPolicy стабильна для тестов).
+		// Noop default: the production metrics are injected by
+		// StateRoomPolicyFactory via the field (the NewStateRoomPolicy
+		// signature stays stable for tests).
 		master: masterMachine{logger: logger, metrics: portmetrics.Noop()},
-		// Умолчание «миграция разрешена» (историческое поведение); фабрика
-		// перезаписывает полем из StatePolicyConfig, как и metrics.
+		// "Migration allowed" default (historical behavior); the factory
+		// overwrites it via the field from StatePolicyConfig, same as
+		// metrics.
 		allowMasterMigration: true,
 		prevState:            *state.NewRoomState(domain.RoomIDInvalid, 0),
 		state:                *state.NewRoomState(domain.RoomIDInvalid, 0),
@@ -103,12 +107,12 @@ func (p *StateRoomPolicy) OnJoin(peer realtime.Peer) error {
 }
 
 func (p *StateRoomPolicy) OnLeave(peer realtime.Peer) error {
-	// No-migration режим (P33): уход master'а убивает комнату — sentinel
-	// уходит наружу до входа в master-машину и staged-мутаций state
-	// («ошибка = нет побочек»). Машина ещё держит уходящего master'а
-	// (m.peer сбрасывается только в dispatch) — проверки по peerID
-	// достаточно. Teardown (OpRoomClosed → unregister → revoke) делает
-	// usecase по ErrRoomShouldClose.
+	// No-migration mode (P33): the master's departure kills the room —
+	// the sentinel goes outward before entering the master machine and
+	// the staged state mutations ("error = no side effects"). The
+	// machine still holds the departing master (m.peer is reset only in
+	// dispatch) — a peerID check suffices. The usecase performs teardown
+	// (OpRoomClosed → unregister → revoke) on ErrRoomShouldClose.
 	if !p.allowMasterMigration && p.master.isMaster(peer.GetID()) {
 		return fmt.Errorf("%w: %d", domain.ErrRoomShouldClose, peer.GetID())
 	}
@@ -118,15 +122,17 @@ func (p *StateRoomPolicy) OnLeave(peer realtime.Peer) error {
 		return fmt.Errorf("%w: %d", domain.ErrPeerNotFound, peerID)
 	}
 	oldMaster := p.master.current()
-	// Дешёвый откат без deep-clone staging: shallow-снапшот Peers +
-	// запись input уходящего; при ошибке dispatch всё восстанавливается
-	// разом (leave-дельта уходит patch-тиком, send-фейлов на этом пути нет).
+	// Cheap rollback without deep-clone staging: a shallow snapshot of
+	// Peers plus the leaver's input record; on a dispatch error
+	// everything is restored at once (the leave delta goes out on the
+	// patch tick, there are no send failures on this path).
 	savedPeers := maps.Clone(p.state.Peers)
 	savedInput, hasInput := p.state.Inputs[peerID]
 	delete(p.state.Peers, peerID)
 	delete(p.state.Inputs, peerID)
-	// Последствия ухода для master решает машина: ушёл не-master -
-	// перехода нет; master в пустой комнате - masterless; иначе перевыборы.
+	// The machine decides the master's fate on leave: a non-master left —
+	// no transition; the master left an empty room — masterless;
+	// otherwise re-election.
 	if err := p.master.dispatch(masterEvent{kind: evPeerLeft, leftIsMaster: peerState.IsMaster}, p.room, &p.state); err != nil {
 		p.state.Peers = savedPeers
 		if hasInput {

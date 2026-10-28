@@ -31,12 +31,14 @@ func (f *RoomFactory) CreateRoom(ctx context.Context, id domain.RoomID, capacity
 		return nil, err
 	}
 
-	// Конкретная policy привязана к фабрике при сборке; режим
-	// master-миграции — глобальный конфиг деплоя (P33), не параметр create.
+	// The concrete policy is bound to the factory at wiring time; the
+	// master-migration mode is a global deploy config (P33), not a
+	// create parameter.
 	policy := f.policyFactory.CreateRoomPolicy()
 	room := NewRoom(ctx, id, policy, capacity, attributes, f.incomingQueue, f.logger)
-	// Метрики вливаются фабрикой полем: сигнатура NewRoom держится
-	// стабильной для white-box тестов (умолчание Noop - в конструкторе).
+	// Metrics are injected by the factory via the field: the NewRoom
+	// signature stays stable for white-box tests (the Noop default is in
+	// the constructor).
 	room.metrics = f.metrics
 	return room, nil
 }

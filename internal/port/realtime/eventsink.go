@@ -4,9 +4,9 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 )
 
-// EventSink — узкая точка доставки входящих кадров в комнату
-// (mailbox room.incoming); реализует Room. Peer получает sink
-// в Start и не хранит ссылки на комнату (P26).
+// EventSink — narrow delivery point for inbound frames into a room
+// (the room.incoming mailbox); implemented by Room. Peer receives the
+// sink in Start and does not hold a reference to the room (P26).
 type EventSink interface {
 	Deliver(events.RoomEvent) error
 }

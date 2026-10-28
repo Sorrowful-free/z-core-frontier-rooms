@@ -11,7 +11,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
 )
 
-// mustFuzzFrame кодирует валидный доменный state в seed-фрейм или падает.
+// mustFuzzFrame encodes a valid domain state into a seed frame or fails.
 func mustFuzzFrame[T any](f *testing.F, v T, encode func(T) ([]byte, error)) []byte {
 	f.Helper()
 	data, err := encode(v)
@@ -21,8 +21,8 @@ func mustFuzzFrame[T any](f *testing.F, v T, encode func(T) ([]byte, error)) []b
 	return data
 }
 
-// fuzzTruncOffsets — точки обрезки валидного фрейма: после первого байта,
-// середина и последний полный байт.
+// fuzzTruncOffsets — truncation points of a valid frame: after the first
+// byte, the middle, and the last full byte.
 func fuzzTruncOffsets(n int) []int {
 	var out []int
 	for _, off := range []int{1, n / 2, n - 1} {
@@ -33,9 +33,9 @@ func fuzzTruncOffsets(n int) []int {
 	return out
 }
 
-// addFuzzSeeds — общий seed corpus: hand-written краевые входы плюс мутации
-// валидных закодированных фреймов (обрезка, хвостовой мусор, бит-флипы
-// флагов/счётчиков в первом и последнем байтах).
+// addFuzzSeeds — shared seed corpus: hand-written edge inputs plus
+// mutations of valid encoded frames (truncation, trailing garbage,
+// bit-flips of flags/counters in the first and last bytes).
 func addFuzzSeeds(f *testing.F, frames ...[]byte) {
 	f.Helper()
 	f.Add([]byte{})
@@ -60,7 +60,7 @@ func addFuzzSeeds(f *testing.F, frames ...[]byte) {
 	}
 }
 
-// fuzzSeedRoomState — комната с peer, input и entity+component (все map-секции).
+// fuzzSeedRoomState — a room with a peer, input and entity+component (all map sections).
 func fuzzSeedRoomState() *state.RoomState {
 	room := state.NewRoomState(domain.RoomID(7), 16)
 	room.Peers[domain.PeerID(2)] = state.PeerState{NickName: "bob", Ping: 99, IsMaster: true}
@@ -81,8 +81,8 @@ func fuzzSeedRoomState() *state.RoomState {
 	return room
 }
 
-// fuzzSeedRoomStatePatch — patch, зажигающий все flag-биты: capacity +
-// added/updated/removed по peers, inputs и entities.
+// fuzzSeedRoomStatePatch — a patch lighting all flag bits: capacity +
+// added/updated/removed across peers, inputs and entities.
 func fuzzSeedRoomStatePatch() *state.RoomStatePatch {
 	capacity := int8(9)
 	nick := "mallory"
@@ -118,7 +118,7 @@ func fuzzSeedRoomStatePatch() *state.RoomStatePatch {
 	return patch
 }
 
-// fuzzSeedEntitiesState — map с одной entity, у которой есть component.
+// fuzzSeedEntitiesState — a map with one entity that has a component.
 func fuzzSeedEntitiesState() state.EntitiesState {
 	entities := state.NewMapState[state.EntityID, state.EntityState]()
 	entities[state.EntityID(10)] = state.EntityState{
@@ -134,7 +134,7 @@ func fuzzSeedEntitiesState() state.EntitiesState {
 	return entities
 }
 
-// fuzzSeedEntitiesStatePatch — patch с added/updated/removed секциями.
+// fuzzSeedEntitiesStatePatch — a patch with added/updated/removed sections.
 func fuzzSeedEntitiesStatePatch() *state.EntitiesStatePatch {
 	entityTypeID := state.EntityTypeID(7)
 	owner := domain.PeerID(9)
@@ -153,7 +153,7 @@ func fuzzSeedEntitiesStatePatch() *state.EntitiesStatePatch {
 	return patch
 }
 
-// fuzzSeedInputState — input с двумя value.
+// fuzzSeedInputState — an input with two values.
 func fuzzSeedInputState() *state.InputState {
 	in := &state.InputState{Values: state.NewMapState[state.ValueId, state.ValueState]()}
 	in.Values[state.ValueId(1)] = state.ValueState([]byte{9, 8})
@@ -161,7 +161,7 @@ func fuzzSeedInputState() *state.InputState {
 	return in
 }
 
-// fuzzSeedInputStatePatch — patch с added/updated/removed по values.
+// fuzzSeedInputStatePatch — a patch with added/updated/removed across values.
 func fuzzSeedInputStatePatch() *state.InputStatePatch {
 	patch := &state.InputStatePatch{
 		Values: *state.NewMapStatePatch[state.ValueId, state.ValueState, state.ValueState](),
@@ -172,7 +172,7 @@ func fuzzSeedInputStatePatch() *state.InputStatePatch {
 	return patch
 }
 
-// fuzzSeedRpcState — rpc с target peer и одним value.
+// fuzzSeedRpcState — an rpc with target peer and one value.
 func fuzzSeedRpcState() *state.RpcState {
 	rpc := &state.RpcState{
 		ID:     state.RpcID(3),
@@ -184,10 +184,10 @@ func fuzzSeedRpcState() *state.RpcState {
 	return rpc
 }
 
-// Инварианты во всех target'ах: decode не паникует (ловит сам fuzzer),
-// повторный decode тех же байт даёт тот же результат, Encode(decoded) не падает.
-// Byte-exact roundtrip специально не проверяется — у wire формата поля
-// переменной длины и map-порядок.
+// Invariants in all targets: decode does not panic (the fuzzer catches
+// that), re-decoding the same bytes yields the same result, Encode(decoded)
+// does not fail. Byte-exact roundtrip is deliberately not checked — the wire
+// format has variable-length fields and map ordering.
 
 func FuzzRoomStateDecode(f *testing.F) {
 	c := newRoomCodec()

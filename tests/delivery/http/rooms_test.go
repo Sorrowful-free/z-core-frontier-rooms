@@ -489,22 +489,22 @@ func TestHTTP_LeaveSelf(t *testing.T) {
 	}
 	created := parseCreateRoomResponse(t, body)
 
-	// валидный reconnect-токен → 204 (идемпотентно: peer не в комнате,
-	// UC добивает revoke и возвращает nil)
+	// a valid reconnect token → 204 (idempotent: the peer is not in the
+	// room, the UC finishes the revoke and returns nil)
 	resp, body = e.Do(t, http.MethodPost, "/rooms/"+formatID(created.Room.ID)+"/leave",
 		map[string]any{"reconnect_token": created.ReconnectToken})
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("leave status = %d, body = %s", resp.StatusCode, body)
 	}
 
-	// join-токен (kind=1) → 401
+	// a join token (kind=1) → 401
 	resp, _ = e.Do(t, http.MethodPost, "/rooms/"+formatID(created.Room.ID)+"/leave",
 		map[string]any{"reconnect_token": created.Token})
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("join-token leave status = %d", resp.StatusCode)
 	}
 
-	// мусорный токен → 401
+	// a garbage token → 401
 	resp, _ = e.Do(t, http.MethodPost, "/rooms/"+formatID(created.Room.ID)+"/leave",
 		map[string]any{"reconnect_token": "%%%not-base64"})
 	if resp.StatusCode != http.StatusUnauthorized {

@@ -58,7 +58,7 @@ const (
 	envAdminListenAddr = "ADMIN_LISTEN_ADDR"
 )
 
-// LoadFromEnv читает переменные окружения и собирает Config.
+// LoadFromEnv reads environment variables and builds Config.
 func LoadFromEnv() (*Config, error) {
 	logging, err := loadLoggingFromEnv()
 	if err != nil {
@@ -114,8 +114,8 @@ func LoadFromEnv() (*Config, error) {
 	}, nil
 }
 
-// loadMetricsFromEnv собирает metrics.MetricsConfig: ADMIN_LISTEN_ADDR —
-// admin listener `GET /metrics`; пустой (дефолт) — endpoint отключён.
+// loadMetricsFromEnv builds metrics.MetricsConfig: ADMIN_LISTEN_ADDR —
+// admin listener `GET /metrics`; empty (default) — endpoint disabled.
 func loadMetricsFromEnv() (metricsadapter.MetricsConfig, error) {
 	cfg := metricsadapter.MetricsConfig{
 		AdminListenAddr: strings.TrimSpace(os.Getenv(envAdminListenAddr)),
@@ -263,8 +263,8 @@ func loadTransportFromEnv() (adaptertransport.TransportConfig, error) {
 	return cfg, nil
 }
 
-// loadReservationFromEnv собирает ReservationConfig (P20): RESERVATION_RECONNECT_TTL —
-// grace admitted-слота от lastSeen.
+// loadReservationFromEnv builds ReservationConfig (P20): RESERVATION_RECONNECT_TTL —
+// grace of the admitted slot from lastSeen.
 func loadReservationFromEnv() (reservationadapter.ReservationConfig, error) {
 	reconnectTTL, err := durationFromEnv(envReservationReconnectTTL, reservationadapter.DefaultReconnectTTL)
 	if err != nil {
@@ -286,10 +286,10 @@ func loadReservationFromEnv() (reservationadapter.ReservationConfig, error) {
 	return cfg, nil
 }
 
-// loadStatePolicyFromEnv собирает state.StatePolicyConfig (P33):
-// STATE_POLICY_ALLOW_MASTER_MIGRATION — глобальный режим master-миграции
-// деплоя; пусто → true (историческое поведение), явное значение — ParseBool,
-// мусор → ошибка.
+// loadStatePolicyFromEnv builds state.StatePolicyConfig (P33):
+// STATE_POLICY_ALLOW_MASTER_MIGRATION — global master-migration mode of the
+// deployment; empty → true (historical behavior), explicit value — ParseBool,
+// garbage → error.
 func loadStatePolicyFromEnv() (statepolicy.StatePolicyConfig, error) {
 	cfg := statepolicy.StatePolicyConfig{AllowMasterMigration: true}
 	if raw := os.Getenv(envStatePolicyAllowMasterMigration); raw != "" {
@@ -305,10 +305,10 @@ func loadStatePolicyFromEnv() (statepolicy.StatePolicyConfig, error) {
 	return cfg, nil
 }
 
-// loadEnetFromEnv собирает transport/enet.EnetConfig: env ENET_* поверх DefaultEnetConfig.
-// ENET_LISTEN_PORTS - CSV портов host'ов; не задан - default [7777].
-// Дубликаты ловит Validate().
-// Лимиты кадров/очередей cmd/rooms копирует из cfg.Transport и затем вызывает Validate() повторно.
+// loadEnetFromEnv builds transport/enet.EnetConfig: ENET_* env vars on top of DefaultEnetConfig.
+// ENET_LISTEN_PORTS - CSV of host ports; unset - default [7777].
+// Duplicates are caught by Validate().
+// cmd/rooms copies frame/queue limits from cfg.Transport and then calls Validate() again.
 func loadEnetFromEnv() (enetadapter.EnetConfig, error) {
 	cfg := enetadapter.DefaultEnetConfig()
 

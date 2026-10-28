@@ -79,8 +79,9 @@ func (h *RoomsHandler) handleConnect(c *websocket.Conn) {
 		return
 	}
 
-	// Единый admit-вход (P20): join-ticket и reconnect-токен разводит фасад
-	// по claims.Kind; HostIDUnbound — на WS strict binding не проверяется.
+	// Unified admit entry point (P20): the facade splits join-ticket and
+	// reconnect token by claims.Kind; HostIDUnbound — strict binding is not
+	// checked on WS.
 	session, err := h.admitPeerUseCase.Admit(h.ctx, connection, token, domain.HostIDUnbound)
 	if err != nil {
 		h.sendJoinReject(connection, err)
@@ -95,9 +96,9 @@ func (h *RoomsHandler) handleConnect(c *websocket.Conn) {
 	}
 }
 
-// sendJoinReject — reject-кадр + счётчик rejects по wire opcode (P19):
-// считается только реально отправленный кадр (P19b), ошибка send —
-// в лог, как до появления счётчика.
+// sendJoinReject — reject frame + rejects counter by wire opcode (P19):
+// only an actually sent frame is counted (P19b); a send error goes
+// to the log, as before the counter existed.
 func (h *RoomsHandler) sendJoinReject(connection transport.Connection, err error) {
 	if sendErr := deliveryerrors.SendJoinReject(connection, err); sendErr != nil {
 		h.logger.Warn("websocket join reject send failed", "error", sendErr)

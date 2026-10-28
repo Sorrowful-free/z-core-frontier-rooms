@@ -25,10 +25,10 @@ type peerSlot struct {
 	nickName  string
 	state     reservationState
 	expiresAt time.Time
-	// lastSeen — единый timestamp grace admitted-слота (P20): admit-time,
-	// disconnect-mark (MarkDisconnected) и resume-refresh (Reconnect)
-	// пишут одно поле; от него orphan sweep отсчитывает
-	// RESERVATION_RECONNECT_TTL grace-окно.
+	// lastSeen — single grace timestamp of an admitted slot (P20): admit-time,
+	// disconnect-mark (MarkDisconnected) and resume-refresh (Reconnect)
+	// all write the same field; the orphan sweep counts the
+	// RESERVATION_RECONNECT_TTL grace window from it.
 	lastSeen time.Time
 }
 
@@ -136,15 +136,16 @@ func (r *Reservation) UnregisterRoom(ctx context.Context, roomID domain.RoomID) 
 		return reservationErrRoom(domain.ErrReservationNotFound, roomID)
 	}
 
-	// Tombstone: конкурентные операции, захватившие room до delete,
-	// увидят unregistered под room.mu и откажутся писать в мёртвую map.
+	// Tombstone: concurrent operations that captured the room before the
+	// delete will see unregistered under room.mu and refuse to write into a
+	// dead map.
 	room.mu.Lock()
 	room.unregistered = true
 	slots := len(room.peers)
 	room.mu.Unlock()
-	// Слоты комнаты умирают вместе с tombstone: gauge живых слотов
-	// снимает их все (revoke-оповещения по одному не шлём - комната
-	// исчезает целиком, а не по слоту).
+	// The room's slots die with the tombstone: the live-slots gauge
+	// subtracts them all (we don't send per-slot revoke notifications —
+	// the room disappears wholesale, not slot by slot).
 	if slots > 0 {
 		r.metrics.ReservationActiveSlots(-slots)
 	}
@@ -169,8 +170,8 @@ func (r *Reservation) Reserve(ctx context.Context, roomID domain.RoomID, peerID 
 	}
 
 	if expired := room.sweepExpiredLocked(); expired > 0 {
-		// Просроченный слот освобождён - тот же revoke по метрике:
-		// счётчик сходится к живым слотам, gauge - к реальной дельте.
+		// An expired slot was freed — counted as a revoke in metrics:
+		// the counter converges to live slots, the gauge to the real delta.
 		for range expired {
 			r.metrics.ReservationRevoked()
 		}
@@ -234,8 +235,8 @@ func (r *Reservation) Admit(ctx context.Context, roomID domain.RoomID, peerID do
 
 	if peer.expiresAt.Before(time.Now()) {
 		delete(room.peers, peerID)
-		// Просроченный слот удалён - это реальный revoke: счётчик
-		// должен сходиться к живым слотам, а не только к явным Revoke.
+		// An expired slot was removed — this is a real revoke: the counter
+		// must converge to live slots, not just to explicit Revoke calls.
 		r.metrics.ReservationRevoked()
 		r.metrics.ReservationActiveSlots(-1)
 		return reservationErrPeer(domain.ErrReservationExpired, roomID, peerID)
@@ -251,11 +252,11 @@ func (r *Reservation) Admit(ctx context.Context, roomID domain.RoomID, peerID do
 	return nil
 }
 
-// touchAdmitted — общая атомарная часть MarkDisconnected/Reconnect (P20):
-// под room.mu admitted-слот проверяется и lastSeen обновляется до now
-// (sweep не тронет слот ни во время grace-mark, ни во время resume;
-// гонка sweep-revoke ↔ resume закрыта). Слота нет или он
-// не admitted → ErrReservationNotReserved. Возвращает слот после refresh.
+// touchAdmitted — shared atomic part of MarkDisconnected/Reconnect (P20):
+// under room.mu the admitted slot is checked and lastSeen is refreshed to
+// now (the sweep will not touch the slot during either grace-mark or
+// resume; the sweep-revoke ↔ resume race is closed). Slot missing or not
+// admitted → ErrReservationNotReserved. Returns the slot after refresh.
 func (r *Reservation) touchAdmitted(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) (peerSlot, error) {
 	if err := ctx.Err(); err != nil {
 		return peerSlot{}, err
@@ -283,9 +284,9 @@ func (r *Reservation) touchAdmitted(ctx context.Context, roomID domain.RoomID, p
 	return peer, nil
 }
 
-// MarkDisconnected — начало reconnect grace (P20): слот остаётся admitted
-// и удерживает capacity, lastSeen обновляется до момента разрыва
-// (от него orphan sweep отсчитывает RESERVATION_RECONNECT_TTL).
+// MarkDisconnected — start of reconnect grace (P20): the slot stays
+// admitted and keeps holding capacity; lastSeen is updated to the moment
+// of disconnect (the orphan sweep counts RESERVATION_RECONNECT_TTL from it).
 func (r *Reservation) MarkDisconnected(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) error {
 	if _, err := r.touchAdmitted(ctx, roomID, peerID); err != nil {
 		return err
@@ -294,9 +295,9 @@ func (r *Reservation) MarkDisconnected(ctx context.Context, roomID domain.RoomID
 	return nil
 }
 
-// Reconnect — атомарный resume admitted-слота (P20): lastSeen
-// обновляется и слот с NickName возвращается — nick
-// для resume живёт только здесь (в reconnect-токене его нет, T4).
+// Reconnect — atomic resume of an admitted slot (P20): lastSeen is
+// refreshed and the slot with NickName is returned — the nick for resume
+// lives only here (the reconnect token has none, T4).
 func (r *Reservation) Reconnect(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) (domain.AdmittedSlot, error) {
 	slot, err := r.touchAdmitted(ctx, roomID, peerID)
 	if err != nil {
@@ -309,10 +310,10 @@ func (r *Reservation) Reconnect(ctx context.Context, roomID domain.RoomID, peerI
 	}, nil
 }
 
-// SlotDetails — read-only просмотр admitted-слота (P24): тот же
-// сериализованный путь, что у touchAdmitted, но БЕЗ refresh'а
-// lastSeen — возвращает честный timestamp для deadline-гейта resume
-// (отклонённая попытка не продлевает grace).
+// SlotDetails — read-only view of an admitted slot (P24): the same
+// serialized path as touchAdmitted, but WITHOUT refreshing
+// lastSeen — returns an honest timestamp for the resume deadline gate
+// (a rejected attempt does not extend grace).
 func (r *Reservation) SlotDetails(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID) (domain.AdmittedSlot, error) {
 	if err := ctx.Err(); err != nil {
 		return domain.AdmittedSlot{}, err
@@ -405,9 +406,10 @@ func (r *Reservation) ListAdmittedPeers(ctx context.Context, roomID domain.RoomI
 	return slots, nil
 }
 
-// ListRoomSlots — read-only листинг всех слотов комнаты (P31), зеркало
-// ListAdmittedPeers без фильтра по состоянию: sweep never-joined комнат
-// отличает живой reserve (unexpired ticket) от истёкшего по ExpiresAt.
+// ListRoomSlots — read-only listing of all room slots (P31), mirroring
+// ListAdmittedPeers without the state filter: the never-joined room sweep
+// distinguishes a live reserve (unexpired ticket) from an expired one by
+// ExpiresAt.
 func (r *Reservation) ListRoomSlots(ctx context.Context, roomID domain.RoomID) ([]domain.RoomSlotDetail, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -432,9 +434,9 @@ func (r *Reservation) ListRoomSlots(ctx context.Context, roomID domain.RoomID) (
 		case reservationStateReserved:
 			state = domain.ReservationSlotReserved
 		default:
-			// reservationStateAdmitted и любое будущее состояние —
-			// fail-safe в «живой» слот: sweep не должен принять
-			// неизвестное состояние за мёртвое и убить комнату.
+			// reservationStateAdmitted and any future state —
+			// fail-safe into a "live" slot: the sweep must not treat
+			// an unknown state as dead and kill the room.
 			state = domain.ReservationSlotAdmitted
 		}
 		slots = append(slots, domain.RoomSlotDetail{
@@ -474,8 +476,8 @@ func (r *Reservation) Revoke(ctx context.Context, roomID domain.RoomID, peerID d
 	return nil
 }
 
-// admittedSlotLocked — общая неизменяющая проверка admitted-слота
-// (touchAdmitted и SlotDetails, P24). Вызывать под room.mu.
+// admittedSlotLocked — shared non-mutating check of an admitted slot
+// (touchAdmitted and SlotDetails, P24). Call under room.mu.
 func (room *reservationRoom) admittedSlotLocked(roomID domain.RoomID, peerID domain.PeerID) (peerSlot, error) {
 	peer, ok := room.peers[peerID]
 	if !ok || peer.state != reservationStateAdmitted {
@@ -484,8 +486,8 @@ func (room *reservationRoom) admittedSlotLocked(roomID domain.RoomID, peerID dom
 	return peer, nil
 }
 
-// checkLive отклоняет операции над tombstone-комнатой (после UnregisterRoom).
-// Вызывать под room.mu.
+// checkLive rejects operations on a tombstone room (after UnregisterRoom).
+// Call under room.mu.
 func (room *reservationRoom) checkLive(roomID domain.RoomID) error {
 	if room.unregistered {
 		return reservationErrRoom(domain.ErrReservationNotFound, roomID)
@@ -501,8 +503,8 @@ func reservationErrPeer(err error, roomID domain.RoomID, peerID domain.PeerID) e
 	return fmt.Errorf("%w: room %d peer %d", err, roomID, peerID)
 }
 
-// sweepExpiredLocked вычищает просроченные reserved-слоты и возвращает
-// число удалённых - caller эмитит revoke-метрики по факту удалений.
+// sweepExpiredLocked evicts expired reserved slots and returns the number
+// removed — the caller emits revoke metrics for actual removals.
 func (room *reservationRoom) sweepExpiredLocked() int {
 	expired := 0
 	for peerID, peer := range room.peers {

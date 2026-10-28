@@ -18,17 +18,18 @@ var (
 	ErrExpiredToken       = domain.ErrExpiredToken
 )
 
-// Первый байт credential'а - kind:
+// First byte of the credential is the kind:
 //   - join-ticket (kind=1): kind | roomID | peerID | issuedAt | expiresAt |
 //     hostID u16 | nickLen | nick | MAC; hostID=0 (domain.HostIDUnbound) -
-//     ticket без привязки к host'у (WS-only deploy, hostRegistry == nil).
-//   - reconnect-токен (kind=2, P20): kind | roomID | peerID | hostID u16 |
-//     MAC — credential фиксированной длины (51 байт), без nickName и
+//     ticket not bound to a host (WS-only deploy, hostRegistry == nil).
+//   - reconnect token (kind=2, P20): kind | roomID | peerID | hostID u16 |
+//     MAC — fixed-length credential (51 bytes), no nickName and no
 //     timestamps.
 //
-// Verify диспатчит по kind-байту: у join claims.HostID читается из payload
-// и проверяется expiry, у reconnect claims.Kind = ClaimsKindReconnect и
-// expiry нет (grace — серверное состояние на слоте).
+// Verify dispatches on the kind byte: for join, claims.HostID is read from
+// the payload and expiry is checked; for reconnect, claims.Kind =
+// ClaimsKindReconnect and there is no expiry (grace is server-side slot
+// state).
 const (
 	tokenKindJoin      = 1
 	tokenKindReconnect = 2
@@ -37,14 +38,14 @@ const (
 	fixedPayloadSizeReconnect = 1 + 8 + 8 + 2             // kind | roomID | peerID | hostID
 	macSize                   = sha256.Size
 	tokenSizeReconnect        = fixedPayloadSizeReconnect + macSize
-	minTokenSizeJoin          = fixedPayloadSizeJoin + macSize + 1 // + минимум 1 байт nick
+	minTokenSizeJoin          = fixedPayloadSizeJoin + macSize + 1 // + at least 1 byte of nick
 	hostIDOffset              = 33
 	nickLenOffset             = 35
 	nickOffset                = 36
 	hostIDOffsetReconnect     = 17
 )
 
-// Admission — минимальная реализация port/admission: HMAC-SHA256 ticket с TTL.
+// Admission — minimal port/admission implementation: HMAC-SHA256 ticket with TTL.
 type Admission struct {
 	secret []byte
 	ttl    time.Duration
@@ -75,9 +76,10 @@ func (a *Admission) Issue(ctx context.Context, roomID domain.RoomID, peerID doma
 	return a.sign(roomID, peerID, hostID, now, now.Add(a.ttl), nickName), nil
 }
 
-// IssueReconnect — reconnect-токен (kind=2, P20): credential воскрешения
-// peer'а под тем же peerID. Без nickName (ник берётся из слота reservation)
-// и без expiry — grace окно отсчитывает сервер от lastSeen слота.
+// IssueReconnect — reconnect token (kind=2, P20): credential for reviving a
+// peer under the same peerID. No nickName (the nick is taken from the
+// reservation slot) and no expiry — the server counts the grace window from
+// the slot's lastSeen.
 func (a *Admission) IssueReconnect(ctx context.Context, roomID domain.RoomID, peerID domain.PeerID, hostID domain.HostID) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -105,8 +107,9 @@ func (a *Admission) Validate(ctx context.Context, token []byte) (domain.Claims, 
 	if err != nil {
 		return domain.Claims{}, err
 	}
-	// Expiry несёт только join-ticket; reconnect-токен живёт, пока жив
-	// peerID — grace считается сервером от lastSeen слота (P20, Q8).
+	// Only the join-ticket carries expiry; the reconnect token lives as long
+	// as the peerID lives — grace is computed by the server from the slot's
+	// lastSeen (P20, Q8).
 	if claims.Kind == domain.ClaimsKindJoin && time.Now().After(claims.ExpiresAt) {
 		return domain.Claims{}, ErrExpiredToken
 	}
@@ -132,10 +135,10 @@ func (a *Admission) sign(roomID domain.RoomID, peerID domain.PeerID, hostID doma
 	return buf
 }
 
-// verify диспатчит по kind-байту (первый байт credential'а): join-ticket
-// разбирает verifyJoin, reconnect-токен — verifyReconnect, иной kind —
-// ErrInvalidToken. Kind-диспатч идёт до проверки длины: reconnect-токен
-// короче minTokenSizeJoin.
+// verify dispatches on the kind byte (the first byte of the credential):
+// verifyJoin parses a join-ticket, verifyReconnect — a reconnect token,
+// any other kind — ErrInvalidToken. Kind dispatch happens before the length
+// check: a reconnect token is shorter than minTokenSizeJoin.
 func (a *Admission) verify(token []byte) (domain.Claims, error) {
 	if len(token) == 0 {
 		return domain.Claims{}, ErrInvalidToken
@@ -150,8 +153,8 @@ func (a *Admission) verify(token []byte) (domain.Claims, error) {
 	}
 }
 
-// verifyJoin разбирает join-ticket (kind=1) по фиксированным смещениям и
-// проверяет HMAC: kind | roomID | peerID | issuedAt | expiresAt | hostID |
+// verifyJoin parses a join-ticket (kind=1) at fixed offsets and verifies
+// the HMAC: kind | roomID | peerID | issuedAt | expiresAt | hostID |
 // nickLen | nick | MAC.
 func (a *Admission) verifyJoin(token []byte) (domain.Claims, error) {
 	if len(token) < minTokenSizeJoin {
@@ -201,9 +204,9 @@ func (a *Admission) verifyJoin(token []byte) (domain.Claims, error) {
 	}, nil
 }
 
-// verifyReconnect разбирает reconnect-токен (kind=2, P20): фиксированный
-// layout kind | roomID u64 | peerID u64 | hostID u16 | MAC. Claims.Kind =
-// ClaimsKindReconnect — resume-поток admit-фасада.
+// verifyReconnect parses a reconnect token (kind=2, P20): fixed layout
+// kind | roomID u64 | peerID u64 | hostID u16 | MAC. Claims.Kind =
+// ClaimsKindReconnect — the admit facade resume flow.
 func (a *Admission) verifyReconnect(token []byte) (domain.Claims, error) {
 	if len(token) != tokenSizeReconnect {
 		return domain.Claims{}, ErrInvalidToken

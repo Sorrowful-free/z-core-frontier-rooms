@@ -322,8 +322,8 @@ func TestCreate_InvalidCapacity(t *testing.T) {
 	}
 }
 
-// createMu сериализует лимит+регистрацию: из двух конкурентных Create
-// проходит ровно один — второй видит уже созданную комнату в GetList.
+// createMu serializes limit+registration: out of two concurrent Create calls
+// exactly one succeeds — the second sees the already created room in GetList.
 func TestCreate_ConcurrentLimitRace(t *testing.T) {
 	t.Parallel()
 

@@ -2,11 +2,11 @@
 
 package env
 
-// WithEnet поднимает продовый delivery/enet mux-listener (P18): по host'у на
-// порт из списка. Без аргументов - один host на свободном UDP-порту; элемент 0
-// означает auto (свободный порт). Опция живёт только под `enet && cgo`: без
-// тега listener был бы молчаливым no-op (stub-run), а callers ENet-клиентов и
-// так обязаны быть tagged.
+// WithEnet brings up the production delivery/enet mux-listener (P18): one host
+// per port from the list. With no arguments - a single host on a free UDP port;
+// element 0 means auto (free port). The option lives only under `enet && cgo`:
+// without the tag the listener would be a silent no-op (stub-run), and callers
+// of ENet clients must be tagged anyway.
 func WithEnet(ports ...uint16) Option {
 	return func(o *options) {
 		o.enet = true
@@ -14,9 +14,9 @@ func WithEnet(ports ...uint16) Option {
 	}
 }
 
-// EnetPort - первый UDP-порт ENet listener'а окружения; валиден только с
-// WithEnet (иначе 0). Для multi-host окружений используйте EnetPorts или
-// назначенный порт из IssueTicketPort/CreateRoomPort.
+// EnetPort - the first UDP port of the environment's ENet listener; valid only
+// with WithEnet (otherwise 0). For multi-host environments use EnetPorts or
+// the assigned port from IssueTicketPort/CreateRoomPort.
 func (e *Env) EnetPort() uint16 {
 	if len(e.enetPorts) == 0 {
 		return 0
@@ -24,7 +24,7 @@ func (e *Env) EnetPort() uint16 {
 	return e.enetPorts[0]
 }
 
-// EnetPorts - все UDP-порты ENet host'ов окружения (по host'у на порт, P18).
+// EnetPorts - all UDP ports of the environment's ENet hosts (one host per port, P18).
 func (e *Env) EnetPorts() []uint16 {
 	return e.enetPorts
 }

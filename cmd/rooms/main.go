@@ -58,8 +58,8 @@ func run() error {
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
 
-	// Телеметрия (P19): prometheus-registry адаптера; портовый интерфейс
-	// уходит в эмиттеры, Gatherer - в admin listener /metrics.
+	// Telemetry (P19): the adapter's prometheus registry; the port interface
+	// goes to emitters, the Gatherer — to the admin listener /metrics.
 	metricsAdapter, err := metricsadapter.New(cfg.Metrics)
 	if err != nil {
 		return fmt.Errorf("metrics: %w", err)
@@ -67,20 +67,20 @@ func run() error {
 	m := portmetrics.Metrics(metricsAdapter)
 
 	fiberApp := fiber.New()
-	// Metrics middleware - самый внешний слой onion: duration покрывает
-	// весь запрос, а статус видит финальный ответ (panic -> recover -> 500
-	// тоже попадает в histogram).
+	// Metrics middleware - the outermost onion layer: duration covers the
+	// whole request, and status sees the final response (panic -> recover ->
+	// 500 lands in the histogram too).
 	fiberApp.Use(http.NewMetricsMiddleware(m))
 	fiberApp.Use(fibrecover.New())
 	fiberApp.Use(fibzap.New(fibzap.Config{
 		Logger: z,
-		// path без query — ticket в GET /ws?token=... не попадает в access-лог
+		// path without query — the ticket in GET /ws?token=... stays out of the access log
 		Fields: []string{"ip", "latency", "status", "method", "path"},
 	}))
 
-	// P33: режим master-миграции — глобальный флаг деплоя
-	// (cfg.StatePolicy из STATE_POLICY_ALLOW_MASTER_MIGRATION); policy
-	// фабрика одна, dispatch по kind больше не нужен.
+	// P33: the master-migration mode is a global deploy flag
+	// (cfg.StatePolicy from STATE_POLICY_ALLOW_MASTER_MIGRATION); there is a
+	// single policy factory, no dispatch by kind needed anymore.
 	roomFactory := realtime.NewRoomFactory(
 		zaplog.NewFrom(z, "rooms factory"),
 		statepolicy.NewStateRoomPolicyFactory(zaplog.NewFrom(z, "rooms policy factory"), cfg.StatePolicy, m),
@@ -90,8 +90,8 @@ func run() error {
 	roomRegistry := registry.NewRoomRegistry(appCtx, roomFactory, zaplog.NewFrom(z, "rooms registry"), m)
 
 	wsConnectionFactory := ws.NewWsConnectionFactory(zaplog.NewFrom(z, "ws connection factory"), cfg.Transport)
-	// HostLoop ещё не существует (создаётся внутри listener'а): nil + delivery
-	// привяжет его через BindLoop при старте host loop'а.
+	// The HostLoop doesn't exist yet (created inside the listener): nil +
+	// delivery binds it via BindLoop when the host loop starts.
 	enetConnectionFactory := enet.NewEnetConnectionFactory(nil, zaplog.NewFrom(z, "enet connection factory"))
 
 	admission := admissionadapter.NewAdmission(cfg.Admission)
@@ -108,15 +108,16 @@ func run() error {
 	reconnectRoomUseCase := room.NewReconnectRoomUseCase(peerFactory, roomRegistry, reservation, cfg.Reservation.ReconnectTTL, zaplog.NewFrom(z, "reconnect room use case"), m)
 	admitPeerUseCase := room.NewAdmitPeerUseCase(admission, joinRoomUseCase, reconnectRoomUseCase, zaplog.NewFrom(z, "admit peer use case"))
 
-	// cfg.Enet уже провалидирован в LoadFromEnv; после копирования transport-лимитов - повторная Validate.
+	// cfg.Enet is already validated in LoadFromEnv; after copying the transport limits — Validate again.
 	enetCfg := cfg.Enet
 	enetCfg.MaxIncomingFrameBytes = cfg.Transport.MaxIncomingFrameBytes
 	enetCfg.EnetIncomingQueueSize = cfg.Transport.EnetIncomingQueueSize
 	if err := enetCfg.Validate(); err != nil {
 		return fmt.Errorf("enet config: %w", err)
 	}
-	// Handler до IssueTicket: он же HostRegistry (P18) - балансировка
-	// ticket'ов по живым peer'ам host'ов (least-loaded) живёт внутри него.
+	// Handler before IssueTicket: it is also the HostRegistry (P18) —
+	// balancing tickets across hosts' live peers (least-loaded) lives inside
+	// it.
 	enetHandler := deliveryenet.NewRoomsHandler(
 		appCtx,
 		admitPeerUseCase,
@@ -141,8 +142,8 @@ func run() error {
 	)
 	orphanSweep := room.StartOrphanAdmittedSweep(appCtx, sweepOrphanAdmittedUseCase, cfg.Reservation.OrphanSweepInterval, zaplog.NewFrom(z, "orphan admitted sweep"))
 
-	// P31: sweep never-joined комнат — тот же каденс, что у orphan-sweep
-	// (RESERVATION_ORPHAN_SWEEP_INTERVAL = 0 отключает оба).
+	// P31: sweep of never-joined rooms — same cadence as the orphan sweep
+	// (RESERVATION_ORPHAN_SWEEP_INTERVAL = 0 disables both).
 	sweepEmptyRoomsUseCase := room.NewSweepEmptyRoomsUseCase(
 		roomRegistry,
 		reservation,
@@ -169,11 +170,12 @@ func run() error {
 
 	enetHandle := enetHandler.Listen()
 
-	// Admin listener (P19): отдельный Fiber-инстанс с GET /metrics,
-	// изолированный от публичного API. Пустой ADMIN_LISTEN_ADDR - выключен.
-	// Bind - синхронно, до serve-горутины (P19b): bind failure виден
-	// сразу как ошибка run, а race "Shutdown до Listen" исключён -
-	// Listener на уже забинденном сокете выходит сам по закрытии.
+	// Admin listener (P19): a separate Fiber instance with GET /metrics,
+	// isolated from the public API. Empty ADMIN_LISTEN_ADDR - disabled.
+	// Bind is synchronous, before the serve goroutine (P19b): a bind
+	// failure is visible immediately as a run error, and the "Shutdown
+	// before Listen" race is impossible — a Listener on an already-bound
+	// socket exits on its own when it closes.
 	var adminApp *fiber.App
 	var adminLn net.Listener
 	if cfg.Metrics.AdminListenAddr != "" {
@@ -206,8 +208,8 @@ func run() error {
 	enetDone := false
 	var adminListenResult error
 	adminListenDone := false
-	// enetDoneCh зануляем после чистого выхода listener'а (stub build / ENet disabled):
-	// закрытый Done иначе будет выигрывать select в бесконечном цикле.
+	// enetDoneCh is nilled after a clean listener exit (stub build / ENet disabled):
+	// otherwise the closed Done would win the select forever.
 	enetDoneCh := enetHandle.Done()
 waitLoop:
 	for {
@@ -248,8 +250,8 @@ waitLoop:
 		z.Error("fiber shutdown", zap.Error(err))
 	}
 	if adminApp != nil {
-		// Свой timeout-бюджет (P19b): shutdown основного app мог съесть
-		// общий ctx целиком и оставить admin без времени на drain.
+		// Its own timeout budget (P19b): shutting down the main app could
+		// consume the shared ctx entirely and leave admin no time to drain.
 		adminCtx, adminCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		if err := adminApp.ShutdownWithContext(adminCtx); err != nil {
 			z.Error("admin shutdown", zap.Error(err))
@@ -275,20 +277,20 @@ waitLoop:
 		z.Error("shutdown cleanup", zap.Error(shutdownErr))
 	}
 	appCancel()
-	// Stop отменяет host loop и ждёт реального выхода: сессии закрываются,
-	// Receive-горутины peer'ов просыпаются по closed-каналу.
+	// Stop cancels the host loop and waits for a real exit: sessions close,
+	// the peers' Receive goroutines wake up on the closed channel.
 	enetHandle.Stop()
 	orphanSweep.Stop()
 	emptySweep.Stop()
 	idleSweep.Stop()
 
-	// Однократное чтение listenErr: если select выше уже забрал результат,
-	// повторный receive заблокировался бы навсегда.
+	// Single read of listenErr: if the select above already consumed the
+	// result, a second receive would block forever.
 	if !listenDone {
 		listenResult = <-listenErr
 	}
-	// То же для admin listener'а, но только если он вообще был запущен -
-	// иначе receive на пустом канале заблокировался бы навсегда.
+	// Same for the admin listener, but only if it was started at all —
+	// otherwise a receive on the empty channel would block forever.
 	if adminApp != nil && !adminListenDone {
 		adminListenResult = <-adminListenErr
 	}
@@ -299,7 +301,7 @@ waitLoop:
 	if adminListenResult != nil && !errors.Is(adminListenResult, fiber.ErrServiceUnavailable) {
 		resultErr = errors.Join(resultErr, adminListenResult)
 	}
-	// Финальный Err() listener'а: bind failure / падение host loop фейлят процесс.
+	// Final Err() of the listener: a bind failure / host loop crash fails the process.
 	if !enetDone {
 		if err := enetHandle.Err(); err != nil && !errors.Is(err, context.Canceled) {
 			enetResult = err

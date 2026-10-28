@@ -19,8 +19,9 @@ func TestOnLeave_MasterFailover_PicksLowestInitializedPing(t *testing.T) {
 	best := testpeer.New(3, "best", testpeer.WithPing(20))
 	mustJoin(t, h.room, master, mid, best)
 	shadow := mustJoinShadow(t, h)
-	// Converge до leave: накопленные join-дельты уходят отдельным тиком,
-	// проверяемый перевыборный patch остаётся единственным кадром тика.
+	// Converge before the leave: the accumulated join deltas go out on a
+	// separate tick, so the re-election patch under test remains the only
+	// frame of its tick.
 	mustConverge(t, h)
 	mid.Clear()
 	best.Clear()
@@ -112,7 +113,7 @@ func TestOnLeave_MasterFailover_MixedPingsIgnoresUnknown(t *testing.T) {
 	assertWeakInvariants(t, shadow.view)
 	mustConverge(t, h)
 
-	// peer 3 has единственный инициализированный ping, хотя ID больше
+	// peer 3 has the only initialized ping, even though its ID is higher
 	assertPeerIsMasterInPatch(t, h, unknown, domain.PeerID(3))
 	assertPeerIsMasterInPatch(t, h, initialized, domain.PeerID(3))
 
@@ -187,7 +188,7 @@ func TestOnLeave_RemovesPeerInputFromRoomState(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("OnMessage patch input: %v", err)
 	}
-	// Input-дельта уходит своим тиком; проверяемый leave-patch — следующим.
+	// The input delta goes out on its own tick; the leave patch under test — on the next one.
 	mustConverge(t, h)
 	master.Clear()
 

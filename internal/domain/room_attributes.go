@@ -1,6 +1,6 @@
 package domain
 
-// RoomAttributes — произвольные key-value аргументы комнаты (название карты, режим и т.п.).
+// RoomAttributes — arbitrary key-value room arguments (map name, game mode, etc.).
 type RoomAttributes map[string]any
 
 func CloneRoomAttributes(src RoomAttributes) RoomAttributes {

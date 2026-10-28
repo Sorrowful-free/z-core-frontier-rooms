@@ -8,13 +8,13 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 )
 
-// Logger оборачивает стандартный пакет log.
-// args в методах — пары key, value, как в slog/zap: Info("msg", "room_id", id).
+// Logger wraps the standard log package.
+// args in methods are key, value pairs, as in slog/zap: Info("msg", "room_id", id).
 type Logger struct {
 	tag string
 }
 
-// New возвращает реализацию logging.Logger поверх log.Println.
+// New returns a logging.Logger implementation on top of log.Println.
 func New(tag string) logging.Logger {
 	return &Logger{
 		tag: tag,
@@ -41,8 +41,8 @@ func (l *Logger) Fatal(msg string, args ...any) {
 	log.Fatalf("%s: %s%s", l.tag, msg, formatKV(args))
 }
 
-// formatKV сериализует пары key, value в суффикс " k=v" (как zap SugaredLogger).
-// Нечётный хвост без значения выводится как " k".
+// formatKV serializes key, value pairs into a " k=v" suffix (like zap SugaredLogger).
+// An odd trailing key without a value is printed as " k".
 func formatKV(args []any) string {
 	var b strings.Builder
 	for i := 0; i < len(args); i += 2 {

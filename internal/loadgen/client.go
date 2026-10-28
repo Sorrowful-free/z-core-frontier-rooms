@@ -11,39 +11,41 @@ import (
 	fwebsocket "github.com/fasthttp/websocket"
 )
 
-// ErrEnetUnsupported — ENet-клиент в этой сборке отсутствует (cgo + libenet
-// только под `-tags enet`; stub — client_enet_stub.go, реализация —
-// client_enet.go). Доля enet-клиентов из TRANSPORT_MIX в такой сборке падает
-// на dial и считается в dial_errors{transport=enet}.
+// ErrEnetUnsupported — the ENet client is absent in this build (cgo +
+// libenet only under `-tags enet`; stub — client_enet_stub.go,
+// implementation — client_enet.go). The enet share of TRANSPORT_MIX in such
+// a build fails on dial and is counted in dial_errors{transport=enet}.
 var ErrEnetUnsupported = errors.New("enet client not supported in this build (ws only)")
 
-// DataConn — транспорт-агностичное соединение data plane: кадр = OpCode +
-// payload (см. domain.DecodeIncomingFrame / state opcodes). Реализации: WS
-// (wsDataConn) и ENet (enetDataConn) — peer/fleet от транспорта не зависят.
+// DataConn — transport-agnostic data-plane connection: frame = OpCode +
+// payload (see domain.DecodeIncomingFrame / state opcodes). Implementations:
+// WS (wsDataConn) and ENet (enetDataConn) — peer/fleet are transport
+// independent.
 type DataConn interface {
-	// Send пишет один кадр [op|payload].
+	// Send writes one [op|payload] frame.
 	Send(op domain.OpCode, payload []byte) error
-	// Recv блокируется до следующего кадра или разрыва. Ошибка — конец сессии.
+	// Recv blocks until the next frame or a drop. An error means the end of
+	// the session.
 	Recv() (domain.OpCode, []byte, error)
-	// Close — разрыв соединения (abrupt: сервер увидит disconnect).
+	// Close drops the connection (abrupt: the server sees a disconnect).
 	Close() error
 }
 
-// DialParams — всё, что нужно транспорту для подключения. ENet требует
-// EnetAddr:EnetPort + сырой токен первым пакетом; WS — только WSAddr +
-// token в query.
+// DialParams — everything a transport needs to connect. ENet requires
+// EnetAddr:EnetPort + the raw token as the first packet; WS — only WSAddr +
+// token in the query.
 type DialParams struct {
-	WSAddr   string // host:port WS endpoint'а (/ws)
-	EnetAddr string // host (без порта) ENet host'ов
-	EnetPort uint16 // назначенный порт из ticket-ответа (0 — нет привязки)
-	Token    string // join-ticket или reconnect-токен (base64url, как в ответе)
-	// Mark — SO_MARK для tc netem-шардинга (inc2); 0 — без маркировки.
-	// ENet игнорирует: go-enet host владеет UDP-сокетом, fd не отдаёт —
-	// enet-трафик уходит немаркированным (clean-band).
+	WSAddr   string // host:port of the WS endpoint (/ws)
+	EnetAddr string // host (no port) of the ENet hosts
+	EnetPort uint16 // assigned port from the ticket response (0 — no binding)
+	Token    string // join ticket or reconnect token (base64url, as in the response)
+	// Mark — SO_MARK for tc netem sharding (inc2); 0 — no marking.
+	// Ignored by ENet: the go-enet host owns the UDP socket and doesn't hand
+	// out the fd — enet traffic goes unmarked (clean band).
 	Mark uint32
 }
 
-// dialDataConn — точка выбора транспорта; dialEnet живёт per-tag в
+// dialDataConn — transport selection point; dialEnet lives per-tag in
 // client_enet.go / client_enet_stub.go.
 func dialDataConn(ctx context.Context, transport string, p DialParams) (DataConn, error) {
 	switch transport {
@@ -56,16 +58,18 @@ func dialDataConn(ctx context.Context, transport string, p DialParams) (DataConn
 	}
 }
 
-// wsDataConn — DataConn поверх fasthttp/websocket client. Кадр — binary
-// message: первый байт OpCode, дальше payload (зеркало серверного ws-адаптера).
+// wsDataConn — DataConn over a fasthttp/websocket client. A frame is a
+// binary message: first byte is the OpCode, then the payload (mirrors the
+// server-side ws adapter).
 type wsDataConn struct {
 	conn *fwebsocket.Conn
 }
 
 const wsClientWriteDeadline = 5 * time.Second
 
-// dialWS — GET ws://<addr>/ws?token=<base64url-ticket>. Токен идёт как есть —
-// сервер сам декодирует base64url. mark>0 → SO_MARK на сокете (netem-band).
+// dialWS — GET ws://<addr>/ws?token=<base64url-ticket>. The token goes as
+// is — the server decodes base64url itself. mark>0 → SO_MARK on the socket
+// (netem band).
 func dialWS(ctx context.Context, addr, token string, mark uint32) (DataConn, error) {
 	u := url.URL{Scheme: "ws", Host: addr, Path: "/ws", RawQuery: "token=" + token}
 	dialer := fwebsocket.Dialer{

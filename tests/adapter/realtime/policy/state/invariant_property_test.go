@@ -13,13 +13,13 @@ import (
 	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
-// P10: property-прогон инвариантов StateRoomPolicy — seeded rand, операции
-// над реальной Room + fault-инъекции; после каждого шага — слабые
-// инварианты, периодически — settle + сильные.
+// P10: property run of the StateRoomPolicy invariants — seeded rand,
+// operations against a real Room + fault injections; after every step —
+// weak invariants, periodically — settle + strong.
 //
-// fault-инъекции живут на testpeer.Peer: SetAlive(false) моделирует смерть
-// транспорта без leave (kill + evict), SetDeliverErr — отказы Deliver,
-// Stop — штатный stop после leave.
+// Fault injections live on testpeer.Peer: SetAlive(false) simulates
+// transport death without a leave (kill + evict), SetDeliverErr — Deliver
+// failures, Stop — a normal stop after a leave.
 
 const (
 	propSteps       = 300
@@ -29,7 +29,7 @@ const (
 	propTraceKeep   = 30
 )
 
-// propTrace — ring buffer последних операций для диагностики падений.
+// propTrace — a ring buffer of the last operations for failure diagnostics.
 type propTrace struct {
 	entries []string
 }
@@ -62,14 +62,14 @@ func runInvariantProperty(t *testing.T, seed int64) {
 	rnd := rand.New(rand.NewSource(seed))
 	h := newHarness(t, domain.RoomID(1000+seed), propCapacity)
 
-	// Наблюдатель сидит в комнате с самого начала и никогда не уходит.
+	// The observer sits in the room from the very beginning and never leaves.
 	shadow := mustJoinShadow(t, h)
 	trace := &propTrace{}
 
 	joined := map[domain.PeerID]*testpeer.Peer{}
 
-	// joinedIDs — отсортированные ID: выбор peer через rnd индексирует
-	// стабильный порядок, прогон по seed детерминирован.
+	// joinedIDs — sorted IDs: picking a peer via rnd indexes a stable
+	// order, so a run by seed is deterministic.
 	joinedIDs := func() []domain.PeerID {
 		ids := make([]domain.PeerID, 0, len(joined))
 		for id := range joined {
@@ -99,8 +99,8 @@ func runInvariantProperty(t *testing.T, seed int64) {
 		return joined[rest[rnd.Intn(len(rest))]]
 	}
 
-	// --- словарь операций (clean + fault-инъекции); ошибки операций —
-	// легальный исход, логируются в trace, инварианты не ломают ---
+	// --- operation dictionary (clean + fault injections); operation errors
+	// are a legal outcome, logged to the trace, they do not break invariants ---
 
 	joinOp := func() string {
 		if len(h.room.GetPeers()) >= propCapacity {
@@ -224,10 +224,10 @@ func runInvariantProperty(t *testing.T, seed int64) {
 		return fmt.Sprintf("entities %d err=%v", p.GetID(), err)
 	}
 
-	// Fault: у случайного выжившего падает Deliver. P34: leave сам ничего
-	// не шлёт (дельта едет тиком), поэтому инъекция влияет только на
-	// wire-доставку следующих tick-broadcast'ов — легальный fault mode,
-	// shadow залечивается resync'ом.
+	// Fault: a random survivor's Deliver fails. P34: leave itself sends
+	// nothing (the delta rides on a tick), so the injection only affects
+	// the wire delivery of subsequent tick broadcasts — a legal fault mode,
+	// the shadow is healed by resync.
 	flakyLeaveOp := func() string {
 		p := randomJoined()
 		if p == nil {
@@ -244,8 +244,9 @@ func runInvariantProperty(t *testing.T, seed int64) {
 		return fmt.Sprintf("flaky leave %d via bystander %d err=%v", p.GetID(), bystander.GetID(), err)
 	}
 
-	// Fault: транспорт умер без leave — peer остаётся в room и в state,
-	// его Deliver падает; выводит sweep (evictDead).
+	// Fault: the transport died without a leave — the peer stays in the
+	// room and in the state, its Deliver fails; the sweep evicts it
+	// (evictDead).
 	killOp := func() string {
 		p := randomJoined()
 		if p == nil {
@@ -255,9 +256,9 @@ func runInvariantProperty(t *testing.T, seed int64) {
 		return fmt.Sprintf("kill %d (IsAlive=false)", p.GetID())
 	}
 
-	// Sweep-эквивалент EvictIdlePeersUseCase: выводит мёртвых через Leave.
-	// Мёртвый Deliver сам по себе leave не ломает (P34 — leave не шлёт),
-	// но роняет tick-broadcast, пока peer не выведен.
+	// Sweep equivalent of EvictIdlePeersUseCase: evicts the dead via Leave.
+	// A dead Deliver does not break a leave by itself (P34 — leave sends
+	// nothing), but it drops the tick broadcast until the peer is evicted.
 	evictDeadOp := func() string {
 		var out strings.Builder
 		out.WriteString("evict dead:")
@@ -278,7 +279,7 @@ func runInvariantProperty(t *testing.T, seed int64) {
 		return out.String()
 	}
 
-	// LeaveRoom-эквивалент: чистый leave + peer.Stop.
+	// LeaveRoom equivalent: a clean leave + peer.Stop.
 	stopOp := func() string {
 		p := randomJoined()
 		if p == nil {
@@ -348,9 +349,9 @@ func runInvariantProperty(t *testing.T, seed int64) {
 		}
 	}
 
-	// Финал: снимаем все fault-инъекции и выгоняем мёртвых — после этого
-	// resync обязан доехать до shadow, иначе протокол не может
-	// восстановить клиента.
+	// Finale: remove all fault injections and evict the dead — after that
+	// the resync must reach the shadow, otherwise the protocol cannot
+	// recover the client.
 	for id, p := range joined {
 		p.SetDeliverErr(nil)
 		if !p.IsAlive() {

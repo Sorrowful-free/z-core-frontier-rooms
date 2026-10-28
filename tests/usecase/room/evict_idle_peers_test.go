@@ -117,7 +117,7 @@ func TestEvictIdlePeers_LeaveErrorTolerated(t *testing.T) {
 	room.EXPECT().GetPeer(peer1ID).Return(peer1, nil)
 	reservation.EXPECT().MarkDisconnected(gomock.Any(), roomID, peer1ID).Return(nil)
 	room.EXPECT().Leave(peer1).Return(leaveErr)
-	// Leave изымает peer даже при ошибке — Stop и broadcast всё равно выполняются.
+	// Leave removes the peer even on error — Stop and broadcast still run.
 	peer1.EXPECT().Stop().Return(nil)
 	room.EXPECT().Send(gomock.Any()).Return(nil)
 
@@ -196,10 +196,10 @@ func TestStartIdlePeerSweep_StopWaitsForRunOnce(t *testing.T) {
 	}
 }
 
-// Регрессия (P31 review): безусловный closeRoomIfEmpty на каждой комнате
-// убивал never-joined комнату (peers==0, живой reserve-тикет) на первом
-// же sweep-проходе. Пустая комната без evict'ов не должна трогаться —
-// её kill ведёт SweepEmptyRooms по слотам, не idle-sweep.
+// Regression (P31 review): an unconditional closeRoomIfEmpty on every room
+// killed a never-joined room (peers==0, a live reserve ticket) on the very
+// first sweep pass. An empty room without evictions must not be touched —
+// its kill is handled by SweepEmptyRooms by slots, not by the idle sweep.
 func TestEvictIdlePeers_NeverJoinedRoomNotKilled(t *testing.T) {
 	t.Parallel()
 
@@ -214,8 +214,8 @@ func TestEvictIdlePeers_NeverJoinedRoomNotKilled(t *testing.T) {
 	registry.EXPECT().GetList(gomock.Any()).Return([]realtime.Room{room}, nil)
 	room.EXPECT().GetID().Return(roomID).AnyTimes()
 	room.EXPECT().GetPeers().Return(nil).AnyTimes()
-	// DeleteRoom/UnregisterRoom/Delete-вызовов не ожидаем — gomock
-	// упадёт на любом из них (strict default).
+	// No DeleteRoom/UnregisterRoom/Delete calls are expected — gomock
+	// fails on any of them (strict default).
 
 	disconnectUC := useroom.NewDisconnectPeerUseCase(registry, reservation, logger)
 	uc := useroom.NewEvictIdlePeersUseCase(registry, disconnectUC, logger, nil)

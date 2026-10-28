@@ -1,15 +1,15 @@
 package integration_test
 
-// Контентный e2e (P34): точные байты Inputs/Entities после прохода
-// client→server→client по проводу. Гарантия, что tick-coalesced эмиссия
-// и shallow prevState-Snapshot не искажают данные: клиентская реплика
-// (join-full + тиковые патчи) обязана содержать РОВНО отправленные
-// значения и сходиться с авторитетным full state (его приносит
-// observer-клиент при join — immediate deliver).
+// Content e2e (P34): exact bytes of Inputs/Entities after a
+// client→server→client round trip over the wire. Guarantees that
+// tick-coalesced emission and the shallow prevState snapshot do not distort
+// the data: the client replica (join-full + tick patches) must contain
+// EXACTLY the sent values and converge with the authoritative full state
+// (brought by the observer client on join — immediate deliver).
 //
-// Покрывает три patch-опа: Added (точные байты в реплике всех peer),
-// Updated (вторая мутация ключа доезжает новым значением — ловушка
-// in-place снапшота), Removed (ключ исчезает, а не зомбирует).
+// Covers three patch ops: Added (exact bytes in every peer's replica),
+// Updated (the second mutation of a key arrives with the new value — the
+// in-place snapshot trap), Removed (the key disappears instead of going zombie).
 
 import (
 	"bytes"
@@ -22,16 +22,16 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/env"
 )
 
-// stopSendAndWait глушит send-loop и ждёт его выхода: после возврата на
-// conn никто не пишет — writeFrame из тест-горутины не гонится с
-// фоновой отправкой (websocket conn не потокобезопасен на write).
+// stopSendAndWait silences the send loop and waits for its exit: after the
+// return nothing writes to conn — a writeFrame from the test goroutine does
+// not race the background send (a websocket conn is not write-thread-safe).
 func (b *matchClientBase) stopSendAndWait() {
 	b.stopSend()
 	<-b.sendDone
 }
 
-// replica — потокобезопасный снапшот локальной реплики клиента (deep clone,
-// чтобы читать мапы вне мьютекса).
+// replica — a thread-safe snapshot of the client's local replica (deep clone,
+// so the maps can be read outside the mutex).
 func (b *matchClientBase) replica() *state.RoomState {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -49,7 +49,7 @@ func waitReplica(t *testing.T, c *wsClient, timeout time.Duration, desc string, 
 	})
 }
 
-// --- фикстуры контента --------------------------------------------------------
+// --- content fixtures ---------------------------------------------------------
 
 var (
 	contentValueKeyA = state.ValueId(10)
@@ -67,7 +67,7 @@ var contentInputB = []byte{0x01, 0x02, 0x03, 0x04, 0x05}
 var contentEntityValA = []byte{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11}
 var contentEntityValB = []byte{0x22, 0x33}
 
-// --- отправка кадров ----------------------------------------------------------
+// --- frame sending ------------------------------------------------------------
 
 func sendInputAdded(t *testing.T, c *wsClient, adds map[state.ValueId][]byte) {
 	t.Helper()
@@ -129,7 +129,7 @@ func sendEntitiesAdded(t *testing.T, c *wsClient, eid state.EntityID, ent state.
 	}
 }
 
-// --- ассерты содержимого ------------------------------------------------------
+// --- content asserts ----------------------------------------------------------
 
 func assertValue(t *testing.T, r *state.RoomState, peerID domain.PeerID, key state.ValueId, want []byte) {
 	t.Helper()
@@ -154,7 +154,7 @@ func keysOf[K comparable, V any](m map[K]V) []K {
 	return out
 }
 
-// wantEntity — эталонная сущность как мы её отправили.
+// wantEntity — the reference entity exactly as we sent it.
 func wantEntity(owner domain.PeerID) state.EntityState {
 	return state.EntityState{
 		EntityTypeID: contentEntityTyp,
@@ -200,7 +200,7 @@ func assertEntity(t *testing.T, r *state.RoomState, eid state.EntityID, want sta
 	}
 }
 
-// equals-замыкания для deep-сверки мап реплика vs авторитетный full state.
+// equals closures for a deep comparison of replica maps vs the authoritative full state.
 func inputsEqual(a, b state.InputState) bool {
 	return a.Equals(&b, func(v1, v2 state.ValueState) bool { return v1.Equals(&v2) })
 }
@@ -211,7 +211,7 @@ func entitiesEqual(a, b state.EntityState) bool {
 	})
 }
 
-// TestStateContent_ExactValues — см. шапку файла.
+// TestStateContent_ExactValues — see the file header.
 func TestStateContent_ExactValues(t *testing.T) {
 	t.Parallel()
 
@@ -230,14 +230,14 @@ func TestStateContent_ExactValues(t *testing.T) {
 	})
 	masterPeer, memberPeer := master.peer(), member.peer()
 
-	// Стопаем send-loop'ы: фоновый 20Гц input/entities не должен гонять
-	// значения под ногами у точных ассертов — дальше мутируем state только
-	// вручную, детерминированными кадрами. Ждём выхода: конкурентный
-	// write на conn — data race.
+	// Stop the send loops: the background 20Hz input/entities must not churn
+	// values under the feet of the exact asserts — from here on we mutate state
+	// only manually, with deterministic frames. Wait for the exit: a concurrent
+	// write on conn is a data race.
 	master.stopSendAndWait()
 	member.stopSendAndWait()
 
-	// --- Фаза 1: Added, точные байты доезжают всем ----------------------------
+	// --- Phase 1: Added, exact bytes reach everyone ----------------------------
 
 	sendInputAdded(t, member, map[state.ValueId][]byte{
 		contentValueKeyA: contentInputA,
@@ -258,7 +258,7 @@ func TestStateContent_ExactValues(t *testing.T) {
 		})
 	}
 
-	// Точные байты в реплике КАЖДОГО peer (включая эхо отправителю).
+	// Exact bytes in EVERY peer's replica (including the echo to the sender).
 	for _, c := range []*wsClient{master, member} {
 		r := c.replica()
 		assertValue(t, r, memberPeer, contentValueKeyA, contentInputA)
@@ -266,9 +266,10 @@ func TestStateContent_ExactValues(t *testing.T) {
 		assertEntity(t, r, contentEntityID, wantEntity(masterPeer))
 	}
 
-	// --- Фаза 2: Updated — вторая мутация ключа доезжает новым значением ------
-	// Здесь и ломалась бы порча от in-place prevState: diff по «догнавшему»
-	// снапшоту дал бы пустой патч, и старое значение осталось бы навсегда.
+	// --- Phase 2: Updated — the second mutation of a key arrives with the new value
+	// This is where the in-place prevState corruption would bite: a diff against
+	// the "caught-up" snapshot would yield an empty patch, and the old value
+	// would stay forever.
 
 	sendInputUpdated(t, member, contentValueKeyA, contentInputA2)
 	waitReplica(t, member, 5*time.Second, "member: updated input value", func(r *state.RoomState) bool {
@@ -282,7 +283,7 @@ func TestStateContent_ExactValues(t *testing.T) {
 	assertValue(t, master.replica(), memberPeer, contentValueKeyA, contentInputA2)
 	assertValue(t, master.replica(), memberPeer, contentValueKeyB, contentInputB)
 
-	// --- Фаза 3: Removed — ключ исчезает, не зомбирует ------------------------
+	// --- Phase 3: Removed — the key disappears, no zombie ---------------------
 
 	sendInputRemoved(t, member, contentValueKeyB)
 	waitReplica(t, member, 5*time.Second, "member: removed input key", func(r *state.RoomState) bool {
@@ -298,11 +299,11 @@ func TestStateContent_ExactValues(t *testing.T) {
 		t.Fatalf("master replica: removed key %d still present", contentValueKeyB)
 	}
 
-	// --- Фаза 4: конвергенция с авторитетным full state ------------------------
-	// Observer при join получает immediate full state — это серверная
-	// authoritative версия на момент join. Реплики member/master, собранные
-	// join-full + тиковыми патчами, обязаны сойтись с ней по Inputs/Entities
-	// глубоко (не только по наличию ключей).
+	// --- Phase 4: convergence with the authoritative full state ----------------
+	// The observer gets an immediate full state on join — that is the server's
+	// authoritative version at join time. The member/master replicas, assembled
+	// from join-full + tick patches, must deeply converge with it on
+	// Inputs/Entities (not just on key presence).
 
 	observer := newWSClient(t, e, "observer", e.IssueTicket(t, roomID, "observer"))
 	observer.stopSendAndWait()
@@ -312,8 +313,8 @@ func TestStateContent_ExactValues(t *testing.T) {
 		return len(r.Peers) >= 3
 	})
 
-	// Observer мог успеть отправить loop-input до stopSend — дожидаемся, когда
-	// его запись дойдёт до реплик остальных и карты сравняются.
+	// The observer may have sent a loop input before stopSend — wait until its
+	// entry reaches the others' replicas and the maps become equal.
 	waitReplica(t, member, 5*time.Second, "converged vs authoritative full (Inputs+Entities)", func(r *state.RoomState) bool {
 		full := observer.replica()
 		if full == nil {

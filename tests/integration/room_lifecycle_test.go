@@ -9,23 +9,23 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/env"
 )
 
-// TestIntegration_RoomLifecycle_WS — первый сквозной сценарий ADR-0002:
-// create (host) → issue (joiner) → оба join по WS → 2 peers →
-// joiner disconnect → 1 peer (host). Disconnect→leave проверяется poll'ом
-// по registry, а не по времени: conn.Close → серверный Receive ошибка →
-// LeaveRoomUseCase убирает peer'а из комнаты.
+// TestIntegration_RoomLifecycle_WS — the first end-to-end scenario of ADR-0002:
+// create (host) → issue (joiner) → both join over WS → 2 peers →
+// joiner disconnect → 1 peer (host). The disconnect→leave path is verified by
+// polling the registry, not by timing: conn.Close → server-side Receive error →
+// LeaveRoomUseCase removes the peer from the room.
 func TestIntegration_RoomLifecycle_WS(t *testing.T) {
 	t.Parallel()
 
 	e := env.New(t)
 
-	// host: create возвращает ticket, join по WS.
+	// host: create returns a ticket, join over WS.
 	roomID, hostToken := e.CreateRoom(t, "host")
 	hostConn := e.DialWS(t, "token="+hostToken)
 	defer hostConn.Close()
 	e.WaitPeerCount(t, roomID, 1)
 
-	// joiner: отдельный ticket через POST /rooms/:id/tickets.
+	// joiner: a separate ticket via POST /rooms/:id/tickets.
 	joinerToken := e.IssueTicket(t, roomID, "joiner")
 	joinerConn := e.DialWS(t, "token="+joinerToken)
 	defer joinerConn.Close()
@@ -33,7 +33,7 @@ func TestIntegration_RoomLifecycle_WS(t *testing.T) {
 	e.WaitPeerNick(t, roomID, "host", true)
 	e.WaitPeerNick(t, roomID, "joiner", true)
 
-	// disconnect joiner'а → LeaveRoom → остаётся только host.
+	// joiner disconnect → LeaveRoom → only the host remains.
 	if err := joinerConn.Close(); err != nil {
 		t.Fatalf("joiner conn close: %v", err)
 	}
@@ -52,9 +52,9 @@ func TestIntegration_RoomLifecycle_WS(t *testing.T) {
 	}
 }
 
-// TestIntegration_TicketReplay_WS — D3: тикет одноразовый. Повторный join
-// тем же токеном (слот уже admitted) → JoinReject-кадр 0x75
-// (OpReservationAlreadyAdmitted). Реконнект идёт через новый тикет.
+// TestIntegration_TicketReplay_WS — D3: the ticket is single-use. A repeated
+// join with the same token (the slot is already admitted) → a JoinReject frame
+// 0x75 (OpReservationAlreadyAdmitted). Reconnect goes through a new ticket.
 func TestIntegration_TicketReplay_WS(t *testing.T) {
 	t.Parallel()
 

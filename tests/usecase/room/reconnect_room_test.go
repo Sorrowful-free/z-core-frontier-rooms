@@ -13,8 +13,8 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-// testReconnectTTL — дедлайн grace в тестах resume; свежий LastSeen
-// проходит гейт, старый (now - 2*ttl) — отклоняется expired.
+// testReconnectTTL — the grace deadline in resume tests; a fresh LastSeen
+// passes the gate, a stale one (now - 2*ttl) is rejected as expired.
 const testReconnectTTL = time.Minute
 
 func newReconnectClaims(roomID domain.RoomID, peerID domain.PeerID) domain.Claims {
@@ -23,14 +23,14 @@ func newReconnectClaims(roomID domain.RoomID, peerID domain.PeerID) domain.Claim
 	return claims
 }
 
-// freshAdmittedSlot — слот со свежим lastSeen: deadline-гейт (P24) пропускает.
+// freshAdmittedSlot — a slot with a fresh lastSeen: the deadline gate (P24) lets it through.
 func freshAdmittedSlot(peerID domain.PeerID, nick string) domain.AdmittedSlot {
 	return domain.AdmittedSlot{PeerID: peerID, NickName: nick, LastSeen: time.Now()}
 }
 
-// Resume по отсутствующему peer'у: Reconnect → CreatePeer из слота → Join →
-// broadcast OpPeerReconnected остальным. reservation.Admit не вызывается,
-// слот не ревокается.
+// Resume of an absent peer: Reconnect → CreatePeer from the slot → Join →
+// OpPeerReconnected broadcast to the others. reservation.Admit is not called,
+// the slot is not revoked.
 func TestReconnectRoom_JoinAbsentPeer(t *testing.T) {
 	t.Parallel()
 
@@ -75,7 +75,7 @@ func TestReconnectRoom_JoinAbsentPeer(t *testing.T) {
 	}
 }
 
-// Reconnect по живому peer'у — Replace (новейшее соединение побеждает).
+// Reconnect over a live peer — Replace (the newest connection wins).
 func TestReconnectRoom_ReplaceLivePeer(t *testing.T) {
 	t.Parallel()
 
@@ -120,8 +120,8 @@ func TestReconnectRoom_ReplaceLivePeer(t *testing.T) {
 	}
 }
 
-// Reject resume: слота нет / не admitted → ErrReservationNotReserved;
-// Revoke и Admit не вызываются.
+// Reject resume: the slot is missing / not admitted → ErrReservationNotReserved;
+// Revoke and Admit are not called.
 func TestReconnectRoom_SlotNotAdmitted(t *testing.T) {
 	t.Parallel()
 
@@ -150,11 +150,11 @@ func TestReconnectRoom_SlotNotAdmitted(t *testing.T) {
 	}
 }
 
-// Гонка double-resume одного reconnect-токена: HasPeer ещё false, но победивший
-// resume уже вставил peer'а — Join возвращает ErrPeerAlreadyInRoom
-// (обёрнут ErrJoinDenied lifecycle'ом). Проигравший дожимает Replace
-// (newest-wins): объект победителя останавливает old.Stop() внутри
-// Replace — сироты вне peers map не остаётся.
+// Double-resume race of the same reconnect token: HasPeer is still false, but
+// the winning resume has already inserted the peer — Join returns
+// ErrPeerAlreadyInRoom (wrapped in ErrJoinDenied by the lifecycle). The loser
+// pushes through with Replace (newest-wins): the winner's object stops the old
+// one via old.Stop() inside Replace — no orphan is left outside the peers map.
 func TestReconnectRoom_JoinRaceFallsBackToReplace(t *testing.T) {
 	t.Parallel()
 
@@ -201,8 +201,8 @@ func TestReconnectRoom_JoinRaceFallsBackToReplace(t *testing.T) {
 	}
 }
 
-// Replace после проигранной гонки double-resume тоже может упасть —
-// ошибка наружу, слот не ревокается.
+// Replace after the lost double-resume race can also fail —
+// the error goes out, the slot is not revoked.
 func TestReconnectRoom_JoinRaceReplaceFailure(t *testing.T) {
 	t.Parallel()
 
@@ -244,7 +244,7 @@ func TestReconnectRoom_JoinRaceReplaceFailure(t *testing.T) {
 	}
 }
 
-// Фейл после Reconnect (join отклонён): слот не ревокается.
+// Failure after Reconnect (join denied): the slot is not revoked.
 func TestReconnectRoom_JoinFailureDoesNotRevoke(t *testing.T) {
 	t.Parallel()
 
@@ -284,10 +284,10 @@ func TestReconnectRoom_JoinFailureDoesNotRevoke(t *testing.T) {
 	}
 }
 
-// P24: resume после lastSeen + reconnectTTL отклоняется дедлайн-гейтом до
-// refresh'а — ErrReservationExpired (на wire — OpReservationExpired 0x74,
-// маппинг покрыт в tests/delivery/errors). Reconnect не вызывается: rejected
-// попытка не продлевает grace.
+// P24: resume after lastSeen + reconnectTTL is rejected by the deadline gate
+// before the refresh — ErrReservationExpired (on the wire — OpReservationExpired
+// 0x74, the mapping is covered in tests/delivery/errors). Reconnect is not
+// called: a rejected attempt does not extend the grace.
 func TestReconnectRoom_ExpiredGraceRejected(t *testing.T) {
 	t.Parallel()
 
@@ -320,8 +320,9 @@ func TestReconnectRoom_ExpiredGraceRejected(t *testing.T) {
 	}
 }
 
-// P24: живой peer (HasPeer) дедлайном не гейтится — lastSeen давно
-// подключённого peer'а старый законно; Replace newest-wins идёт без гейта.
+// P24: a live peer (HasPeer) is not gated by the deadline — the lastSeen of a
+// long-connected peer is legitimately old; the newest-wins Replace runs without
+// the gate.
 func TestReconnectRoom_LivePeerNotGatedByDeadline(t *testing.T) {
 	t.Parallel()
 
@@ -340,7 +341,7 @@ func TestReconnectRoom_LivePeerNotGatedByDeadline(t *testing.T) {
 	)
 	claims := newReconnectClaims(roomID, peerID)
 
-	// LastSeen далеко за дедлайном — для живого peer'а это норма.
+	// LastSeen is far past the deadline — normal for a live peer.
 	stale := domain.AdmittedSlot{
 		PeerID:   peerID,
 		NickName: "player",
@@ -370,8 +371,8 @@ func TestReconnectRoom_LivePeerNotGatedByDeadline(t *testing.T) {
 	}
 }
 
-// P24: reconnectTTL = 0 («grace нет», ноль-семантизм sweep) — любой
-// !HasPeer resume expired даже со свежим lastSeen.
+// P24: reconnectTTL = 0 ("no grace", the sweep zero-semantics) — any
+// !HasPeer resume is expired even with a fresh lastSeen.
 func TestReconnectRoom_ZeroTTLResumeExpired(t *testing.T) {
 	t.Parallel()
 
@@ -401,9 +402,9 @@ func TestReconnectRoom_ZeroTTLResumeExpired(t *testing.T) {
 	}
 }
 
-// Гонка sweep ↔ resume (T5): SlotDetails ещё видел слот, но к моменту
-// Reconnect sweep его отозвал — проигравший resume получает
-// ErrReservationNotReserved, а не успех по протухшему снапшоту.
+// Sweep ↔ resume race (T5): SlotDetails still saw the slot, but by the time of
+// Reconnect the sweep has revoked it — the losing resume gets
+// ErrReservationNotReserved instead of succeeding on a stale snapshot.
 func TestReconnectRoom_SlotRevokedBySweepBetweenCheckAndReconnect(t *testing.T) {
 	t.Parallel()
 

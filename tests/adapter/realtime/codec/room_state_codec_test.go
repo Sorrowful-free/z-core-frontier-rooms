@@ -131,7 +131,7 @@ func TestRoomStateCodec_decodePatch_truncatedPeerNick(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EncodePatch: %v", err)
 	}
-	// обрезанный peer payload: раньше buf.Read тихо возвращал короче
+	// truncated peer payload: buf.Read used to silently return short
 	if _, err := c.DecodePatch(data[:len(data)-1]); err == nil {
 		t.Fatal("expected error on truncated payload")
 	}
@@ -167,8 +167,9 @@ func TestRoomStateCodec_patch_addPeer(t *testing.T) {
 	}
 }
 
-// Регрессия D2: пароль комнаты — серверный секрет, на wire его быть не должно.
-// Пустая комната кодируется ровно в header + три пустых map, без password-поля.
+// D2 regression: the room password is a server-side secret and must never
+// appear on the wire. An empty room encodes into exactly header + three
+// empty maps, with no password field.
 func TestRoomStateCodec_encode_neverSerializesPassword(t *testing.T) {
 	t.Parallel()
 

@@ -10,27 +10,28 @@ import (
 	fwebsocket "github.com/fasthttp/websocket"
 )
 
-// Сценарий e2e «живого матча» (план docs/plans/P11-e2e-match.md), ~60s
-// реального времени:
+// E2E "live match" scenario (plan docs/plans/P11-e2e-match.md), ~60s of
+// real time:
 //
-//	host (master) + 3 slave по WS. Все шлют PatchInput ~20 Гц; клиент,
-//	увидевший is_master на себе, дополнительно шлёт PatchEntities ~20 Гц
-//	(entity id = peer id, Owner = свой peer id, позиция — u64 counter).
+//	host (master) + 3 slaves over WS. Everyone sends PatchInput at ~20Hz;
+//	the client that sees is_master on itself additionally sends
+//	PatchEntities at ~20Hz (entity id = peer id, Owner = own peer id,
+//	position — a u64 counter).
 //
-//	t=15s  host замолкает: read-pump останавливается, TCP-conn остаётся
-//	       открытым → клиент не отвечает на ping → lastSeen стареет →
-//	       idle sweep эвиктит за ~6s → миграция мастера на slave.
-//	t=40s  текущий мастер делает clean leave → миграция №3.
-//	t=60s  финал: ≥2 клиента живы, patches текут, peers в registry = 2.
+//	t=15s  the host goes silent: the read pump stops, the TCP conn stays
+//	       open → the client no longer answers pings → lastSeen goes stale →
+//	       the idle sweep evicts it within ~6s → master migrates to a slave.
+//	t=40s  the current master does a clean leave → migration #3.
+//	t=60s  final: ≥2 clients alive, patches flowing, peers in registry = 2.
 //
-// Общий клиентский слой и сценарный драйвер — match_e2e_client_test.go;
-// ENet/mixed варианты — match_e2e_enet_test.go (tag enet && cgo).
+// The shared client layer and scenario driver — match_e2e_client_test.go;
+// the ENet/mixed variants — match_e2e_enet_test.go (tag enet && cgo).
 
 var _ matchClient = (*wsClient)(nil)
 
-// wsClient — минимальный клиент комнаты на WS: read-pump читает
-// server→client кадры в общий handleFrame базы, send-loop — общий
-// (sendLoop базы с writeFrame на websocket conn).
+// wsClient — a minimal room client over WS: the read pump reads
+// server→client frames into the shared base handleFrame, the send loop is
+// shared too (the base sendLoop with writeFrame on the websocket conn).
 type wsClient struct {
 	matchClientBase
 	conn *fwebsocket.Conn
@@ -47,26 +48,26 @@ func newWSClient(t *testing.T, e *env.Env, nick, token string) *wsClient {
 	return c
 }
 
-// goSilent имитирует зависший клиент: перестаём читать (ping'и сервера больше
-// не получают pong — fasthttp/websocket отвечает на ping только внутри
-// ReadMessage) и перестаём слать. TCP-соединение остаётся открытым: сервер
-// должен выкинуть peer по idle timeout, а не по TCP-разрыву.
+// goSilent simulates a hung client: we stop reading (the server's pings no
+// longer get pongs — fasthttp/websocket answers a ping only inside
+// ReadMessage) and stop sending. The TCP connection stays open: the server
+// must evict the peer on idle timeout, not on a TCP drop.
 func (c *wsClient) goSilent() {
 	c.silent.Store(true)
 	c.stopSend()
-	// Будим заблокированный ReadMessage — TCP при этом не закрывается.
+	// Wake the blocked ReadMessage — TCP stays open.
 	_ = c.conn.SetReadDeadline(time.Now())
 }
 
-// leaveClean — плановый уход мастера №2: закрываем conn, серверный Receive
-// падает → LeaveRoom → вторая миграция.
+// leaveClean — the scheduled departure of master #2: we close the conn, the
+// server-side Receive fails → LeaveRoom → the second migration.
 func (c *wsClient) leaveClean() {
 	c.leftClean.Store(true)
 	c.stopSend()
 	_ = c.conn.Close()
 }
 
-// stop — финальный teardown клиента (идемпотентно для silent/leftClean).
+// stop — the final client teardown (idempotent for silent/leftClean).
 func (c *wsClient) stop() {
 	c.leftClean.Store(true)
 	c.stopSend()
@@ -105,7 +106,7 @@ func (c *wsClient) writeFrame(op domain.OpCode, payload []byte) error {
 	return c.conn.WriteMessage(fwebsocket.BinaryMessage, append([]byte{byte(op)}, payload...))
 }
 
-// TestE2E_LiveMatch_HostMigration — см. шапку файла и docs/plans/P11-e2e-match.md.
+// TestE2E_LiveMatch_HostMigration — see the file header and docs/plans/P11-e2e-match.md.
 func TestE2E_LiveMatch_HostMigration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e live match ~60s real time — skipped under -short")
@@ -119,8 +120,8 @@ func TestE2E_LiveMatch_HostMigration(t *testing.T) {
 			EnetIncomingQueueSize: adaptertransport.DefaultEnetIncomingQueueSize,
 			MaxIncomingFrameBytes: adaptertransport.DefaultMaxIncomingFrameBytes,
 			WSWriteDeadline:       adaptertransport.DefaultWSWriteDeadline,
-			// PeerIdleTimeout > wsPingInterval (2s): живые клиенты держатся
-			// за pong → lastSeen; замолчавший отваливается за timeout+sweep.
+			// PeerIdleTimeout > wsPingInterval (2s): live clients hold on via
+			// pong → lastSeen; the silent one drops after timeout+sweep.
 			PeerIdleTimeout:       5 * time.Second,
 			PeerIdleSweepInterval: time.Second,
 		}),
@@ -141,7 +142,7 @@ func TestE2E_LiveMatch_HostMigration(t *testing.T) {
 
 	runLiveMatch(t, e, roomID, host, []matchClient{s1, s2, s3}, liveMatchTiming{
 		hostSilentAt:  15 * time.Second,
-		evictBound:    15 * time.Second, // 5s idle timeout + 1s sweep + миграция
+		evictBound:    15 * time.Second, // 5s idle timeout + 1s sweep + migration
 		secondLeaveAt: 40 * time.Second,
 		finishAt:      60 * time.Second,
 	})

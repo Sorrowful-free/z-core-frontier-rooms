@@ -6,21 +6,22 @@ import (
 	"syscall"
 )
 
-// Netem-профили (P27 inc2): каждому клиенту при спавне раздаётся профиль из
-// LOADGEN_NETEM_SHARE (weighted pick), его dial'ы ставят SO_MARK=fwmark, а
-// tc в контейнере роутит поток в band prio-qdisc с netem-импейрментом
-// (см. deploy/loadgen/entrypoint.sh). Mark 0 — без маркировки (host-режим,
-// share не задан): priomap отправляет немаркированный трафик в clean-band.
+// Netem profiles (P27 inc2): each client is dealt a profile from
+// LOADGEN_NETEM_SHARE at spawn (weighted pick); its dials set
+// SO_MARK=fwmark, and tc in the container routes the flow into a band of
+// the prio qdisc with the netem impairment (see
+// deploy/loadgen/entrypoint.sh). Mark 0 — no marking (host mode, share not
+// set): priomap sends unmarked traffic to the clean band.
 //
-// fwmark == номер tc-band (1:1 clean, 1:2 bad, 1:3 ugly) — фильтры в
-// entrypoint пишутся тривиально (handle N fw → flowid 1:N).
+// fwmark == tc band number (1:1 clean, 1:2 bad, 1:3 ugly) — the filters in
+// the entrypoint are trivial (handle N fw → flowid 1:N).
 const (
 	netemProfileClean = "clean"
 	netemProfileBad   = "bad"
 	netemProfileUgly  = "ugly"
 )
 
-// netemMarkFor — имя профиля → fwmark. Пустое имя (share не задан) → 0.
+// netemMarkFor — profile name → fwmark. Empty name (share not set) → 0.
 func netemMarkFor(profile string) (uint32, error) {
 	switch profile {
 	case "":
@@ -37,7 +38,7 @@ func netemMarkFor(profile string) (uint32, error) {
 	}
 }
 
-// mapNetem — валидатор имён для parseMix (LOADGEN_NETEM_SHARE).
+// mapNetem — name validator for parseMix (LOADGEN_NETEM_SHARE).
 func mapNetem(name string) (string, error) {
 	if _, err := netemMarkFor(name); err != nil {
 		return "", err
@@ -45,11 +46,12 @@ func mapNetem(name string) (string, error) {
 	return name, nil
 }
 
-// markedDialer — net.Dialer, ставящий SO_MARK=mark на исходящий сокет
-// (SO_MARK требует CAP_NET_ADMIN — в контейнере даёт cap_add: NET_ADMIN;
-// на хосте без capability dial упадёт с EPERM и это считается dial_error,
-// share предназначен только для контейнерного режима). mark=0 — Control
-// не ставится, поведение идентично дефолтному dialer'у.
+// markedDialer — a net.Dialer that sets SO_MARK=mark on the outgoing socket
+// (SO_MARK requires CAP_NET_ADMIN — the container grants it via cap_add:
+// NET_ADMIN; on a host without the capability the dial fails with EPERM and
+// that is counted as a dial_error — the share is meant for container mode
+// only). mark=0 — Control is not installed, behaviour identical to the
+// default dialer.
 func markedDialer(mark uint32) *net.Dialer {
 	d := &net.Dialer{}
 	if mark == 0 {

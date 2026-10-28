@@ -394,7 +394,7 @@ func TestIssueTicket_InvalidRoomPassword(t *testing.T) {
 	}
 }
 
-// P18: назначенный host из HostRegistry уходит в claims (hostID) и в результат (EnetPort).
+// P18: the host assigned by HostRegistry goes into the claims (hostID) and into the result (EnetPort).
 func TestIssueTicket_AssignsEnetHost(t *testing.T) {
 	t.Parallel()
 
@@ -443,7 +443,7 @@ func TestIssueTicket_AssignsEnetHost(t *testing.T) {
 	}
 }
 
-// P18: ошибка балансировщика пробрасывается до Reserve - слот не занимается.
+// P18: a balancer error is propagated before Reserve - the slot is not consumed.
 func TestIssueTicket_AssignHostError(t *testing.T) {
 	t.Parallel()
 

@@ -13,26 +13,27 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/reservation"
 )
 
-// closeRoom — teardown комнаты по запросу policy (ErrRoomShouldClose, P33,
-// allowMasterMigration=false: ушёл master — комната умирает). Те же шаги, что у
-// DeleteRoom, плюс терминальный wire-кадр: всем оставшимся peer'ам шлётся
-// OpRoomClosed (0x82, payload пустой), затем unregister из registry, revoke
-// слотов reservation (UnregisterRoom покрывает и слот ушедшего master'а) и
-// disconnect каждого peer'а.
+// closeRoom — room teardown on policy request (ErrRoomShouldClose, P33,
+// allowMasterMigration=false: master left — the room dies). Same steps as
+// DeleteRoom, plus a terminal wire frame: all remaining peers get
+// OpRoomClosed (0x82, empty payload), then unregister from registry, revoke
+// of reservation slots (UnregisterRoom also covers the departed master's
+// slot) and disconnect of each peer.
 //
-// Порядок имеет значение:
-//   - Deliver до DeleteRoom: peer создаётся на room.Context() — Stop комнаты
-//     отменяет и peer ctx, после чего tryDeliver вернёт «peer stopped».
-//   - DeleteRoom до peer.Stop: conn close триггерит transport-колбэк
-//     (ws waiter / ENet EventDisconnect → DisconnectPeer); когда комната уже
-//     снята с реестра, колбэк упирается в ErrRoomNotFound и не нагоняет
-//     grace-mark / OpPeerDisconnected поверх умирающей комнаты.
-//   - Stop последним: drain-aware peer.Stop (P30) гарантирует порядок
-//     «Send закоммиченного кадра до conn.Close» — write-loop сливает
-//     outbound в пределах drain-таймаута до закрытия соединения (на ENet
-//     SendBytes и DisconnectLater в одной FIFO-очереди host loop'а,
-//     порядок строгий де-юре; на WS — Send вызван до Close, досыл
-//     буфера — ядро).
+// Order matters:
+//   - Deliver before DeleteRoom: a peer is created on room.Context() — room
+//     Stop cancels the peer ctx too, after which tryDeliver returns "peer
+//     stopped".
+//   - DeleteRoom before peer.Stop: conn close triggers the transport
+//     callback (ws waiter / ENet EventDisconnect → DisconnectPeer); when the
+//     room is already off the registry, the callback hits ErrRoomNotFound and
+//     does not pile a grace mark / OpPeerDisconnected on top of a dying room.
+//   - Stop last: drain-aware peer.Stop (P30) guarantees the order
+//     "Send of the committed frame before conn.Close" — the write loop drains
+//     outbound within the drain timeout before closing the connection (on ENet
+//     SendBytes and DisconnectLater share the host loop's single FIFO queue,
+//     so the order is strict de jure; on WS Send is called before Close and
+//     buffer flushing is up to the kernel).
 func closeRoom(
 	ctx context.Context,
 	room realtime.Room,
@@ -52,15 +53,16 @@ func closeRoom(
 			resultErr = errors.Join(resultErr, err)
 		}
 	}
-	// Окно на флеш кадра больше не нужно: drain-aware peer.Stop (P30)
-	// вызывает conn.Close только после того, как write-loop слил
-	// закоммиченный до Stop outbound (bounded по drain-таймауту) — порядок
-	// «Send 0x82 до Close» гарантирован на уровне peer'а, не scheduling-приёмом.
+	// A frame-flush window is no longer needed: drain-aware peer.Stop (P30)
+	// calls conn.Close only after the write loop has drained the outbound
+	// committed before Stop (bounded by the drain timeout) — the
+	// "Send 0x82 before Close" order is guaranteed at the peer level, not by
+	// a scheduling trick.
 
 	if err := roomRegistry.DeleteRoom(ctx, roomID); err != nil {
 		if errors.Is(err, domain.ErrRoomNotFound) {
-			// Гонка с параллельным teardown (DeleteRoom / второй death-путь):
-			// комната уже снята с реестра — цель достигнута, не ошибка.
+			// Race with a parallel teardown (DeleteRoom / a second death path):
+			// the room is already off the registry — goal achieved, not an error.
 			logger.Warn("close room: room already unregistered", "roomID", roomID)
 		} else {
 			logger.Error("close room: delete room failed", "error", err, "roomID", roomID)
@@ -72,9 +74,9 @@ func closeRoom(
 		resultErr = errors.Join(resultErr, err)
 	}
 
-	// Stop'ы — параллельно: drain-aware Stop (P30) ждёт writeDone до
-	// drain-таймаута на заблокированном Send; серийный цикл дал бы
-	// O(N×timeout) teardown (capacity до 127).
+	// Stops run in parallel: drain-aware Stop (P30) waits for writeDone up to
+	// the drain timeout on a blocked Send; a serial loop would give
+	// O(N×timeout) teardown (capacity up to 127).
 	var stopWG sync.WaitGroup
 	var stopMu sync.Mutex
 	for _, peer := range peers {
@@ -98,23 +100,22 @@ func closeRoom(
 	return nil
 }
 
-// closeRoomIfEmpty — смерть «пустой» комнаты (P31): teardown после реального
-// изъятия последнего peer'а. «Пустая» = ни живых peers в комнате, ни
-// admitted-слотов reservation: grace-слот (MarkDisconnected) остаётся
-// admitted и держит reconnect — комната живёт до истечения
-// RESERVATION_RECONNECT_TTL, пока orphan sweep не отзовёт слот.
+// closeRoomIfEmpty — empty-room death (P31): teardown after the last peer is
+// actually removed. "Empty" = neither live peers in the room nor admitted
+// reservation slots: a grace slot (MarkDisconnected) stays admitted and
+// keeps reconnect possible — the room lives until
+// RESERVATION_RECONNECT_TTL expires, when the orphan sweep revokes the slot.
 //
-// Pending reserve-тикеты kill не блокируют (в отличие от предиката
-// SweepEmptyRooms): комната умирает по факту ухода всех вошедших —
-// опоздавший joiner получит reject (0x43 / reservation-ошибку), а не
-// пустую комнату.
+// Pending reserve tickets do not block the kill (unlike the SweepEmptyRooms
+// predicate): the room dies once everyone who joined has left — a late
+// joiner gets a reject (0x43 / a reservation error), not an empty room.
 //
-// Kill идемпотентен через DeleteRoom (ErrRoomNotFound — tolerated, как в
-// closeRoom). Гонка «join попал в умирающую комнату» та же, что у DELETE:
-// peer приземляется в мёртвую комнату и его ctx умирает с room.Stop —
-// принято без дополнительных гарантий. Ошибки логируются и не
-// пропагируются: смерть пустой комнаты не должна фейлить завершившийся
-// leave/disconnect. Возвращает true, если teardown реально выполнен.
+// The kill is idempotent via DeleteRoom (ErrRoomNotFound is tolerated, as in
+// closeRoom). The "join landed in a dying room" race is the same as for
+// DELETE: the peer lands in a dead room and its ctx dies with room.Stop —
+// accepted without extra guarantees. Errors are logged and not propagated:
+// an empty-room death must not fail an already completed leave/disconnect.
+// Returns true if the teardown was actually performed.
 func closeRoomIfEmpty(
 	ctx context.Context,
 	room realtime.Room,
@@ -129,10 +130,10 @@ func closeRoomIfEmpty(
 
 	admitted, err := reservation.ListAdmittedPeers(ctx, roomID)
 	if err != nil {
-		// ErrReservationNotFound — комната уже unregister'нута из
-		// reservation параллельным teardown: слотов нет, kill законен.
-		// Любая другая ошибка — состояние неизвестно, kill откладывается
-		// до следующего триггера/sweep'а.
+		// ErrReservationNotFound — the room was already unregistered from
+		// reservation by a parallel teardown: no slots, kill is legitimate.
+		// Any other error — state unknown, the kill is deferred until the
+		// next trigger/sweep.
 		if !errors.Is(err, domain.ErrReservationNotFound) {
 			logger.Error("empty room: list admitted peers failed", "error", err, "roomID", roomID)
 			return false
@@ -145,8 +146,8 @@ func closeRoomIfEmpty(
 	killed := true
 	if err := roomRegistry.DeleteRoom(ctx, roomID); err != nil {
 		if errors.Is(err, domain.ErrRoomNotFound) {
-			// Гонка с параллельной смертью (closeRoom, DELETE, sweep):
-			// комната уже снята с реестра — цель достигнута.
+			// Race with a parallel death (closeRoom, DELETE, sweep):
+			// the room is already off the registry — goal achieved.
 			logger.Warn("empty room: room already unregistered", "roomID", roomID)
 		} else {
 			logger.Error("empty room: delete room failed", "error", err, "roomID", roomID)
@@ -155,8 +156,8 @@ func closeRoomIfEmpty(
 	}
 	if err := reservation.UnregisterRoom(ctx, roomID); err != nil {
 		if errors.Is(err, domain.ErrReservationNotFound) {
-			// Та же идемпотентность, что у DeleteRoom: слоты уже
-			// сняты параллельным teardown — цель достигнута.
+			// Same idempotency as DeleteRoom: the slots were already
+			// released by a parallel teardown — goal achieved.
 			logger.Warn("empty room: reservation already unregistered", "roomID", roomID)
 		} else {
 			logger.Error("empty room: unregister room failed", "error", err, "roomID", roomID)

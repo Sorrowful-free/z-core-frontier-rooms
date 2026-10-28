@@ -10,21 +10,21 @@ const (
 	DefaultListRoomsPerMinute    = 60
 )
 
-// HTTPLimitsConfig — лимиты REST control plane и ёмкость инстанса.
+// HTTPLimitsConfig — REST control plane limits and instance capacity.
 type HTTPLimitsConfig struct {
-	// MaxRooms — максимум комнат в процессе; 0 — без лимита.
+	// MaxRooms — maximum rooms per process; 0 — no limit.
 	MaxRooms int
-	// CreateRoomsPerMinute — POST /rooms на IP в минуту; 0 — без лимита.
+	// CreateRoomsPerMinute — POST /rooms per IP per minute; 0 — no limit.
 	CreateRoomsPerMinute int
-	// IssueTicketsPerMinute — POST /rooms/:id/tickets на IP в минуту; 0 — без лимита.
+	// IssueTicketsPerMinute — POST /rooms/:id/tickets per IP per minute; 0 — no limit.
 	IssueTicketsPerMinute int
-	// DeleteRoomsPerMinute — DELETE /rooms/:id на IP в минуту; 0 — без лимита.
+	// DeleteRoomsPerMinute — DELETE /rooms/:id per IP per minute; 0 — no limit.
 	DeleteRoomsPerMinute int
-	// ListRoomsPerMinute — GET /rooms на IP в минуту; 0 — без лимита.
+	// ListRoomsPerMinute — GET /rooms per IP per minute; 0 — no limit.
 	ListRoomsPerMinute int
 }
 
-// Validate проверяет, что значения не отрицательные.
+// Validate checks that values are non-negative.
 func (c HTTPLimitsConfig) Validate() error {
 	if c.MaxRooms < 0 {
 		return fmt.Errorf("http limits config: max rooms must be >= 0")

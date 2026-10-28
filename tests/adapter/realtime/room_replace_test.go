@@ -93,9 +93,9 @@ func TestReplace_FailedJoinRestoresPeersMapAndPolicyState(t *testing.T) {
 	if policy.inRoom[peerID] != "keeper" {
 		t.Fatalf("policy state = %q, want keeper", policy.inRoom[peerID])
 	}
-	// Регрессия: old восстановлен в слоте и обязан остаться живым -
-	// остановка old при успешном rollback убила бы действующее
-	// соединение.
+	// Regression: old is restored in the slot and must stay alive —
+	// stopping old on a successful rollback would kill the live
+	// connection.
 	if !oldPeer.IsAlive() {
 		t.Fatal("old peer must stay alive after successful rollback restore")
 	}
@@ -153,12 +153,13 @@ var (
 type trackingReplacePolicy struct {
 	inRoom     map[domain.PeerID]string
 	rejectNick string
-	// failJoins — отклонять все OnJoin (double-failure сценарий Replace:
-	// join(new) и rollback join(old) падают оба). Запись до dispatch-
-	// send, чтение на room-loop — порядок держит lifecycle-канал.
+	// failJoins — reject all OnJoin (the double-failure Replace scenario:
+	// both join(new) and the rollback join(old) fail). Written before the
+	// dispatch send, read on the room loop — the lifecycle channel keeps
+	// the ordering.
 	failJoins bool
-	// failLeaves — отклонять все OnLeave (first-stage leave в Replace
-	// падает уже после изъятия peer'а из r.peers).
+	// failLeaves — reject all OnLeave (the first-stage leave in Replace
+	// fails after the peer has already been removed from r.peers).
 	failLeaves bool
 }
 
@@ -193,8 +194,8 @@ func (p *trackingReplacePolicy) OnTickPatchState() error                       {
 
 var _ portpolicy.RoomPolicy = (*trackingReplacePolicy)(nil)
 
-// P20/T8: stale teardown — leave со старым peer-объектом после Replace
-// возвращает ErrPeerStale и не трогает нового peer'а.
+// P20/T8: stale teardown — a leave with the old peer object after Replace
+// returns ErrPeerStale and does not touch the new peer.
 func TestLeave_AfterReplace_StalePeer(t *testing.T) {
 	t.Parallel()
 
@@ -227,16 +228,16 @@ func TestLeave_AfterReplace_StalePeer(t *testing.T) {
 	if got != newPeer {
 		t.Fatal("stale leave must not remove the replaced peer")
 	}
-	// Актуальный peer-объект покидает комнату штатно.
+	// The current peer object leaves the room normally.
 	if err := room.Leave(newPeer); err != nil {
 		t.Fatalf("Leave current peer: %v", err)
 	}
 }
 
-// P20: двойной фейл Replace — join(new) упал и rollback join(old) тоже
-// упал (третий гоночный resume того же reconnect-токена занял слот). Старый peer
-// вытеснен необратимо и обязан быть остановлен: иначе conn+goroutine'ы
-// живут вне r.peers (утечка + ghost input).
+// P20: double Replace failure — join(new) failed and the rollback
+// join(old) failed too (a third racing resume of the same reconnect token
+// took the slot). The old peer is evicted irreversibly and must be stopped:
+// otherwise conn+goroutines live outside r.peers (leak + ghost input).
 func TestReplace_DoubleJoinFailureStopsOldPeer(t *testing.T) {
 	t.Parallel()
 
@@ -255,7 +256,7 @@ func TestReplace_DoubleJoinFailureStopsOldPeer(t *testing.T) {
 		t.Fatalf("Join old: %v", err)
 	}
 
-	// OnJoin теперь отклоняет всё: и join(new), и rollback join(old).
+	// OnJoin now rejects everything: both join(new) and the rollback join(old).
 	policy.failJoins = true
 
 	newPeer := testpeer.New(peerID, "new")
@@ -274,10 +275,10 @@ func TestReplace_DoubleJoinFailureStopsOldPeer(t *testing.T) {
 	}
 }
 
-// P20: фейл первой стадии Replace — leave(old) падает в OnLeave, но peer
-// уже изъят из r.peers (leave всегда вытесняет, ADR-0004 D4): Replace
-// обязан остановить old, иначе conn+goroutine'ы живут вне комнаты
-// (утечка + ghost input, тот же класс, что double-join failure выше).
+// P20: first-stage Replace failure — leave(old) fails in OnLeave, but the
+// peer is already removed from r.peers (leave always evicts, ADR-0004 D4):
+// Replace must stop old, otherwise conn+goroutines live outside the room
+// (leak + ghost input, the same class as the double-join failure above).
 func TestReplace_LeaveDispatchFails_StopsOldPeer(t *testing.T) {
 	t.Parallel()
 
@@ -296,8 +297,8 @@ func TestReplace_LeaveDispatchFails_StopsOldPeer(t *testing.T) {
 		t.Fatalf("Join old: %v", err)
 	}
 
-	// OnLeave теперь падает: first-stage leave в Replace вернёт ошибку,
-	// хотя old уже вытеснен из r.peers.
+	// OnLeave now fails: the first-stage leave in Replace will return an
+	// error even though old is already evicted from r.peers.
 	policy.failLeaves = true
 
 	newPeer := testpeer.New(peerID, "new")

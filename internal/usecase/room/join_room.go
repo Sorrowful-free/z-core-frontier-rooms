@@ -33,8 +33,9 @@ func NewJoinRoomUseCase(
 	}
 }
 
-// JoinRoom — join-поток за AdmitPeerUseCase (P20, T2): claims уже
-// провалидированы фасадом (HMAC на входе один раз — повторного нет).
+// JoinRoom — the join flow behind AdmitPeerUseCase (P20, T2): claims are
+// already validated by the facade (HMAC checked once at the entry — no
+// second check).
 func (uc *JoinRoomUseCase) JoinRoom(ctx context.Context, connection transport.Connection, claims domain.Claims) (PeerSession, error) {
 
 	if err := ctx.Err(); err != nil {
@@ -60,9 +61,9 @@ func (uc *JoinRoomUseCase) JoinRoom(ctx context.Context, connection transport.Co
 	return session, nil
 }
 
-// revokeJoinReservation откатывает слот после неудачного join.
-// При ошибке Replace старый peer остаётся в комнате — Revoke не вызывается.
-// Ошибка Revoke объединяется с joinErr и возвращается вызывающему.
+// revokeJoinReservation rolls back the slot after a failed join.
+// On a Replace error the old peer stays in the room — Revoke is not called.
+// A Revoke error is joined with joinErr and returned to the caller.
 func (uc *JoinRoomUseCase) revokeJoinReservation(
 	ctx context.Context,
 	room realtime.Room,

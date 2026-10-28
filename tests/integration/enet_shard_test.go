@@ -15,10 +15,10 @@ import (
 	libenet "github.com/codecat/go-enet"
 )
 
-// shardClient - лёгкий ENet-клиент для сценария host-sharding (P18): connect,
-// admit raw ticket'ом, ожидание первого кадра / disconnect. В отличие от
-// enetClient (match_e2e_enet_test.go) без игрового контура - нужен только
-// admit-путь. Pump гоняет Service командами через собственный HostLoop.
+// shardClient - a lightweight ENet client for the host-sharding scenario (P18):
+// connect, admit with a raw ticket, wait for the first frame / disconnect.
+// Unlike enetClient (match_e2e_enet_test.go) it has no game loop - only the
+// admit path is needed. Pump drives Service via commands through its own HostLoop.
 type shardClient struct {
 	loop *adapterenet.HostLoop
 	peer libenet.Peer
@@ -67,7 +67,7 @@ func (c *shardClient) pump() {
 	for {
 		ev, err := adapterenet.Call(c.loop, func() libenet.Event { return c.loop.Host().Service(1) })
 		if err != nil {
-			return // loop остановлен (cleanup)
+			return // loop stopped (cleanup)
 		}
 		switch ev.GetType() {
 		case libenet.EventConnect:
@@ -88,7 +88,7 @@ func (c *shardClient) pump() {
 	}
 }
 
-// admit шлёт base64url-тикет (как из HTTP-ответа) первым пакетом.
+// admit sends the base64url ticket (as returned by the HTTP response) as the first packet.
 func (c *shardClient) admit(t *testing.T, token string) {
 	t.Helper()
 	raw, err := base64.RawURLEncoding.DecodeString(token)
@@ -131,7 +131,7 @@ func (c *shardClient) waitDisconnect(t *testing.T, d time.Duration) {
 
 func (c *shardClient) stop() {
 	if c.loop != nil {
-		c.loop.Stop() // ждёт выхода loop-горутины; pump выходит по ошибке Call
+		c.loop.Stop() // waits for the loop goroutine exit; pump exits on a Call error
 	}
 }
 
@@ -146,24 +146,24 @@ func otherEnetPort(t *testing.T, ports []uint16, assigned uint16) uint16 {
 	return 0
 }
 
-// TestE2E_ENetHostSharding - сценарий P18: два host'а, серверная балансировка
-// ticket'ов (least-loaded), strict binding admit + комната, собирающая peer'ов
-// с разных host'ов (room - транспорт-агностик).
+// TestE2E_ENetHostSharding - the P18 scenario: two hosts, server-side ticket
+// balancing (least-loaded), strict-binding admit + a room gathering peers
+// from different hosts (room is transport-agnostic).
 func TestE2E_ENetHostSharding(t *testing.T) {
 	if testing.Short() {
 		t.Skip("enet cgo live test - skipped under -short")
 	}
 	t.Parallel()
 
-	e := env.New(t, env.WithEnet(0, 0)) // 2 host'а на auto-портах
+	e := env.New(t, env.WithEnet(0, 0)) // 2 hosts on auto ports
 	ports := e.EnetPorts()
 	if len(ports) != 2 {
 		t.Fatalf("enet ports = %v, want 2", ports)
 	}
 
-	// Host ticket назначается на первый host; joiner - на другой (host'ы
-	// равны по load у первого тикета, после подключения host'а второй host
-	// пуст → least-loaded).
+	// The host ticket is assigned to the first host; the joiner - to the other
+	// (hosts are load-equal for the first ticket; once the host connects, the
+	// second host is empty → least-loaded).
 	roomID, hostToken, hostPort := e.CreateRoomPort(t, "host")
 	if hostPort != ports[0] && hostPort != ports[1] {
 		t.Fatalf("host ticket enet_port = %d, not in %v", hostPort, ports)
@@ -178,11 +178,11 @@ func TestE2E_ENetHostSharding(t *testing.T) {
 	}
 	joiner := newShardClient(t, joinerPort)
 	joiner.admit(t, joinerToken)
-	// Комната собрала peer'ов с двух host'ов - sharding по peer, не по комнате.
+	// The room gathered peers from two hosts - sharding is per-peer, not per-room.
 	e.WaitPeerCount(t, roomID, 2)
 
-	// Strict binding: тикет привязан к назначенному host'у; admit на чужом →
-	// reject OpWrongHost + disconnect.
+	// Strict binding: the ticket is bound to the assigned host; an admit on the
+	// wrong one → reject OpWrongHost + disconnect.
 	misToken, misPort := e.IssueTicketPort(t, roomID, "p3")
 	wrong := newShardClient(t, otherEnetPort(t, ports, misPort))
 	wrong.admit(t, misToken)
@@ -191,14 +191,16 @@ func TestE2E_ENetHostSharding(t *testing.T) {
 	}
 	wrong.waitDisconnect(t, 5*time.Second)
 
-	// Reject на чужом host'е не тратит слот: тот же тикет на правильном → admit.
+	// A reject on the wrong host does not consume the slot: the same ticket on
+	// the right one → admit.
 	right := newShardClient(t, misPort)
 	right.admit(t, misToken)
 	e.WaitPeerCount(t, roomID, 3)
 
-	// Strict binding: ticket без привязки (HostIDUnbound — выписан в обход
-	// usecase, как при WS-only deploy) на ENet-admit отклоняется OpWrongHost
-	// на любом host'е; слот reservation не тратится.
+	// Strict binding: a ticket without a binding (HostIDUnbound — issued
+	// bypassing the usecase, as in a WS-only deploy) is rejected with
+	// OpWrongHost on an ENet admit on any host; the reservation slot is not
+	// consumed.
 	ctx := context.Background()
 	peerID, err := e.Allocator.AllocatePeerID(ctx)
 	if err != nil {

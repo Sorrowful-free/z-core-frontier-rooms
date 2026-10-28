@@ -88,9 +88,9 @@ func TestWS_Join_MalformedTokenEncoding(t *testing.T) {
 	}
 }
 
-// Oversized token (len > MaxIncomingFrameBytes): сервер закрывает соединение
-// без reject-кадра — документируем текущее поведение (см. аудит: кандидат на
-// явный reject OpCode).
+// Oversized token (len > MaxIncomingFrameBytes): the server closes the
+// connection without a reject frame — documenting the current behavior
+// (see the audit: a candidate for an explicit reject OpCode).
 func TestWS_Join_TokenTooLarge(t *testing.T) {
 	t.Parallel()
 
@@ -119,7 +119,7 @@ func TestWS_Join_WithIssuedTicket(t *testing.T) {
 	roomID, _ := e.CreateRoom(t, "host")
 	joinerToken := e.IssueTicket(t, roomID, "joiner")
 
-	// token из JSON уже base64url — в query идёт как есть.
+	// The token from JSON is already base64url — it goes into the query as is.
 	conn := e.DialWS(t, "token="+joinerToken)
 	defer conn.Close()
 

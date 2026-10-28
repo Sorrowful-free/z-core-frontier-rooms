@@ -20,11 +20,12 @@ type lifecycleRequest struct {
 	done chan error
 }
 
-// runLifecycle применяет join/leave атомарно относительно тиков комнаты:
-// мутация r.peers и вызов policy происходят в одном goroutine'е room-loop'а.
-// Иначе между OnJoin (peer уже в policy state) и записью в r.peers успевал
-// patch-тик, чей prune (ныне pruneStalePeers) считал нового peer'а stale и
-// выкидывал его из state (см. docs/plans/P13-lifecycle-peers-atomicity.md).
+// runLifecycle applies join/leave atomically relative to the room ticks:
+// the r.peers mutation and the policy call happen in the same room-loop
+// goroutine. Otherwise, between OnJoin (the peer is already in policy
+// state) and the write to r.peers, a patch tick could slip in whose
+// prune (now pruneStalePeers) would consider the new peer stale and
+// drop it from state (see docs/plans/P13-lifecycle-peers-atomicity.md).
 func (r *Room) runLifecycle(req lifecycleRequest) {
 	var err error
 	switch req.op {
@@ -41,12 +42,13 @@ func (r *Room) runLifecycle(req lifecycleRequest) {
 func (r *Room) runJoinLocked(peer realtime.Peer) error {
 	peerID := peer.GetID()
 	r.mutex.Lock()
-	// Занятый peerID — гонка double-join (два resume одного reconnect-
-	// токена, P20): молчаливый overwrite сиротил бы проигравший peer-
-	// объект вне r.peers (conn-утечка, его teardown встретит ErrPeerStale,
-	// а кадры от него продолжат идти в room.Deliver). Проверка до capacity:
-	// свой слот переполнением не считается. Resume-поток дожимает отказ
-	// через Replace (newest-wins, Q10).
+	// An occupied peerID is a double-join race (two resumes of the same
+	// reconnect token, P20): a silent overwrite would orphan the losing
+	// peer object outside r.peers (a conn leak, its teardown would hit
+	// ErrPeerStale, while its frames keep flowing into room.Deliver).
+	// The check runs before capacity: one's own slot does not count as
+	// overflow. The resume flow pushes the rejection through via Replace
+	// (newest-wins, Q10).
 	if _, exists := r.peers[peerID]; exists {
 		r.mutex.Unlock()
 		return fmt.Errorf("%w: %d", domain.ErrPeerAlreadyInRoom, peerID)
@@ -72,32 +74,34 @@ func (r *Room) runJoinLocked(peer realtime.Peer) error {
 func (r *Room) runLeaveLocked(peer realtime.Peer) error {
 	peerID := peer.GetID()
 	r.mutex.Lock()
-	// Identity-check (P20): изымаем только если под peerID лежит тот же
-	// объект — stale teardown (старый conn, проснувшийся после
-	// Replace/resume) не должен выкинуть нового peer'а.
+	// Identity check (P20): remove only if the same object sits under
+	// peerID — a stale teardown (an old conn waking up after
+	// Replace/resume) must not evict the new peer.
 	current, present := r.peers[peerID]
 	if present && current != peer {
 		r.mutex.Unlock()
 		return fmt.Errorf("%w: %d", domain.ErrPeerStale, peerID)
 	}
-	// Дедуп двойного teardown (P23) авторитетен на уровне реестра: peer
-	// уже изъят — повторный leave (оба caller'а проскочили pre-check
-	// Room.Leave до сериализации на loop'е) отклоняется тем же sentinel,
-	// что и pre-check — «peer не в комнате на момент применения» един на
-	// обоих уровнях. Отказ до delete, без вызова policy.OnLeave и без
-	// метрик: одиночный broadcast не должен зависеть от того, что
-	// конкретная policy вернёт для отсутствующей state-записи.
+	// Double-teardown dedup (P23) is authoritative at the registry level:
+	// the peer is already removed — a repeated leave (both callers slipped
+	// past the Room.Leave pre-check before serialization on the loop) is
+	// rejected with the same sentinel as the pre-check — "peer not in the
+	// room at apply time" is unified across both levels. Rejection happens
+	// before delete, without calling policy.OnLeave and without metrics:
+	// a single broadcast must not depend on what a concrete policy returns
+	// for a missing state record.
 	if !present {
 		r.mutex.Unlock()
 		return fmt.Errorf("%w: %d", domain.ErrPeerNotFound, peerID)
 	}
 	delete(r.peers, peerID)
 	r.mutex.Unlock()
-	// При ошибке OnLeave state-запись peer'а само-вычищается следующим
-	// prune-тиком patch-тика (pruneStalePeers: GetPeer → ErrPeerNotFound → stale).
+	// On an OnLeave error the peer's state record self-cleans on the next
+	// prune pass of the patch tick (pruneStalePeers: GetPeer → ErrPeerNotFound → stale).
 	err := r.policy.OnLeave(peer)
-	// Peer уже изъят из r.peers - leave считается и при ошибке policy;
-	// метрики по факту изъятия (сюда доходим только при present).
+	// The peer is already removed from r.peers — leave counts even on a
+	// policy error; metrics follow the fact of removal (we only reach
+	// here when present).
 	r.metrics.PeerLeft()
 	r.metrics.AddActivePeers(-1)
 	return err

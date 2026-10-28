@@ -36,7 +36,7 @@ func TestDisconnectPeer_Success(t *testing.T) {
 	peer.EXPECT().Stop().Return(nil)
 	room.EXPECT().Send(gomock.Any()).Return(nil)
 	room.EXPECT().GetID().Return(roomID).AnyTimes()
-	// P31: проверка «пустая» — grace-слот остаётся admitted, комната живёт.
+	// P31: the "is empty" check — the grace slot stays admitted, the room lives on.
 	room.EXPECT().GetPeers().Return(nil)
 	reservation.EXPECT().ListAdmittedPeers(gomock.Any(), roomID).Return([]domain.AdmittedSlot{{
 		PeerID: peerID,
@@ -50,9 +50,9 @@ func TestDisconnectPeer_Success(t *testing.T) {
 	}
 }
 
-// P31: disconnect последнего peer'а НЕ убивает комнату — grace-слот
-// (MarkDisconnected) держит её до истечения RESERVATION_RECONNECT_TTL,
-// иначе сломался бы P20-resume (вернуться некуда).
+// P31: disconnecting the last peer does NOT kill the room — the grace slot
+// (MarkDisconnected) keeps it until RESERVATION_RECONNECT_TTL expires,
+// otherwise P20 resume would break (nothing to return to).
 func TestDisconnectPeer_LastPeerGrace_KeepsRoom(t *testing.T) {
 	t.Parallel()
 
@@ -75,8 +75,8 @@ func TestDisconnectPeer_LastPeerGrace_KeepsRoom(t *testing.T) {
 	peer.EXPECT().Stop().Return(nil)
 	room.EXPECT().Send(gomock.Any()).Return(nil)
 
-	// Комната пуста по peers, но grace-слот admitted → kill запрещён:
-	// DeleteRoom/UnregisterRoom не ожидаются — gomock упадёт на вызове.
+	// The room is empty by peers, but the grace slot is admitted → kill is
+	// forbidden: DeleteRoom/UnregisterRoom are not expected — gomock fails on a call.
 	room.EXPECT().GetID().Return(roomID).AnyTimes()
 	room.EXPECT().GetPeers().Return(nil)
 	reservation.EXPECT().ListAdmittedPeers(gomock.Any(), roomID).Return([]domain.AdmittedSlot{{
@@ -91,7 +91,7 @@ func TestDisconnectPeer_LastPeerGrace_KeepsRoom(t *testing.T) {
 	}
 }
 
-// P20: MarkDisconnected не взводит Revoke — слот остаётся в grace.
+// P20: MarkDisconnected does not trigger Revoke — the slot stays in grace.
 func TestDisconnectPeer_MarkErrorStillLeaves(t *testing.T) {
 	t.Parallel()
 
@@ -113,7 +113,7 @@ func TestDisconnectPeer_MarkErrorStillLeaves(t *testing.T) {
 	room.EXPECT().Leave(peer).Return(nil)
 	peer.EXPECT().Stop().Return(nil)
 	room.EXPECT().Send(gomock.Any()).Return(nil)
-	// P31: проверка «пустая» — слот ушедшего ещё admitted → no-op.
+	// P31: the "is empty" check — the departed peer's slot is still admitted → no-op.
 	room.EXPECT().GetID().Return(roomID).AnyTimes()
 	room.EXPECT().GetPeers().Return(nil)
 	reservation.EXPECT().ListAdmittedPeers(gomock.Any(), roomID).Return([]domain.AdmittedSlot{{
@@ -128,7 +128,7 @@ func TestDisconnectPeer_MarkErrorStillLeaves(t *testing.T) {
 	}
 }
 
-// T8: stale teardown (старый conn после Replace) — no-op, без Stop/Send.
+// T8: stale teardown (old conn after Replace) — no-op, no Stop/Send.
 func TestDisconnectPeer_StaleTeardownNoOp(t *testing.T) {
 	t.Parallel()
 
@@ -156,10 +156,10 @@ func TestDisconnectPeer_StaleTeardownNoOp(t *testing.T) {
 	}
 }
 
-// P20-fix: teardown со stale session.Peer (старый conn после Replace)
-// отклоняется до MarkDisconnected — метка lastSeen и рассылка не должны
-// приходить от вытесненного объекта; reservation и остальные peer'ы
-// не трогаются вообще.
+// P20-fix: teardown with a stale session.Peer (old conn after Replace)
+// is rejected before MarkDisconnected — the lastSeen mark and the broadcast
+// must not come from an evicted object; reservation and the other peers
+// are not touched at all.
 func TestDisconnectPeer_StaleSessionSkipsMarkAndBroadcast(t *testing.T) {
 	t.Parallel()
 
@@ -202,8 +202,8 @@ func TestDisconnectPeer_StaleSessionSkipsMarkAndBroadcast(t *testing.T) {
 			logger.EXPECT().Debug(gomock.Any(), gomock.Any()).AnyTimes()
 
 			uc := useroom.NewDisconnectPeerUseCase(registry, reservation, logger)
-			// MarkDisconnected/Leave/Stop/Send не ожидаются — gomock упадёт
-			// на любом из них.
+			// MarkDisconnected/Leave/Stop/Send are not expected — gomock fails
+			// on any of them.
 			if err := uc.DisconnectPeer(context.Background(), useroom.PeerSession{RoomID: roomID, PeerID: peerID, Peer: stale}); err != nil {
 				t.Fatalf("DisconnectPeer: %v", err)
 			}
@@ -290,9 +290,10 @@ func TestDisconnectPeer_LeaveFails_StillStopsAndBroadcasts(t *testing.T) {
 	}
 }
 
-// P33: разрыв master'а в no-migration комнате — комната умирает сразу:
-// grace/broadcast OpPeerDisconnected пропускаются, оставшимся — OpRoomClosed
-// и disconnect, комната unregister'ится, слоты ревокаются UnregisterRoom.
+// P33: master disconnect in a no-migration room — the room dies at once:
+// grace/OpPeerDisconnected broadcast are skipped, the remaining peers get
+// OpRoomClosed and disconnect, the room is unregistered, slots are revoked by
+// UnregisterRoom.
 func TestDisconnectPeer_RoomShouldClose_ClosesRoom(t *testing.T) {
 	t.Parallel()
 
@@ -331,7 +332,7 @@ func TestDisconnectPeer_RoomShouldClose_ClosesRoom(t *testing.T) {
 	survivor.EXPECT().Stop().Return(nil)
 	registry.EXPECT().DeleteRoom(gomock.Any(), roomID).Return(nil)
 	reservation.EXPECT().UnregisterRoom(gomock.Any(), roomID).Return(nil)
-	// room.Send (OpPeerDisconnected) не ожидается — gomock упадёт на вызове.
+	// room.Send (OpPeerDisconnected) is not expected — gomock fails on a call.
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
 

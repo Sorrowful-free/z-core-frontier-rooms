@@ -57,7 +57,7 @@ func TestAdmitPeer_ValidateError(t *testing.T) {
 	}
 }
 
-// P18: ticket с hostID на чужом ENet host'е → ErrWrongHost до траты слота.
+// P18: a ticket with a hostID bound to a different ENet host → ErrWrongHost before the slot is consumed.
 func TestAdmitPeer_WrongHost(t *testing.T) {
 	t.Parallel()
 
@@ -77,8 +77,8 @@ func TestAdmitPeer_WrongHost(t *testing.T) {
 	}
 }
 
-// Ticket без привязки (HostIDUnbound) на ENet host'е → ErrWrongHost: unbound
-// допустим только при admit не по ENet (WS).
+// A ticket without a binding (HostIDUnbound) on an ENet host → ErrWrongHost:
+// unbound is allowed only for a non-ENet admit (WS).
 func TestAdmitPeer_UnboundTicketRejectedOnEnet(t *testing.T) {
 	t.Parallel()
 
@@ -98,7 +98,7 @@ func TestAdmitPeer_UnboundTicketRejectedOnEnet(t *testing.T) {
 	}
 }
 
-// WS-admit (HostIDUnbound): host-bound ticket не проверяется — join-поток идёт дальше.
+// WS admit (HostIDUnbound): a host-bound ticket is not checked — the join flow proceeds.
 func TestAdmitPeer_WS_SkipsHostBinding(t *testing.T) {
 	t.Parallel()
 
@@ -136,8 +136,8 @@ func TestAdmitPeer_WS_SkipsHostBinding(t *testing.T) {
 	}
 }
 
-// claims.Kind=reconnect → resume-поток: reservation.Reconnect вместо Admit,
-// nick из слота, broadcast OpPeerReconnected.
+// claims.Kind=reconnect → resume flow: reservation.Reconnect instead of Admit,
+// nick from the slot, OpPeerReconnected broadcast.
 func TestAdmitPeer_RoutesReconnectByKind(t *testing.T) {
 	t.Parallel()
 

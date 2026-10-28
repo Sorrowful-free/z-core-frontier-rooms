@@ -8,14 +8,15 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/logging"
 )
 
-// SweepHandle — запущенный фоновый sweep; Stop дожидается реального завершения.
+// SweepHandle — a running background sweep; Stop waits for real completion.
 type SweepHandle struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
 
-// Stop отменяет ctx sweep'а и ждёт выхода горутины (включая in-flight RunOnce).
-// nil-safe: возвращаемый Start*Sweep nil при interval <= 0.
+// Stop cancels the sweep's ctx and waits for the goroutine to exit
+// (including an in-flight RunOnce).
+// nil-safe: Start*Sweep returns nil when interval <= 0.
 func (h *SweepHandle) Stop() {
 	if h == nil {
 		return
@@ -24,8 +25,9 @@ func (h *SweepHandle) Stop() {
 	h.wg.Wait()
 }
 
-// startSweep запускает периодический run в фоне; interval <= 0 — no-op (nil handle).
-// name/metric — префикс лог-сообщений и ключ счётчика обработанных записей.
+// startSweep runs the periodic run in the background; interval <= 0 — no-op
+// (nil handle). name/metric — log message prefix and the processed-records
+// counter key.
 func startSweep(
 	ctx context.Context,
 	interval time.Duration,

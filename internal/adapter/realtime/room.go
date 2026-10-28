@@ -52,8 +52,8 @@ func NewRoom(ctx context.Context, id domain.RoomID, policy policy.RoomPolicy, ca
 		incoming:   make(chan events.RoomEvent, incomingQueue),
 		lifecycle:  make(chan lifecycleRequest),
 		logger:     logger,
-		// Прямое конструирование (тесты) - телеметрия-заглушка; продовый
-		// экземпляр метрик вливает RoomFactory полем (сигнатура стабильна).
+		// Direct construction (tests) — a telemetry stub; the production
+		// metrics instance is injected by RoomFactory via the field (the signature stays stable).
 		metrics: portmetrics.Noop(),
 		ctx:     ctx,
 		cancel:  cancel,
@@ -128,15 +128,16 @@ func (r *Room) Stop() error {
 		}
 		r.mutex.Unlock()
 		r.wg.Wait()
-		// Баланс gauge active_peers (P31): registry.DeleteRoom всегда
-		// идёт через room.Stop — единственная точка, где умирает любая
-		// комната (closeRoom, DELETE, empty-death, shutdown). Peers,
-		// ещё лежащие в r.peers, убиты teardown'ом мимо Leave и свой
-		// -1 на runLeaveLocked не получили — вычитаем их разом.
-		// Ушедшие через Leave уже вне map, двойного вычета нет.
-		// Эмит строго после wg.Wait: room-loop мёртв, r.peers
-		// иммутабельна — queued lifecycle (Leave/Join) из select-окна
-		// до cancel не проскочит (дубль -1 / +1 дрейф).
+		// active_peers gauge balance (P31): registry.DeleteRoom always
+		// goes through room.Stop — the single point where any room dies
+		// (closeRoom, DELETE, empty-death, shutdown). Peers still
+		// sitting in r.peers are killed by teardown bypassing Leave and
+		// never got their -1 in runLeaveLocked — subtract them in bulk.
+		// Peers that left via Leave are already out of the map, no
+		// double subtraction. Emit strictly after wg.Wait: the room
+		// loop is dead, r.peers is immutable — a queued lifecycle
+		// (Leave/Join) cannot slip through from the select window
+		// before cancel (duplicate -1 / +1 drift).
 		r.metrics.AddActivePeers(-len(r.peers))
 		err = r.policy.OnStop(r)
 	})
@@ -150,15 +151,17 @@ func (r *Room) Join(peer realtime.Peer) error {
 	_, exists := r.peers[peerID]
 	full := len(r.peers) >= r.capacity
 	r.mutex.RUnlock()
-	// Занятый peerID пропускаем до lifecycle: там уже-существующий слот
-	// отклоняется ErrPeerAlreadyInRoom (гонка double-resume → Replace),
-	// а не ErrRoomFull — свой слот не должен считаться переполнением.
+	// An occupied peerID passes through to lifecycle: there the
+	// already-existing slot is rejected with ErrPeerAlreadyInRoom
+	// (double-resume race → Replace), not ErrRoomFull — one's own slot
+	// must not count as overflow.
 	if full && !exists {
 		return fmt.Errorf("%w: %d", domain.ErrRoomFull, r.id)
 	}
 
-	// Авторитетная capacity-проверка и вставка в r.peers — внутри
-	// runLifecycle на room-loop'е, атомарно с OnJoin относительно тиков.
+	// The authoritative capacity check and the insertion into r.peers
+	// happen inside runLifecycle on the room loop, atomically with
+	// OnJoin relative to ticks.
 	if err := r.dispatchLifecycle(lifecycleRequest{
 		op:   lifecycleJoin,
 		peer: peer,
@@ -184,12 +187,13 @@ func (r *Room) Leave(peer realtime.Peer) error {
 		peer: peer,
 		done: make(chan error, 1),
 	}); err != nil {
-		// Sentinel-отказы (ErrPeerNotFound — дедуп P23, ErrPeerStale —
-		// вытеснение P20, ErrRoomShouldClose — заказанный policy сигнал
-		// на teardown P29/P30) — ожидаемые гонки/переходы teardown, не
-		// сбои leave: первые два отклоняются до policy, третий намеренно
-		// ей порождён и обрабатывается usecase'ом (closeRoom пишет свой
-		// Info «room closed by policy») — Error тут ложный.
+		// Sentinel rejections (ErrPeerNotFound — dedup P23, ErrPeerStale —
+		// displacement P20, ErrRoomShouldClose — the policy-commissioned
+		// teardown signal P29/P30) are expected teardown races/transitions,
+		// not leave failures: the first two are rejected before the policy,
+		// the third is deliberately produced by it and handled by the
+		// usecase (closeRoom logs its own Info "room closed by policy") —
+		// an Error here would be false.
 		if !errors.Is(err, domain.ErrPeerNotFound) && !errors.Is(err, domain.ErrPeerStale) && !errors.Is(err, domain.ErrRoomShouldClose) {
 			r.logger.Error("room leave: policy on leave failed", "error", err, "roomID", r.id, "peerID", peerID)
 		}
@@ -213,12 +217,12 @@ func (r *Room) Replace(peer realtime.Peer) error {
 		peer: old,
 		done: make(chan error, 1),
 	}); err != nil {
-		// Old уже изъят из r.peers до OnLeave (leave всегда вытесняет,
-		// ADR-0004 D4): teardown обязателен, иначе conn и goroutine'ы
-		// живут вне комнаты - утечка и ghost-input (P20). Безобидно и
-		// при ErrPeerStale (old вытеснен конкурентным Replace - его уже
-		// остановил вытеснитель) и при умирающей комнате: stopOnce
-		// делает повторный Stop no-op.
+		// old is already removed from r.peers before OnLeave (leave always
+		// displaces, ADR-0004 D4): teardown is mandatory, otherwise the
+		// conn and goroutines live outside the room — a leak and ghost
+		// input (P20). Harmless both on ErrPeerStale (old was displaced by
+		// a concurrent Replace — the displacer already stopped it) and on
+		// a dying room: stopOnce makes the repeated Stop a no-op.
 		stopErr := old.Stop()
 		return fmt.Errorf("%w: %w", domain.ErrReplaceFailed, errors.Join(err, stopErr))
 	}
@@ -234,9 +238,10 @@ func (r *Room) Replace(peer realtime.Peer) error {
 			done: make(chan error, 1),
 		})
 		if rollbackErr != nil {
-			// Старый peer вытеснен необратимо (rollback не вернул его в
-			// r.peers): teardown обязателен, иначе conn и goroutine'ы живут
-			// вне комнаты - утечка и ghost-input (triple-resume, P20).
+			// The old peer is irreversibly displaced (rollback did not
+			// return it to r.peers): teardown is mandatory, otherwise the
+			// conn and goroutines live outside the room — a leak and ghost
+			// input (triple-resume, P20).
 			stopErr := old.Stop()
 			return fmt.Errorf("%w: %w", domain.ErrReplaceFailed, errors.Join(err, rollbackErr, stopErr))
 		}
@@ -329,7 +334,7 @@ func processRoomEvents(room *Room) {
 			if !ok {
 				return
 			}
-			// Gauge-сэмпл глубины после dequeue (приближение, см. порт).
+			// Gauge sample of depth after dequeue (approximation, see the port).
 			room.metrics.RoomIncomingDepth(len(room.incoming))
 			if err := room.policy.OnMessage(roomEvent); err != nil {
 				room.logger.Error("error processing room event", "error", err)
@@ -356,7 +361,7 @@ func processRoomEvents(room *Room) {
 	}
 }
 
-// Значения label `kind` для RoomTickObserved (bounded-множество в адаптере).
+// Values of the `kind` label for RoomTickObserved (a bounded set in the adapter).
 const (
 	tickKindFull  = "full"
 	tickKindPatch = "patch"
@@ -370,7 +375,7 @@ func (r *Room) tryDeliver(ev events.RoomEvent) error {
 	case <-r.ctx.Done():
 		return fmt.Errorf("room stopped: %d: %w", r.id, r.ctx.Err())
 	case r.incoming <- ev:
-		// Gauge-сэмпл глубины после enqueue (приближение, см. порт).
+		// Gauge sample of depth after enqueue (approximation, see the port).
 		r.metrics.RoomIncomingDepth(len(r.incoming))
 		return nil
 	default:
@@ -380,6 +385,6 @@ func (r *Room) tryDeliver(ev events.RoomEvent) error {
 	}
 }
 
-// Room реализует EventSink: Deliver — входная точка mailbox'а incoming
-// для read-loop'ов peer'ов (P26).
+// Room implements EventSink: Deliver is the entry point of the incoming
+// mailbox for the peers' read loops (P26).
 var _ realtime.EventSink = (*Room)(nil)

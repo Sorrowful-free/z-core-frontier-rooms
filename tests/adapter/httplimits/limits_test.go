@@ -91,8 +91,8 @@ func TestLimits_HTTPRateLimit_DeleteAndList(t *testing.T) {
 	}
 }
 
-// TestLimits_HTTPRateLimit_KeyRotation: много уникальных IP (ротация) —
-// каждый получает своё окно, per-IP лимит продолжает работать.
+// TestLimits_HTTPRateLimit_KeyRotation: many unique IPs (rotation) —
+// each gets its own window, the per-IP limit keeps working.
 func TestLimits_HTTPRateLimit_KeyRotation(t *testing.T) {
 	t.Parallel()
 

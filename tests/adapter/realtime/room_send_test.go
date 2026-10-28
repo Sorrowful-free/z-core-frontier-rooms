@@ -24,8 +24,8 @@ func TestRoom_Send_ExcludePeerID(t *testing.T) {
 		t.Fatalf("Join receiver: %v", err)
 	}
 
-	// PeerEvent.PeerID — целевой peer; PeerIDInvalid (zero) даёт broadcast,
-	// а ExcludePeerID выкидывает отправителя из рассылки.
+	// PeerEvent.PeerID — the target peer; PeerIDInvalid (zero) means
+	// broadcast, and ExcludePeerID removes the sender from the mailing.
 	err := room.Send(events.PeerEvent{
 		PeerID:        domain.PeerIDInvalid,
 		ExcludePeerID: sender.GetID(),

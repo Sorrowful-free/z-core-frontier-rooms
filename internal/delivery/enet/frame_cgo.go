@@ -8,8 +8,9 @@ import (
 	libenet "github.com/codecat/go-enet"
 )
 
-// frameFromPacket - packet-чтения диспетчатся через очередь loop'а: функция
-// зовётся с run-горутины, а C-состояние packet'а трогает только loop-горутина.
+// frameFromPacket - packet reads are dispatched through the loop's queue: the
+// function is called from the run goroutine, while only the loop goroutine
+// may touch the packet's C state.
 func frameFromPacket(loop *transportenet.HostLoop, packet libenet.Packet, maxIncomingFrameBytes int) (domain.Frame, error) {
 	var data []byte
 	var flags libenet.PacketFlags

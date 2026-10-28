@@ -15,8 +15,8 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-// connCalls упорядоченно пишет вызовы методов conn'а — гарантия
-// drain-aware Stop (P30) это порядок «Send закоммиченного кадра до Close».
+// connCalls records conn method calls in order — the guarantee of
+// drain-aware Stop (P30) is the order "Send of the committed frame before Close".
 type connCalls struct {
 	mu    sync.Mutex
 	order []string
@@ -34,10 +34,10 @@ func (c *connCalls) snapshot() []string {
 	return slices.Clone(c.order)
 }
 
-// newRecordingConn — newBlockingConn (Receive блокируется до первого
-// Close) + запись Send'ов в connCalls. Маркер «close» тест ставит
-// сам по closeCh после возврата Stop: к этому моменту wg.Wait уже
-// гарантировал смерть write-loop'а — поздних send нет.
+// newRecordingConn — newBlockingConn (Receive blocks until the first
+// Close) + recording Sends into connCalls. The test places the "close"
+// marker itself via closeCh after Stop returns: by that point wg.Wait
+// has already guaranteed the write loop's death — no late sends.
 func newRecordingConn(t *testing.T, ctrl *gomock.Controller) (*mocks.MockConnection, *connCalls, chan struct{}) {
 	t.Helper()
 
@@ -51,15 +51,15 @@ func newRecordingConn(t *testing.T, ctrl *gomock.Controller) (*mocks.MockConnect
 	return conn, calls, closeCh
 }
 
-// (а) Кадр, чей Deliver закоммитил до Stop, уходит Send'ом до conn.Close —
-// это и есть контракт drain'а (прежний Stop терял его в select-гонке).
+// (a) A frame whose Deliver committed before Stop goes out via Send before
+// conn.Close — that is the drain contract (the previous Stop lost it in a select race).
 func TestPeer_Stop_DrainsCommittedFrameBeforeClose(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
 	conn, calls, closeCh := newRecordingConn(t, ctrl)
 
-	// NewPeer без фабрики — пакетный дефолт drainTimeout (1s) > 0.
+	// NewPeer without a factory — package-default drainTimeout (1s) > 0.
 	peer := adapterrealtime.NewPeer(
 		context.Background(),
 		domain.PeerID(1),
@@ -68,7 +68,7 @@ func TestPeer_Stop_DrainsCommittedFrameBeforeClose(t *testing.T) {
 		8,
 		queueTestLogger{},
 	)
-	// nil sink безопасен: входящая горутина получает только ошибку из Receive.
+	// nil sink is safe: the inbound goroutine only gets the error from Receive.
 	if err := peer.Start(nil); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -91,9 +91,9 @@ func TestPeer_Stop_DrainsCommittedFrameBeforeClose(t *testing.T) {
 	}
 }
 
-// (б) drainTimeout=0 — drain выключен: Stop не ждёт write-loop вообще.
-// Send висит до Close conn'а — если бы Stop дожидался writeDone без
-// дедлайна, тест завис бы на conn.Close.
+// (b) drainTimeout=0 — drain disabled: Stop does not wait for the write loop at all.
+// Send blocks until conn Close — if Stop waited for writeDone without a
+// deadline, the test would hang on conn.Close.
 func TestPeer_Stop_DrainDisabled_DoesNotWaitForWriteLoop(t *testing.T) {
 	t.Parallel()
 
@@ -132,9 +132,9 @@ func TestPeer_Stop_DrainDisabled_DoesNotWaitForWriteLoop(t *testing.T) {
 	}
 }
 
-// (в) Send заблокирован → drain не догоняет пустоту → по истечении
-// drainTimeout Stop идёт на force conn.Close, прерывающий запись:
-// Stop возвращается ≈за дедлайн, не висит на вечном Send.
+// (c) Send is blocked → drain never catches up to empty → once
+// drainTimeout expires Stop proceeds to force conn.Close, interrupting the
+// write: Stop returns in about the deadline, it does not hang on the eternal Send.
 func TestPeer_Stop_BlockedSend_ForceCloseAfterDrainTimeout(t *testing.T) {
 	t.Parallel()
 
@@ -145,7 +145,7 @@ func TestPeer_Stop_BlockedSend_ForceCloseAfterDrainTimeout(t *testing.T) {
 	var sendOnce sync.Once
 	conn.EXPECT().Send(gomock.Any()).DoAndReturn(func(domain.Frame) error {
 		sendOnce.Do(func() { close(sendEntered) })
-		<-closeCh // force-close из Stop прерывает заблокированную запись
+		<-closeCh // force-close from Stop interrupts the blocked write
 		return errors.New("send on closed connection")
 	}).AnyTimes()
 
@@ -168,8 +168,8 @@ func TestPeer_Stop_BlockedSend_ForceCloseAfterDrainTimeout(t *testing.T) {
 		t.Fatalf("Deliver: %v", err)
 	}
 
-	// Дожидаемся, что write-loop реально ушёл в заблокированный Send —
-	// иначе drain завершился бы быстрее дедлайна и тест ничего не проверяет.
+	// Wait until the write loop has actually entered the blocked Send —
+	// otherwise drain would finish before the deadline and the test would verify nothing.
 	select {
 	case <-sendEntered:
 	case <-time.After(2 * time.Second):

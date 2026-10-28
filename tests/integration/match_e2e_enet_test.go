@@ -14,44 +14,45 @@ import (
 	libenet "github.com/codecat/go-enet"
 )
 
-// ENet-варианты e2e «живого матча» (план docs/plans/P12-e2e-enet-mixed.md),
-// ~115s реального времени каждый:
+// ENet variants of the "live match" e2e (plan docs/plans/P12-e2e-enet-mixed.md),
+// ~115s of real time each:
 //
-//	TestE2E_LiveMatch_ENet  — 4 ENet-клиента; dropout = честное молчание
-//	                          libenet (стоп host.Service → нет ack → серверный
-//	                          peer timeout (измерено ~10s на localhost, зависит от
-//	                          темпа исходящего reliable-трафика) → EventDisconnect →
-//	                          LeaveRoom → миграция). Bound ожидания эвикта — 70s.
-//	TestE2E_LiveMatch_Mixed — host на ENet (тот же timeout-дроп), второй ENet
-//	                          + 2 WS slave'а: кросс-транспортное покрытие
-//	                          entities/input/маграций по общему wire-протоколу.
+//	TestE2E_LiveMatch_ENet  — 4 ENet clients; dropout = honest libenet silence
+//	                          (stop host.Service → no acks → server-side peer
+//	                          timeout (measured ~10s on localhost, depends on the
+//	                          rate of outgoing reliable traffic) → EventDisconnect →
+//	                          LeaveRoom → migration). Eviction wait bound — 70s.
+//	TestE2E_LiveMatch_Mixed — host on ENet (same timeout drop), a second ENet
+//	                          + 2 WS slaves: cross-transport coverage of
+//	                          entities/input/migrations over the shared wire protocol.
 //
-// Общий клиентский слой и сценарный драйвер — match_e2e_client_test.go;
-// WS-вариант — match_e2e_test.go.
+// The shared client layer and scenario driver — match_e2e_client_test.go;
+// the WS variant — match_e2e_test.go.
 
 var _ matchClient = (*enetClient)(nil)
 
-// enetClient - клиент комнаты на in-test libenet host. Host'ом владеет
-// adapterenet.HostLoop (P15): pump гоняет Service командами через его очередь,
-// остальные libenet-вызовы - Call/Do в тот же loop. Per-host сериализация:
-// конвоя P12 на общем mutex больше нет, Service(1) остаётся ради темпа pump'а.
+// enetClient - a room client on an in-test libenet host. The host is owned by
+// adapterenet.HostLoop (P15): the pump drives Service via commands through its
+// queue, other libenet calls go via Call/Do into the same loop. Per-host
+// serialization: the P12 convoy on a shared mutex is gone, Service(1) remains
+// for the pump's pacing.
 type enetClient struct {
 	matchClientBase
 	loop     *adapterenet.HostLoop
 	enetPeer libenet.Peer
-	token    []byte // admit: первый пакет после EventConnect — сырой (decoded) ticket
+	token    []byte // admit: the first packet after EventConnect — raw (decoded) ticket
 
-	connected atomic.Bool // EventConnect получен - handshake завершён
-	pumpStop  atomic.Bool // stop(): pump выходит без ожидания EventDisconnect
+	connected atomic.Bool // EventConnect received - handshake done
+	pumpStop  atomic.Bool // stop(): the pump exits without waiting for EventDisconnect
 }
 
-// port - назначенный ENet-порт тикета (P18 strict binding: ticket привязан к
-// конкретному host'у; клиент обязан подключаться именно туда).
+// port - the ticket's assigned ENet port (P18 strict binding: the ticket is
+// bound to a specific host; the client must connect exactly there).
 func newEnetClient(t *testing.T, e *env.Env, nick, token string, port uint16) *enetClient {
 	t.Helper()
 
-	// Admit-пакет несёт сырой ticket: JoinRoom ждёт бинарный токен
-	// (WS-ветка тоже делает base64 decode query-параметра перед JoinRoom).
+	// The admit packet carries the raw ticket: JoinRoom expects a binary token
+	// (the WS branch also base64-decodes the query parameter before JoinRoom).
 	ticket, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
 		t.Fatalf("[%s] decode ticket token: %v", nick, err)
@@ -66,8 +67,8 @@ func newEnetClient(t *testing.T, e *env.Env, nick, token string, port uint16) *e
 		token:           ticket,
 		loop:            loop,
 	}
-	// Страховка на случай t.Fatal до defer stop(): Stop идемпотентен
-	// (drain + host.Destroy + ожидание выхода loop-горутины).
+	// Insurance against a t.Fatal before defer stop(): Stop is idempotent
+	// (drain + host.Destroy + wait for the loop goroutine exit).
 	t.Cleanup(loop.Stop)
 
 	err = loop.Do(func() error {
@@ -83,18 +84,18 @@ func newEnetClient(t *testing.T, e *env.Env, nick, token string, port uint16) *e
 	go c.sendLoop(c.writeFrame)
 	go c.statsLoop()
 
-	// Ждём EventConnect, пока вернём: сериализуем handshake'и клиентов —
-	// параллельные CONNECT иногда теряют дейтаграммы/ответы и достаются
-	// libenet-ретраями с экспоненциальным backoff'ом (~6s на наблюдениях).
+	// Wait for EventConnect before returning: this serializes the client
+	// handshakes — parallel CONNECTs occasionally lose datagrams/replies and get
+	// rescued by libenet retries with exponential backoff (~6s observed).
 	waitFor(t, 15*time.Second, nick+" enet connect", func() bool {
 		return c.connected.Load()
 	})
 	return c
 }
 
-// eventLoop - pump клиента: Service(1) + dispatch событий. Admit-кадр (сырой
-// ticket) шлём на EventConnect; дальше кадры OpCode+payload идут в общий
-// handleFrame. Выход — EventDisconnect (любая причина) либо pumpStop/silent.
+// eventLoop - the client's pump: Service(1) + event dispatch. The admit frame
+// (raw ticket) is sent on EventConnect; subsequent OpCode+payload frames go to
+// the shared handleFrame. Exit — EventDisconnect (any reason) or pumpStop/silent.
 func (c *enetClient) eventLoop() {
 	defer close(c.pumpDone)
 	admitted := false
@@ -107,8 +108,9 @@ func (c *enetClient) eventLoop() {
 		if c.pumpStop.Load() {
 			return
 		}
-		// Service(1) командой в свой HostLoop: pump двигает клиентский service
-		// сам; per-host очередь - серверный loop и соседние клиенты не душат.
+		// Service(1) as a command into our own HostLoop: the pump drives the
+		// client service itself; the per-host queue means the server loop and
+		// neighbor clients don't throttle it.
 		ev, err := adapterenet.Call(c.loop, func() libenet.Event { return c.loop.Host().Service(1) })
 		if err != nil {
 			c.connDead.Store(true)
@@ -158,7 +160,7 @@ func (c *enetClient) eventLoop() {
 	}
 }
 
-// writeFrame — OpCode+payload в channel 0 reliable — то же, что шлёт сервер
+// writeFrame — OpCode+payload on channel 0 reliable — same as the server sends
 // (EnetConnection.Send → packetFlagsFromDelivery → PacketFlagReliable).
 func (c *enetClient) writeFrame(op domain.OpCode, payload []byte) error {
 	frame := append([]byte{byte(op)}, payload...)
@@ -167,27 +169,27 @@ func (c *enetClient) writeFrame(op domain.OpCode, payload []byte) error {
 	})
 }
 
-// goSilent — честный dropout: event loop больше не вызывает host.Service →
-// клиент не шлёт ack/ping, UDP-сокет остаётся открытым. Серверский libenet
-// детектит мёртвого peer'а собственным таймаутом (~5–30s) → EventDisconnect →
-// LeaveRoom → миграция. НЕ peer.DisconnectNow — это был бы clean-ish разрыв.
+// goSilent — an honest dropout: the event loop stops calling host.Service →
+// the client sends no acks/pings, the UDP socket stays open. The server-side
+// libenet detects the dead peer via its own timeout (~5–30s) → EventDisconnect →
+// LeaveRoom → migration. NOT peer.DisconnectNow — that would be a clean-ish drop.
 func (c *enetClient) goSilent() {
 	c.silent.Store(true)
 	c.stopSend()
 }
 
-// leaveClean — плановый уход мастера №2: graceful peer.Disconnect — сервер
-// получает disconnect-команду → EventDisconnect → LeaveRoom. Pump продолжает
-// Service до собственного EventDisconnect.
+// leaveClean — the scheduled departure of master #2: a graceful
+// peer.Disconnect — the server gets the disconnect command → EventDisconnect →
+// LeaveRoom. The pump keeps servicing until its own EventDisconnect.
 func (c *enetClient) leaveClean() {
 	c.leftClean.Store(true)
 	c.stopSend()
 	_ = c.loop.Do(func() error { c.enetPeer.Disconnect(0); return nil })
 }
 
-// stop - финальный teardown: graceful disconnect (если pump ещё жив), bound на
-// выход pump'а, затем loop.Stop → host.Destroy. Destroy только после pumpDone -
-// Service на разрушенном host был бы UB.
+// stop - final teardown: graceful disconnect (if the pump is still alive), a
+// bound on the pump's exit, then loop.Stop → host.Destroy. Destroy only after
+// pumpDone - a Service on a destroyed host would be UB.
 func (c *enetClient) stop() {
 	c.leftClean.Store(true)
 	c.stopSend()
@@ -206,7 +208,7 @@ func (c *enetClient) stop() {
 	c.loop.Stop()
 }
 
-// TestE2E_LiveMatch_ENet — 4 ENet-клиента, host dropout = молчание libenet.
+// TestE2E_LiveMatch_ENet — 4 ENet clients, host dropout = libenet silence.
 func TestE2E_LiveMatch_ENet(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e live match ~115s real time — skipped under -short")
@@ -232,15 +234,15 @@ func TestE2E_LiveMatch_ENet(t *testing.T) {
 
 	runLiveMatch(t, e, roomID, host, []matchClient{s1, s2, s3}, liveMatchTiming{
 		hostSilentAt:  15 * time.Second,
-		evictBound:    70 * time.Second, // libenet peer timeout: ~10s измерено, bound с запасом под CI
+		evictBound:    70 * time.Second, // libenet peer timeout: ~10s measured, bound with CI headroom
 		secondLeaveAt: 95 * time.Second,
 		finishAt:      115 * time.Second,
 	})
 }
 
-// TestE2E_LiveMatch_Mixed — host на ENet (timeout-дроп) + ENet и WS slave'ы в
-// одной комнате: выжившие на обоих транспортах видят миграции, entities и input
-// друг друга через общий wire-протокол.
+// TestE2E_LiveMatch_Mixed — a host on ENet (timeout drop) + ENet and WS slaves
+// in one room: survivors on both transports see the migrations, entities and
+// each other's inputs over the shared wire protocol.
 func TestE2E_LiveMatch_Mixed(t *testing.T) {
 	if testing.Short() {
 		t.Skip("e2e live match ~115s real time — skipped under -short")
@@ -250,7 +252,7 @@ func TestE2E_LiveMatch_Mixed(t *testing.T) {
 	e := env.New(t, env.WithEnet())
 
 	roomID, hostToken, hostPort := e.CreateRoomPort(t, "host")
-	// Host — первый joiner на ENet → начальный master; dropout — enet timeout.
+	// The host — first joiner on ENet → initial master; dropout — enet timeout.
 	host := newEnetClient(t, e, "host", hostToken, hostPort)
 	token1, port1 := e.IssueTicketPort(t, roomID, "e1")
 	e1 := newEnetClient(t, e, "e1", token1, port1)

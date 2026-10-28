@@ -10,10 +10,11 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport"
 )
 
-// AdmitPeerUseCase — единая точка входа data plane (P20, T2): оба handler'а
-// (ws `?token=`, enet первый пакет) отдают сырой token сюда. Validate идёт
-// один раз, ветвление — по claims.Kind: join-поток (JoinRoomUseCase) или
-// resume-поток (ReconnectRoomUseCase, другая rollback-семантика).
+// AdmitPeerUseCase — single entry point of the data plane (P20, T2): both
+// handlers (ws `?token=`, enet first packet) hand the raw token here.
+// Validate runs once, then the flow branches on claims.Kind: join flow
+// (JoinRoomUseCase) or resume flow (ReconnectRoomUseCase, different
+// rollback semantics).
 type AdmitPeerUseCase struct {
 	admission admission.Admission
 	join      *JoinRoomUseCase
@@ -35,10 +36,11 @@ func NewAdmitPeerUseCase(
 	}
 }
 
-// Admit валидирует token и направляет поток по claims.Kind.
-// enetHostID — host, принявший соединение (strict binding, P18): тикет с
-// claims.HostID обязан совпасть с ним, иначе ErrWrongHost до траты слота
-// reservation. domain.HostIDUnbound — admit не по ENet (WS): проверки нет.
+// Admit validates the token and routes the flow by claims.Kind.
+// enetHostID — the host that accepted the connection (strict binding, P18):
+// a ticket with claims.HostID must match it, otherwise ErrWrongHost before
+// any reservation slot is consumed. domain.HostIDUnbound — admit is not via
+// ENet (WS): no check.
 func (uc *AdmitPeerUseCase) Admit(
 	ctx context.Context,
 	connection transport.Connection,

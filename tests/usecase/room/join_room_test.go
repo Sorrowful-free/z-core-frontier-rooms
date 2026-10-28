@@ -12,8 +12,8 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-// newTestClaims собирает валидные join-claims (Kind=join, IssuedAt = now,
-// ExpiresAt = +1h); nickName == "" — claims без ника.
+// newTestClaims builds valid join claims (Kind=join, IssuedAt = now,
+// ExpiresAt = +1h); nickName == "" — claims without a nick.
 func newTestClaims(roomID domain.RoomID, peerID domain.PeerID, nickName string) domain.Claims {
 	now := time.Now()
 	return domain.Claims{

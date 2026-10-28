@@ -26,9 +26,9 @@ func TestRoomState_Clone_isolatesNestedMaps(t *testing.T) {
 	}
 }
 
-// Snapshot — shallow-снапшот: значения разделяются со state и остаются
-// корректными при COW-мутациях state (clone-then-replace записей,
-// point-апдейты PeerState-структур, delete).
+// Snapshot — a shallow snapshot: values are shared with the state and stay
+// correct under COW mutations of the state (clone-then-replace of entries,
+// point updates of PeerState structs, delete).
 func TestRoomState_Snapshot_isolatedByCOWMutations(t *testing.T) {
 	t.Parallel()
 
@@ -48,11 +48,12 @@ func TestRoomState_Snapshot_isolatedByCOWMutations(t *testing.T) {
 	}
 
 	snap := room.Snapshot()
-	frozen := snap.Clone() // эталон: каким снапшот был на момент снятия
+	frozen := snap.Clone() // reference: what the snapshot looked like when taken
 
-	// COW-мутации state в стиле policy-путей: clone-then-replace input,
-	// point-замена PeerState (ping/IsMaster), delete записей, замена
-	// entities-мапы — ни одна не должна тронуть снапшот.
+	// COW mutations of the state in the style of the policy paths:
+	// clone-then-replace of the input, point replacement of a PeerState
+	// (ping/IsMaster), delete of entries, replacement of the entities map —
+	// none of them must touch the snapshot.
 	input := room.Inputs[domain.PeerID(2)].Clone()
 	input.Values[state.ValueId(1)] = state.ValueState([]byte{9})
 	room.Inputs[domain.PeerID(2)] = input
@@ -88,8 +89,8 @@ func TestRoomState_Snapshot_isolatedByCOWMutations(t *testing.T) {
 	}
 }
 
-// COW-инвариант ApplyPatch (P34): patch Inputs-записи не должен
-// мутировать Values-мапу хранимой записи — apply работает на клоне.
+// COW invariant of ApplyPatch (P34): a patch of an Inputs entry must not
+// mutate the Values map of the stored entry — apply works on a clone.
 func TestRoomState_ApplyPatch_inputsDoesNotMutateSharedValues(t *testing.T) {
 	t.Parallel()
 
@@ -98,8 +99,8 @@ func TestRoomState_ApplyPatch_inputsDoesNotMutateSharedValues(t *testing.T) {
 		state.ValueId(1): state.ValueState([]byte{1}),
 	}}
 
-	// Снапшот шарит Values-мапу записи — если ApplyPatch мутирует её
-	// in-place, снапшот увидит «будущее» значение.
+	// The snapshot shares the entry's Values map — if ApplyPatch mutates it
+	// in place, the snapshot will see the "future" value.
 	snap := room.Snapshot()
 
 	patch := state.RoomStatePatch{}

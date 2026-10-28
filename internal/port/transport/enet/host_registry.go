@@ -6,19 +6,21 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
 
-// HostAssignment - выбор ENet host'а для ticket'а (P18): HostID идёт в claims
-// (strict binding admit), Port - в ответ issue ticket, клиент подключается на него.
+// HostAssignment - ENet host choice for a ticket (P18): HostID goes into the
+// claims (strict binding admit), Port goes into the issue ticket response —
+// the client connects to it.
 type HostAssignment struct {
 	HostID domain.HostID
 	Port   uint16
 }
 
-// HostRegistry - каталог ENet host'ов (shard'ов) процесса для балансировки
-// issue ticket'ов. Реализуется delivery/enet (RoomsHandler знает свои host'ы
-// и число живых peer'ов на каждом); usecase/room вызывает AssignHost при Issue.
-// nil-registry в usecase - ticket'ы без привязки (admit на любом host'е).
+// HostRegistry - catalog of the process's ENet hosts (shards) for balancing
+// ticket issues. Implemented by delivery/enet (RoomsHandler knows its hosts
+// and the number of live peers on each); usecase/room calls AssignHost on
+// Issue. nil registry in the usecase means unbound tickets (admit on any
+// host).
 type HostRegistry interface {
-	// AssignHost выбирает host для нового ticket'а: least-loaded по живым
-	// peer'ам host'а, round-robin tie-break при равенстве.
+	// AssignHost picks a host for a new ticket: least-loaded by the host's
+	// live peers, round-robin tie-break on equality.
 	AssignHost(ctx context.Context) (HostAssignment, error)
 }

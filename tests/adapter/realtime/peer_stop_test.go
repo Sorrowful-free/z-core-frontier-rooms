@@ -14,8 +14,8 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-// newBlockingConn — Receive блокируется до Close, имитация транспорта, ждущего кадр из сети.
-// closeCh замыкается первым вызовом Close.
+// newBlockingConn — Receive blocks until Close, simulating a transport waiting for a frame from the network.
+// closeCh is closed by the first Close call.
 func newBlockingConn(t *testing.T, ctrl *gomock.Controller) (*mocks.MockConnection, chan struct{}) {
 	t.Helper()
 
@@ -50,7 +50,7 @@ func TestPeer_Stop_UnblocksReceive(t *testing.T) {
 		queueTestLogger{},
 	)
 
-	// nil sink безопасен: входящая горутина получает только ошибку из Receive.
+	// nil sink is safe: the inbound goroutine only gets the error from Receive.
 	if err := peer.Start(nil); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestPeer_Stop_ConcurrentDeliver_NoPanic(t *testing.T) {
 		8,
 		queueTestLogger{},
 	)
-	// nil sink безопасен: входящая горутина получает только ошибку из Receive.
+	// nil sink is safe: the inbound goroutine only gets the error from Receive.
 	if err := peer.Start(nil); err != nil {
 		t.Fatalf("Start: %v", err)
 	}

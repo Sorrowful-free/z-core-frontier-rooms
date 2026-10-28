@@ -2,7 +2,7 @@ package domain
 
 import "errors"
 
-// Sentinel-ошибки внутри комнаты (после admit).
+// In-room sentinel errors (after admit).
 // Wire OpCode: InRoomErrorOpCode; SendInRoomError — delivery/errors.
 
 var (
@@ -17,10 +17,11 @@ var (
 	ErrRoomAlreadyExists     = errors.New("room already exists")
 	ErrRoomsLimitReached     = errors.New("rooms limit reached")
 	ErrInvalidRoomCapacity   = errors.New("invalid room capacity")
-	// ErrRoomShouldClose — policy просит закрыть комнату (P33: no-migration
-	// режим деплоя, ушёл master при allowMasterMigration=false). Внутренний
-	// sentinel: usecase превращает его в teardown (OpRoomClosed оставшимся →
-	// disconnect всех → unregister + revoke); на wire сам по себе не мапится.
+	// ErrRoomShouldClose — policy requests room closure (P33: no-migration
+	// deploy mode, master left with allowMasterMigration=false). Internal
+	// sentinel: the usecase turns it into teardown (OpRoomClosed to the
+	// remaining peers → disconnect everyone → unregister + revoke); it is
+	// not mapped to the wire by itself.
 	ErrRoomShouldClose = errors.New("room should close")
 	ErrQueueFull       = errors.New("queue full")
 )

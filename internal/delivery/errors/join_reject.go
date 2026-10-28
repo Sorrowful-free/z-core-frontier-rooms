@@ -37,9 +37,9 @@ func JoinRejectOpCode(err error) domain.OpCode {
 }
 
 // SendJoinReject sends one reject frame before the transport is closed.
-// Ошибка send возвращается caller'у: join-reject считается отправленным
-// (метрика JoinRejected) только при nil — иначе счётчик считал бы
-// попытки, а не доставленные кадры.
+// A send error is returned to the caller: a join-reject counts as sent
+// (JoinRejected metric) only on nil — otherwise the counter would count
+// attempts rather than delivered frames.
 func SendJoinReject(conn transport.Connection, err error) error {
 	return sendErrorFrame(conn, JoinRejectOpCode(err))
 }
@@ -69,7 +69,7 @@ func InRoomErrorOpCode(err error) domain.OpCode {
 }
 
 // SendInRoomError sends one in-room error frame; connection may stay open.
-// Ошибка send возвращается caller'у (безопасно игнорировать).
+// A send error is returned to the caller (safe to ignore).
 func SendInRoomError(conn transport.Connection, err error) error {
 	return sendErrorFrame(conn, domain.InRoomErrorOpCode(err))
 }

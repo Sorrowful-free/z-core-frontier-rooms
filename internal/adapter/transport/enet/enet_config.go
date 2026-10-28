@@ -7,22 +7,23 @@ import (
 	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
 )
 
-// DefaultAdmitTimeout — deadline EventConnect → admit: peer, не приславший ticket
-// за это время, отключается (слот PeerLimit не занят бесконечно).
+// DefaultAdmitTimeout — EventConnect → admit deadline: a peer that has not
+// sent a ticket within this time is disconnected (the PeerLimit slot is not
+// held forever).
 const DefaultAdmitTimeout = 10 * time.Second
 
-// EnetConfig - параметры ENet host'ов (отдельные UDP-слушатели, не Fiber).
-// Файл без build-тегов: конфиг нужен и stub-сборкам без cgo.
+// EnetConfig - parameters of ENet hosts (dedicated UDP listeners, not Fiber).
+// File without build tags: stub builds without cgo also need the config.
 //
-// ListenPorts - список портов, по одному host'у на порт (P18, шардирование):
-// delivery/enet поднимает HostLoop на каждый порт; hostID в claims - индекс+1
-// в этом списке. PeerLimit - per-host (лимит структуры libenet).
+// ListenPorts - list of ports, one host per port (P18, sharding):
+// delivery/enet brings up a HostLoop on each port; hostID in claims is
+// index+1 into this list. PeerLimit is per-host (a libenet structure limit).
 //
-// ServiceTimeoutMs — бюджет одного вызова host.Service на HostLoop'е (P15):
-// это верхняя граница latency очереди команд (send/disconnect ждут возврата
-// Service). Дефолт 1ms — ~1000 итераций/сек на host, цена пустого poll'а
-// минимальна; поднять можно через ENET_SERVICE_TIMEOUT_MS, если цикл на
-// пустом хосте станет заметен.
+// ServiceTimeoutMs — budget of a single host.Service call on the HostLoop
+// (P15): it is the upper bound of command queue latency (send/disconnect wait
+// for Service to return). Default 1ms — ~1000 iterations/sec per host, the
+// cost of an empty poll is minimal; it can be raised via
+// ENET_SERVICE_TIMEOUT_MS if the loop on an idle host becomes noticeable.
 type EnetConfig struct {
 	ListenPorts           []uint16
 	PeerLimit             uint64
@@ -30,7 +31,7 @@ type EnetConfig struct {
 	ServiceTimeoutMs      uint32
 	MaxIncomingFrameBytes int
 	EnetIncomingQueueSize int
-	// AdmitTimeout — макс. время от EventConnect до admit; просроченные peer'ы отключаются.
+	// AdmitTimeout — max time from EventConnect to admit; overdue peers are disconnected.
 	AdmitTimeout time.Duration
 }
 
@@ -46,7 +47,7 @@ func DefaultEnetConfig() EnetConfig {
 	}
 }
 
-// Validate проверяет допустимость значений (config.mdc: валидация у модуля).
+// Validate checks that values are admissible (config.mdc: validation lives with the module).
 func (c EnetConfig) Validate() error {
 	if len(c.ListenPorts) == 0 {
 		return fmt.Errorf("enet config: at least one listen port required")

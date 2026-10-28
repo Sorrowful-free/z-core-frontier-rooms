@@ -1,6 +1,6 @@
 package httplimits
 
-// Limits — control plane: ёмкость инстанса и rate limit REST (per client IP).
+// Limits — control plane: instance capacity and REST rate limit (per client IP).
 type Limits interface {
 	AllowCreateRoom(currentRoomCount int) error
 	AllowHTTPCreate(clientIP string) bool

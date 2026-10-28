@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// rateLimitSweepInterval — как часто allow вычищает просроченные окна (lazy, без горутины).
+// rateLimitSweepInterval — how often allow evicts expired windows (lazy, no goroutine).
 const rateLimitSweepInterval = time.Minute
 
 type rateLimiter struct {
@@ -26,9 +26,9 @@ func newRateLimiter() *rateLimiter {
 }
 
 // allow reports whether key may proceed: limit requests per window.
-// Fixed window: в начале нового окна ключ снова получает полный лимит,
-// поэтому на границе окон возможен burst до 2×limit.
-// limit <= 0 — без ограничений.
+// Fixed window: at the start of a new window the key gets the full limit
+// again, so a burst of up to 2×limit is possible at window boundaries.
+// limit <= 0 — unlimited.
 func (l *rateLimiter) allow(key string, limit int, window time.Duration) bool {
 	if limit <= 0 {
 		return true
@@ -59,8 +59,8 @@ func (l *rateLimiter) allow(key string, limit int, window time.Duration) bool {
 	return true
 }
 
-// evictExpired удаляет окна с истёкшим resetAt не чаще rateLimitSweepInterval.
-// Вызывается под l.mu; удерживает рост windows при ротации ключей (IP).
+// evictExpired removes windows with expired resetAt at most once per rateLimitSweepInterval.
+// Called under l.mu; keeps windows from growing as keys (IPs) rotate.
 func (l *rateLimiter) evictExpired(now time.Time) {
 	if now.Sub(l.lastSweep) < rateLimitSweepInterval {
 		return

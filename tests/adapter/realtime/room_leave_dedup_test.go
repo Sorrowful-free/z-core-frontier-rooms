@@ -19,12 +19,12 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/prom"
 )
 
-// P23: дедуп двойного leave авторитетен на уровне реестра, а не policy.
-// Room-loop припарковывается внутри заблокированного OnMessage — оба
-// caller'а Leave гарантированно проходят pre-check (peer ещё в r.peers)
-// и сериализуются на lifecycle-канале. Проигравший обязан получить
-// ErrPeerNotFound (тот же sentinel, что у pre-check Room.Leave), policy
-// видит ровно один OnLeave, peer_leaves/active_peers декрементятся один раз.
+// P23: dedup of a double leave is authoritative at the registry level, not the policy.
+// The room loop is parked inside a blocked OnMessage — both Leave callers
+// are guaranteed to pass the pre-check (peer still in r.peers) and serialize
+// on the lifecycle channel. The loser must get ErrPeerNotFound (the same
+// sentinel as the Room.Leave pre-check), the policy sees exactly one
+// OnLeave, peer_leaves/active_peers are decremented once.
 func TestRoom_Leave_ConcurrentDoubleLeave_RegistryDedup(t *testing.T) {
 	t.Parallel()
 
@@ -36,8 +36,8 @@ func TestRoom_Leave_ConcurrentDoubleLeave_RegistryDedup(t *testing.T) {
 		entered: make(chan struct{}),
 		release: make(chan struct{}),
 	}
-	// Комната с продовым wiring метрик: RoomFactory вливает metrics полем,
-	// policy подставляется spy-стаб через статическую фабрику.
+	// Room with production metrics wiring: RoomFactory injects metrics as a
+	// field, the policy is substituted with a spy stub via a static factory.
 	factory := adapterrealtime.NewRoomFactory(stdlib.New("test"), staticPolicyFactory{policy: policy}, 8, m)
 	room, err := factory.CreateRoom(context.Background(), domain.RoomID(7), 8, nil)
 	if err != nil {
@@ -53,9 +53,9 @@ func TestRoom_Leave_ConcurrentDoubleLeave_RegistryDedup(t *testing.T) {
 		t.Fatalf("Join: %v", err)
 	}
 
-	// Паркуем loop: пока OnMessage заблокирован, delete в runLeaveLocked
-	// выполнить некому — оба Leave пройдут pre-check и встанут на отправку
-	// в lifecycle-канал.
+	// Park the loop: while OnMessage is blocked, nothing can run the delete
+	// in runLeaveLocked — both Leaves pass the pre-check and queue up to send
+	// on the lifecycle channel.
 	if err := room.Deliver(events.RoomEvent{PeerID: peer.GetID(), Frame: domain.Frame{OpCode: 0x01}}); err != nil {
 		t.Fatalf("Deliver: %v", err)
 	}
@@ -93,14 +93,14 @@ func TestRoom_Leave_ConcurrentDoubleLeave_RegistryDedup(t *testing.T) {
 	}
 }
 
-// gatedLeavePolicy — spy-стаб policy: OnMessage блокирует room-loop до
-// close(release), давая тесту детерминированное окно «peer ещё в реестре,
-// но оба leave уже сериализованы». OnLeave считает вызовы — дедуп
-// проверяется по тому, что повторный leave до policy не доходит.
+// gatedLeavePolicy — a spy-stub policy: OnMessage blocks the room loop until
+// close(release), giving the test a deterministic window "peer still in the
+// registry, but both leaves already serialized". OnLeave counts calls —
+// dedup is verified by the second leave never reaching the policy.
 type gatedLeavePolicy struct {
 	roomCtx  context.Context
-	entered  chan struct{} // закрывается при входе loop'а в OnMessage
-	release  chan struct{} // close отпускает заблокированный OnMessage
+	entered  chan struct{} // closed when the loop enters OnMessage
+	release  chan struct{} // close releases the blocked OnMessage
 	once     sync.Once
 	onLeaves atomic.Int32
 }
@@ -117,8 +117,8 @@ func (p *gatedLeavePolicy) OnLeave(realtime.Peer) error {
 }
 func (p *gatedLeavePolicy) OnMessage(events.RoomEvent) error {
 	p.once.Do(func() { close(p.entered) })
-	// roomCtx — аварийный выход: при падении теста до close(release)
-	// Stop не должен висеть на wg.Wait() за припаркованным loop'ом.
+	// roomCtx — emergency exit: if the test fails before close(release),
+	// Stop must not hang on wg.Wait() behind the parked loop.
 	select {
 	case <-p.release:
 	case <-p.roomCtx.Done():
@@ -131,9 +131,9 @@ func (p *gatedLeavePolicy) OnTickPatchState() error                       { retu
 
 var _ portpolicy.RoomPolicy = (*gatedLeavePolicy)(nil)
 
-// staticPolicyFactory — RoomPolicyFactory, отдающая готовый policy-стаб
-// (продовые фабрики конструируют policy сами; в тесте нужен счётчик
-// вызовов, поэтому инстанс пробрасывается снаружи).
+// staticPolicyFactory — a RoomPolicyFactory that hands out a ready-made
+// policy stub (production factories construct the policy themselves; the
+// test needs a call counter, so the instance is passed in from outside).
 type staticPolicyFactory struct {
 	policy portpolicy.RoomPolicy
 }

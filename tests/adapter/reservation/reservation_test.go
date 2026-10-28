@@ -89,7 +89,7 @@ func TestReserve_ExpiredRemovedOnNextReserve(t *testing.T) {
 	}
 }
 
-// D3: тикет одноразовый — повторный Admit на admitted-слоте отклоняется.
+// D3: the ticket is single-use — a repeated Admit on an admitted slot is rejected.
 func TestAdmit_AlreadyAdmittedRejected(t *testing.T) {
 	t.Parallel()
 
@@ -116,7 +116,7 @@ func TestAdmit_AlreadyAdmittedRejected(t *testing.T) {
 	}
 }
 
-// D5: один outstanding reserved-слот на nick в комнате; admitted не блокирует.
+// D5: one outstanding reserved slot per nick in a room; admitted does not block.
 func TestReserve_SameNickSlotHeld(t *testing.T) {
 	t.Parallel()
 
@@ -394,7 +394,7 @@ func TestReservation_ConcurrentDifferentRooms(t *testing.T) {
 	wg.Wait()
 }
 
-// P20: MarkDisconnected держит admitted-слот (grace), обновляет lastSeen.
+// P20: MarkDisconnected keeps the admitted slot (grace), refreshes lastSeen.
 func TestMarkDisconnected_KeepsAdmittedSlot(t *testing.T) {
 	t.Parallel()
 
@@ -420,7 +420,7 @@ func TestMarkDisconnected_KeepsAdmittedSlot(t *testing.T) {
 		t.Fatalf("MarkDisconnected: %v", err)
 	}
 
-	// Слот жив и admitted — capacity по-прежнему занята.
+	// The slot is alive and admitted — capacity is still taken.
 	if err := res.Reserve(ctx, roomID, domain.PeerID(201), "other", time.Now().Add(time.Hour)); !errors.Is(err, domain.ErrReservationFull) {
 		t.Fatalf("Reserve after mark err = %v, want ErrReservationFull (слот в grace)", err)
 	}
@@ -461,7 +461,7 @@ func TestMarkDisconnected_NotAdmitted(t *testing.T) {
 	}
 }
 
-// P20: Reconnect — атомарная проверка admitted + refresh lastSeen + nick.
+// P20: Reconnect — atomic admitted check + lastSeen refresh + nick.
 func TestReconnect_ReturnsSlotAndRefreshes(t *testing.T) {
 	t.Parallel()
 
@@ -508,26 +508,26 @@ func TestReconnect_Rejected(t *testing.T) {
 	if err := res.RegisterRoom(ctx, roomID, 2, ""); err != nil {
 		t.Fatalf("RegisterRoom: %v", err)
 	}
-	// Слота нет.
+	// No slot.
 	if _, err := res.Reconnect(ctx, roomID, domain.PeerID(1)); !errors.Is(err, domain.ErrReservationNotReserved) {
 		t.Fatalf("reconnect missing err = %v, want ErrReservationNotReserved", err)
 	}
-	// Слот reserved (ещё не admit).
+	// Slot is reserved (not yet admitted).
 	if err := res.Reserve(ctx, roomID, domain.PeerID(1), "p1", time.Now().Add(time.Hour)); err != nil {
 		t.Fatalf("Reserve: %v", err)
 	}
 	if _, err := res.Reconnect(ctx, roomID, domain.PeerID(1)); !errors.Is(err, domain.ErrReservationNotReserved) {
 		t.Fatalf("reconnect reserved err = %v, want ErrReservationNotReserved", err)
 	}
-	// Комната не зарегистрирована.
+	// Room not registered.
 	if _, err := res.Reconnect(ctx, domain.RoomID(99), domain.PeerID(1)); !errors.Is(err, domain.ErrReservationNotFound) {
 		t.Fatalf("reconnect bad room err = %v, want ErrReservationNotFound", err)
 	}
 }
 
-// P24: SlotDetails — read-only просмотр admitted-слота: возвращает слот
-// с NickName и НЕ освежает lastSeen (честный lastSeen для deadline-гейта
-// resume — отклонённая попытка не продлевает grace).
+// P24: SlotDetails — read-only view of an admitted slot: returns the slot
+// with NickName and does NOT refresh lastSeen (honest lastSeen for the
+// resume deadline gate — a rejected attempt does not extend grace).
 func TestSlotDetails_ReadsAdmittedWithoutRefresh(t *testing.T) {
 	t.Parallel()
 
@@ -566,8 +566,8 @@ func TestSlotDetails_ReadsAdmittedWithoutRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SlotDetails second: %v", err)
 	}
-	// Read-only: повторное чтение не двигает lastSeen (в отличие от Reconnect,
-	// который вернул бы освежённый lastSeen).
+	// Read-only: a second read does not move lastSeen (unlike Reconnect,
+	// which would return a refreshed lastSeen).
 	if !second.LastSeen.Equal(first.LastSeen) {
 		t.Fatalf("lastSeen refreshed: %v -> %v", first.LastSeen, second.LastSeen)
 	}
@@ -583,18 +583,18 @@ func TestSlotDetails_Rejected(t *testing.T) {
 	if err := res.RegisterRoom(ctx, roomID, 2, ""); err != nil {
 		t.Fatalf("RegisterRoom: %v", err)
 	}
-	// Слота нет.
+	// No slot.
 	if _, err := res.SlotDetails(ctx, roomID, domain.PeerID(1)); !errors.Is(err, domain.ErrReservationNotReserved) {
 		t.Fatalf("slot details missing err = %v, want ErrReservationNotReserved", err)
 	}
-	// Слот reserved (ещё не admit).
+	// Slot is reserved (not yet admitted).
 	if err := res.Reserve(ctx, roomID, domain.PeerID(1), "p1", time.Now().Add(time.Hour)); err != nil {
 		t.Fatalf("Reserve: %v", err)
 	}
 	if _, err := res.SlotDetails(ctx, roomID, domain.PeerID(1)); !errors.Is(err, domain.ErrReservationNotReserved) {
 		t.Fatalf("slot details reserved err = %v, want ErrReservationNotReserved", err)
 	}
-	// Комната не зарегистрирована.
+	// Room not registered.
 	if _, err := res.SlotDetails(ctx, domain.RoomID(99), domain.PeerID(1)); !errors.Is(err, domain.ErrReservationNotFound) {
 		t.Fatalf("slot details bad room err = %v, want ErrReservationNotFound", err)
 	}

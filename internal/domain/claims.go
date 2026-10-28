@@ -2,8 +2,8 @@ package domain
 
 import "time"
 
-// ClaimsKind — тип credential'а в claims: одноразовый join-ticket или
-// reconnect-токен для resume под тем же peerID (P20).
+// ClaimsKind — credential type in claims: a one-time join ticket or a
+// reconnect token for resuming under the same peerID (P20).
 type ClaimsKind byte
 
 const (
@@ -12,14 +12,14 @@ const (
 )
 
 type Claims struct {
-	// Kind — join (join-ticket) или reconnect (reconnect-токен, P20).
+	// Kind — join (join ticket) or reconnect (reconnect token, P20).
 	Kind     ClaimsKind
 	RoomID   RoomID
 	PeerID   PeerID
 	NickName string
-	// HostID - strict binding admit (P18): назначенный ENet host.
-	// HostIDUnbound - ticket не привязан (WS-only deploy); на ENet-admit
-	// отклоняется ErrWrongHost.
+	// HostID - strict binding admit (P18): the assigned ENet host.
+	// HostIDUnbound - ticket is not bound (WS-only deploy); ENet admit
+	// rejects it with ErrWrongHost.
 	HostID    HostID
 	IssuedAt  time.Time
 	ExpiresAt time.Time

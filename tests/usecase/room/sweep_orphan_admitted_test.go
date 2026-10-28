@@ -14,9 +14,9 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-// P31: revoke последнего grace-слота — именно здесь «пустая» наступает по
-// истечении TTL последнего reconnect-окна: ни peers, ни admitted →
-// комната умирает (DeleteRoom + UnregisterRoom).
+// P31: revoking the last grace slot — this is where "empty" happens once
+// the TTL of the last reconnect window expires: no peers, no admitted →
+// the room dies (DeleteRoom + UnregisterRoom).
 func TestSweepOrphanAdmitted_RevokesOrphanAfterTTL(t *testing.T) {
 	t.Parallel()
 
@@ -34,8 +34,8 @@ func TestSweepOrphanAdmitted_RevokesOrphanAfterTTL(t *testing.T) {
 
 	registry.EXPECT().GetList(gomock.Any()).Return([]realtime.Room{room}, nil)
 	room.EXPECT().GetID().Return(roomID).AnyTimes()
-	// Первый листинг — цикл ревоки; второй — повторная проверка
-	// closeRoomIfEmpty после revoke'а (слотов больше нет → kill).
+	// First listing — the revoke loop; second — the closeRoomIfEmpty recheck
+	// after the revoke (no slots left → kill).
 	gomock.InOrder(
 		reservation.EXPECT().ListAdmittedPeers(gomock.Any(), roomID).Return([]domain.AdmittedSlot{{
 			PeerID:   peerID,
@@ -63,8 +63,8 @@ func TestSweepOrphanAdmitted_RevokesOrphanAfterTTL(t *testing.T) {
 	}
 }
 
-// P31: отозван один grace-слот, но у комнаты остался другой admitted —
-// комната НЕ умирает (кто-то ещё может вернуться по grace).
+// P31: one grace slot is revoked, but the room has another admitted —
+// the room does NOT die (someone may still return via grace).
 func TestSweepOrphanAdmitted_RevokeLeavesOtherGrace_RoomSurvives(t *testing.T) {
 	t.Parallel()
 
@@ -89,9 +89,9 @@ func TestSweepOrphanAdmitted_RevokeLeavesOtherGrace_RoomSurvives(t *testing.T) {
 			LastSeen: lastSeen,
 		}, {
 			PeerID:   otherPeer,
-			LastSeen: time.Now(), // живой grace — не ревокается
+			LastSeen: time.Now(), // live grace — not revoked
 		}}, nil),
-		// closeRoomIfEmpty перепроверяет: второй слот всё ещё admitted.
+		// closeRoomIfEmpty rechecks: the second slot is still admitted.
 		reservation.EXPECT().ListAdmittedPeers(gomock.Any(), roomID).Return([]domain.AdmittedSlot{{
 			PeerID:   otherPeer,
 			LastSeen: time.Now(),
@@ -101,7 +101,7 @@ func TestSweepOrphanAdmitted_RevokeLeavesOtherGrace_RoomSurvives(t *testing.T) {
 	room.EXPECT().HasPeer(otherPeer).Return(false)
 	reservation.EXPECT().Revoke(gomock.Any(), roomID, peerID).Return(nil)
 	room.EXPECT().GetPeers().Return(nil)
-	// DeleteRoom/UnregisterRoom не ожидаются — gomock упадёт на вызове.
+	// DeleteRoom/UnregisterRoom are not expected — gomock fails on a call.
 	logger.EXPECT().Warn(gomock.Any(), gomock.Any()).AnyTimes()
 	logger.EXPECT().Error(gomock.Any(), gomock.Any()).AnyTimes()
 	logger.EXPECT().Info(gomock.Any(), gomock.Any()).AnyTimes()
@@ -174,8 +174,8 @@ func TestSweepOrphanAdmitted_BadRoomSkipped(t *testing.T) {
 			PeerID:   peerID,
 			LastSeen: time.Now().Add(-time.Hour),
 		}}, nil),
-		// P31: closeRoomIfEmpty после revoke'а — у комнаты остался другой
-		// admitted-слот, kill не происходит.
+		// P31: closeRoomIfEmpty after the revoke — the room still has another
+		// admitted slot, no kill happens.
 		reservation.EXPECT().ListAdmittedPeers(gomock.Any(), okRoomID).Return([]domain.AdmittedSlot{{
 			PeerID:   domain.PeerID(21),
 			LastSeen: time.Now(),

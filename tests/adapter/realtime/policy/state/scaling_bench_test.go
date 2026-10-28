@@ -1,11 +1,13 @@
 package state_test
 
-// Scaling-бенчи state-пути (P34): стоимость OnMessage/Clone/MakePatch
-// в зависимости от размера Entities — ловит регресс O(|state|) на
-// горячем пути (tick-coalesced эмиссия дала O(1) на входящее сообщение).
+// Scaling benches of the state path (P34): the cost of
+// OnMessage/Clone/MakePatch as a function of the Entities size — catches
+// an O(|state|) regression on the hot path (tick-coalesced emission gave
+// O(1) per incoming message).
 //
-// NB: payload'ы чередуются (два значения) — иначе после первой итерации
-// state не меняется и замер уходит в nil-patch/error-ветку.
+// NB: the payloads alternate (two values) — otherwise after the first
+// iteration the state does not change and the measurement slips into the
+// nil-patch/error branch.
 
 import (
 	"fmt"
@@ -17,7 +19,7 @@ import (
 	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
-// buildEntities — N сущностей по C компонентов и V значений (байты 8).
+// buildEntities — N entities with C components and V values each (8 bytes).
 func buildEntities(n, comps, vals int) state.EntitiesState {
 	entities := state.NewMapState[state.EntityID, state.EntityState]()
 	for i := 1; i <= n; i++ {
@@ -38,8 +40,8 @@ func buildEntities(n, comps, vals int) state.EntitiesState {
 	return entities
 }
 
-// seedEntities — гоняет FullEntities от master'а через policy, чтобы
-// p.state.Entities наполнился как в проде.
+// seedEntities — pushes FullEntities from the master through the policy so
+// that p.state.Entities fills up as in production.
 func seedEntities(b *testing.B, h *benchHarness, entities state.EntitiesState) {
 	b.Helper()
 	payload, err := h.entitiesCodec.Encode(entities)
@@ -54,8 +56,8 @@ func seedEntities(b *testing.B, h *benchHarness, entities state.EntitiesState) {
 	}
 }
 
-// seedInput — кладёт Inputs[peerID] с ключом 1 через FullInput, чтобы
-// Updated-патчи дальше шли по валидному пути.
+// seedInput — puts Inputs[peerID] with key 1 via FullInput so that
+// subsequent Updated patches take the valid path.
 func seedInput(b *testing.B, h *benchHarness, peerID domain.PeerID) {
 	b.Helper()
 	full := &state.InputState{Values: state.MapState[state.ValueId, state.ValueState]{
@@ -101,9 +103,9 @@ func entitiesUpdatePayload(b *testing.B, h *benchHarness, b0 byte) []byte {
 	return payload
 }
 
-// BenchmarkScaling_PatchInputVsEntities — PatchInput от клиента при
-// N сущностях в state: per-message путь платит 2×Clone + полный diff
-// по ВСЕМ entities, хотя меняется один input.
+// BenchmarkScaling_PatchInputVsEntities — PatchInput from a client with
+// N entities in the state: the per-message path pays 2×Clone + a full diff
+// over ALL entities even though only one input changes.
 func BenchmarkScaling_PatchInputVsEntities(b *testing.B) {
 	for _, entCount := range []int{0, 50, 200, 500} {
 		b.Run(fmt.Sprintf("entities=%d", entCount), func(b *testing.B) {
@@ -136,10 +138,10 @@ func BenchmarkScaling_PatchInputVsEntities(b *testing.B) {
 	}
 }
 
-// BenchmarkScaling_PatchEntitiesVsEntities — PatchEntities от master'а
-// (одна entity-патчем) при N сущностях: тройной clone горячего пути.
+// BenchmarkScaling_PatchEntitiesVsEntities — PatchEntities from the master
+// (one entity per patch) with N entities: triple clone on the hot path.
 func BenchmarkScaling_PatchEntitiesVsEntities(b *testing.B) {
-	// 0 пропускаем: Updated-патч требует существующую сущность.
+	// Skip 0: an Updated patch requires an existing entity.
 	for _, entCount := range []int{50, 200, 500} {
 		b.Run(fmt.Sprintf("entities=%d", entCount), func(b *testing.B) {
 			h := newBenchHarness(b, domain.RoomID(101), 16)
@@ -170,7 +172,7 @@ func BenchmarkScaling_PatchEntitiesVsEntities(b *testing.B) {
 	}
 }
 
-// BenchmarkScaling_RoomStateClone — чистая стоимость Clone() по размеру state.
+// BenchmarkScaling_RoomStateClone — the pure cost of Clone() vs state size.
 func BenchmarkScaling_RoomStateClone(b *testing.B) {
 	for _, entCount := range []int{0, 50, 200, 500} {
 		b.Run(fmt.Sprintf("entities=%d", entCount), func(b *testing.B) {
@@ -191,8 +193,8 @@ func BenchmarkScaling_RoomStateClone(b *testing.B) {
 	}
 }
 
-// BenchmarkScaling_RoomStateMakePatch — MakePatch(state, clone) без
-// изменений: нижняя граница стоимости полного diff-sweep'а.
+// BenchmarkScaling_RoomStateMakePatch — MakePatch(state, clone) with no
+// changes: the lower bound of a full diff sweep.
 func BenchmarkScaling_RoomStateMakePatch(b *testing.B) {
 	for _, entCount := range []int{0, 50, 200, 500} {
 		b.Run(fmt.Sprintf("entities=%d", entCount), func(b *testing.B) {

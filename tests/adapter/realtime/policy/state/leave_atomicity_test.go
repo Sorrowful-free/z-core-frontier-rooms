@@ -18,12 +18,12 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-// Откат OnLeave (P34): staged-мутации нет — записи удаляются из p.state
-// напрямую, а при падении dispatch (election внутри evPeerLeft) Peers и
-// input уходящего восстанавливаются дешёвым ручным restore + master.restore.
-// С реальной Room dispatch не падает (GetPeer отвечает только
-// ErrPeerNotFound → stale-кандидат пропускается, не фейлит выборы) —
-// сценарий строится на mock room.
+// OnLeave rollback (P34): there is no staged mutation — entries are
+// removed from p.state directly, and on a dispatch failure (election inside
+// evPeerLeft) the leaving peer's Peers and input are restored via a cheap
+// manual restore + master.restore. With a real Room dispatch cannot fail
+// (GetPeer only answers ErrPeerNotFound → a stale candidate is skipped, it
+// does not fail the election) — the scenario is built on a mock room.
 func TestOnLeave_FailedElection_StateAndMasterRestored(t *testing.T) {
 	t.Parallel()
 
@@ -41,8 +41,8 @@ func TestOnLeave_FailedElection_StateAndMasterRestored(t *testing.T) {
 	master := testpeer.New(1, "master")
 	member := testpeer.New(2, "member")
 	room.EXPECT().GetPeer(master.GetID()).Return(master, nil).AnyTimes()
-	// Первый вызов GetPeer(member) — election внутри evPeerLeft — падает,
-	// дальше member снова доступен.
+	// The first GetPeer(member) call — the election inside evPeerLeft —
+	// fails; afterwards member is reachable again.
 	memberCalls := 0
 	room.EXPECT().GetPeer(member.GetID()).DoAndReturn(func(domain.PeerID) (portrealtime.Peer, error) {
 		memberCalls++
@@ -71,8 +71,8 @@ func TestOnLeave_FailedElection_StateAndMasterRestored(t *testing.T) {
 		t.Fatalf("OnJoin member: %v", err)
 	}
 
-	// Input master'а — проверка, что запись Inputs уходящего тоже
-	// восстанавливается при откате.
+	// The master's input — checks that the leaving peer's Inputs entry is
+	// also restored on rollback.
 	inputPatch := &state.InputStatePatch{
 		Values: *state.NewMapStatePatch[state.ValueId, state.ValueState, state.ValueState](),
 	}
@@ -93,7 +93,7 @@ func TestOnLeave_FailedElection_StateAndMasterRestored(t *testing.T) {
 		t.Fatalf("OnLeave err = %v, want errElectionFailed", err)
 	}
 
-	// Откат: state.Peers и Inputs как до leave, master не сменился.
+	// Rollback: state.Peers and Inputs as before the leave, master unchanged.
 	if err := policy.OnTickFullState(); err != nil {
 		t.Fatalf("OnTickFullState: %v", err)
 	}
@@ -174,8 +174,8 @@ func TestOnMessage_InputFromUnknownPeer_ReturnsErrPeerNotFound(t *testing.T) {
 	assertStrongInvariants(t, shadow.view, h.room)
 }
 
-// (shadow-наблюдатель не подключается: capacity=1 занят конкурентным join'ом,
-// наблюдателю нет слота.)
+// (the shadow observer is not attached: capacity=1 is taken by the
+// concurrent join, there is no slot for the observer.)
 func TestJoin_ConcurrentLastSlot_LoserRolledBackFromState(t *testing.T) {
 	t.Parallel()
 

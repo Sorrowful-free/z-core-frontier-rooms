@@ -49,9 +49,9 @@ func TestDelete_Success(t *testing.T) {
 	}
 }
 
-// P31: DELETE идёт тем же closeRoom-путём, что и policy-death — каждый
-// kicked peer получает OpRoomClosed (0x82) до disconnect, Stop'ы
-// параллельные, серийного LeaveRoom-цикла больше нет.
+// P31: DELETE goes through the same closeRoom path as policy-death — every
+// kicked peer gets OpRoomClosed (0x82) before disconnect, Stops are
+// parallel, the serial LeaveRoom loop is gone.
 func TestDelete_DeliversRoomClosedBeforeStop(t *testing.T) {
 	t.Parallel()
 
@@ -86,8 +86,8 @@ func TestDelete_DeliversRoomClosedBeforeStop(t *testing.T) {
 			}
 			return nil
 		})
-		// Stop'ы параллельны (P30 drain-aware) — порядок между peer'ами
-		// не фиксируем.
+		// Stops are parallel (P30 drain-aware) — the order between peers
+		// is not fixed.
 		peer.EXPECT().Stop().Return(nil)
 	}
 	registry.EXPECT().DeleteRoom(gomock.Any(), roomID).Return(nil)
@@ -121,11 +121,11 @@ func TestDelete_NotFound(t *testing.T) {
 	}
 }
 
-// P31: ErrRoomNotFound из DeleteRoom tolerated — гонка с параллельной
-// смертью комнаты (closeRoom, empty-death, другой DELETE); цель достигнута,
-// ответ не должен быть ошибкой. Фиксит латентный post-P29 баг: на
-// no-migration комнате серийный kick триггерил closeRoom и сам
-// DeleteRoom сыпал ErrRoomNotFound в HTTP-ответ.
+// P31: ErrRoomNotFound from DeleteRoom is tolerated — a race with a parallel
+// room death (closeRoom, empty-death, another DELETE); the goal is achieved,
+// the response must not be an error. Fixes a latent post-P29 bug: on a
+// no-migration room the serial kick triggered closeRoom and DeleteRoom itself
+// leaked ErrRoomNotFound into the HTTP response.
 func TestDelete_RoomGoneBeforeDelete_Tolerated(t *testing.T) {
 	t.Parallel()
 
@@ -171,9 +171,9 @@ func TestDelete_UnregisterAfterRegistrySuccess(t *testing.T) {
 
 	const roomID = domain.RoomID(5)
 	reservation.EXPECT().VerifyRoomPassword(gomock.Any(), roomID, "").Return(nil)
-	// Комната удалена из registry, но UnregisterRoom упал — контракт
-	// «комната удалена» выполнен: повторный GetRoom подтверждает
-	// отсутствие → Warn + nil, teardown-ошибки не превращаются в 5xx.
+	// The room is deleted from the registry, but UnregisterRoom failed — the
+	// "room deleted" contract is fulfilled: a repeated GetRoom confirms the
+	// absence → Warn + nil, teardown errors don't turn into 5xx.
 	gomock.InOrder(
 		registry.EXPECT().GetRoom(gomock.Any(), roomID).Return(room, nil),
 		registry.EXPECT().DeleteRoom(gomock.Any(), roomID).Return(nil),

@@ -69,8 +69,8 @@ func (r *RoomRegistry) CreateRoom(ctx context.Context, id domain.RoomID, capacit
 		return nil, fmt.Errorf("%w: %d", domain.ErrRoomAlreadyExists, id)
 	}
 	r.rooms[id] = room
-	// Gauge пересчитывается по map, а не инкрементами - самолечится
-	// от любых рассинхронов счётчиков.
+	// The gauge is recomputed from the map rather than incremented — it
+	// self-heals from any counter drift.
 	r.metrics.SetActiveRooms(len(r.rooms))
 	r.mutex.Unlock()
 

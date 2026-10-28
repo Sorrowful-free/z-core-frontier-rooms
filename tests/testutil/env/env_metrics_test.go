@@ -11,9 +11,9 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/prom"
 )
 
-// P19b пункт 12: env.WithMetrics - реальный prometheus-адаптер во всех
-// метрико-ёмких компонентах + admin app с GET /metrics на том же
-// fiber.Test-клиенте; e2e smoke exposition + сигнал HTTP middleware.
+// P19b item 12: env.WithMetrics - a real prometheus adapter in all
+// metrics-bearing components + an admin app with GET /metrics on the same
+// fiber.Test client; e2e smoke of exposition + the HTTP middleware signal.
 func TestEnvWithMetrics_AdminMetricsEndpoint(t *testing.T) {
 	t.Parallel()
 
@@ -25,8 +25,8 @@ func TestEnvWithMetrics_AdminMetricsEndpoint(t *testing.T) {
 		t.Fatal("WithMetrics: Env.Admin not wired")
 	}
 
-	// Запрос к публичному app: metrics middleware обязан наблюдать его
-	// по route-шаблону, а не raw path.
+	// Request to the public app: the metrics middleware must observe it
+	// by route template, not by raw path.
 	resp, _ := e.Do(t, http.MethodGet, "/rooms", nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /rooms status = %d, want 200", resp.StatusCode)
@@ -54,7 +54,7 @@ func TestEnvWithMetrics_AdminMetricsEndpoint(t *testing.T) {
 	}
 }
 
-// Без WithMetrics поведение env не меняется: поля телеметрии пусты.
+// Without WithMetrics the env behavior is unchanged: telemetry fields are empty.
 func TestEnvWithoutMetrics_NoTelemetry(t *testing.T) {
 	t.Parallel()
 

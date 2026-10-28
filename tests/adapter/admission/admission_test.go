@@ -42,7 +42,7 @@ func TestIssueValidateRoundTrip(t *testing.T) {
 	}
 }
 
-// P18: hostID в join-ticket'е - roundtrip; HostIDUnbound - без привязки.
+// P18: hostID in the join ticket — roundtrip; HostIDUnbound — no binding.
 func TestIssueValidateHostID(t *testing.T) {
 	t.Parallel()
 
@@ -131,7 +131,7 @@ func TestIssueInvalidCredentials(t *testing.T) {
 	}
 }
 
-// P20: reconnect-токен (kind=2) — roundtrip, Kind=reconnect, без expiry и nick.
+// P20: reconnect token (kind=2) — roundtrip, Kind=reconnect, no expiry or nick.
 func TestIssueReconnectValidateRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -164,7 +164,7 @@ func TestIssueReconnectValidateRoundTrip(t *testing.T) {
 	}
 }
 
-// P20: join-ticket помечается Kind=join — фасад разводит потоки по Kind.
+// P20: join ticket is marked Kind=join — the facade splits flows by Kind.
 func TestIssueJoinClaimsKind(t *testing.T) {
 	t.Parallel()
 
@@ -184,7 +184,7 @@ func TestIssueJoinClaimsKind(t *testing.T) {
 	}
 }
 
-// P20: reconnect-токен не несёт expiry — живёт, пока жив peerID (grace серверное).
+// P20: reconnect token carries no expiry — lives as long as peerID lives (server-side grace).
 func TestReconnectTokenNoExpiry(t *testing.T) {
 	t.Parallel()
 
@@ -222,11 +222,11 @@ func TestValidateReconnectTampered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("IssueReconnect: %v", err)
 	}
-	// Чужой секрет → ErrInvalidToken.
+	// Foreign secret → ErrInvalidToken.
 	if _, err := other.Validate(ctx, token); !errors.Is(err, domain.ErrInvalidToken) {
 		t.Fatalf("foreign secret err = %v, want ErrInvalidToken", err)
 	}
-	// Укороченный/битый токен → ErrInvalidToken.
+	// Truncated/corrupted token → ErrInvalidToken.
 	if _, err := a.Validate(ctx, token[:40]); !errors.Is(err, domain.ErrInvalidToken) {
 		t.Fatalf("truncated err = %v, want ErrInvalidToken", err)
 	}

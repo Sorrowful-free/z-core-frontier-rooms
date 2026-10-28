@@ -13,21 +13,22 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
 )
 
-// enetHost - один ENet host (shard) процесса: свой UDP-порт и свой HostLoop.
-// id = индекс+1 в cfg.ListenPorts (domain.HostID, уходит в claims ticket'а).
-// peers - счётчик живых сессий на host'е для least-loaded балансировки
-// (инкремент на EventConnect, декремент при закрытии сессии).
+// enetHost - one ENet host (shard) of the process: its own UDP port and its
+// own HostLoop. id = index+1 into cfg.ListenPorts (domain.HostID, goes into
+// the ticket claims). peers - count of live sessions on the host for
+// least-loaded balancing (increment on EventConnect, decrement on session
+// close).
 type enetHost struct {
 	id    domain.HostID
 	port  uint16
 	peers atomic.Int64
 }
 
-// RoomsHandler - inbound ENet: mux над N host'ами (по одному HostLoop на порт
-// из cfg.ListenPorts, P18), ticket в первом пакете, AdmitPeer /
-// DisconnectPeer use cases. Strict binding: admit-фасад проверяет
-// claims.HostID против host'а, принявшего соединение.
-// Реализует port/transport/enet.HostRegistry для балансировки issue ticket'ов.
+// RoomsHandler - inbound ENet: mux over N hosts (one HostLoop per port from
+// cfg.ListenPorts, P18), ticket in the first packet, AdmitPeer /
+// DisconnectPeer use cases. Strict binding: the admit facade checks
+// claims.HostID against the host that accepted the connection.
+// Implements port/transport/enet.HostRegistry for issue-ticket balancing.
 type RoomsHandler struct {
 	ctx                   context.Context
 	admitPeerUseCase      *room.AdmitPeerUseCase
@@ -57,10 +58,10 @@ func NewRoomsHandler(ctx context.Context, admitPeerUseCase *room.AdmitPeerUseCas
 	}
 }
 
-// AssignHost реализует port/transport/enet.HostRegistry: least-loaded по
-// живым peer'ам host'а, round-robin сдвиг стартовой позиции при равенстве
-// (последовательные ticket'ы на пустых host'ах размазываются равномерно).
-// Пустой список host'ов - ticket без привязки (zero HostAssignment).
+// AssignHost implements port/transport/enet.HostRegistry: least-loaded by
+// live peers on the host, round-robin shift of the start position on ties
+// (consecutive tickets on empty hosts are spread evenly).
+// Empty host list - ticket without binding (zero HostAssignment).
 func (h *RoomsHandler) AssignHost(ctx context.Context) (enet.HostAssignment, error) {
 	if err := ctx.Err(); err != nil {
 		return enet.HostAssignment{}, err
@@ -82,43 +83,43 @@ func (h *RoomsHandler) AssignHost(ctx context.Context) (enet.HostAssignment, err
 
 var _ enet.HostRegistry = (*RoomsHandler)(nil)
 
-// ListenHandle — lifecycle запущенного ENet listener'а.
-// Done закрывается когда ВСЕ host-loop'ы вышли; после этого Err() отдаёт
-// первую терминальную ошибку run: ошибка bind/host - для fail-fast на старте;
-// context.Canceled - штатная остановка; nil - listener отключён (stub build
-// без enet+cgo). Stop отменяет все host-loop'ы и ждёт их реального завершения
-// (закрытие сессий + drain на каждом).
+// ListenHandle — lifecycle of a running ENet listener.
+// Done is closed once ALL host loops have exited; after that Err() returns
+// the first terminal run error: a bind/host error - for fail-fast at startup;
+// context.Canceled - a normal stop; nil - listener disabled (stub build
+// without enet+cgo). Stop cancels all host loops and waits for their real
+// completion (session close + drain on each).
 type ListenHandle struct {
 	done   chan struct{}
 	cancel context.CancelFunc
 	err    error
 }
 
-// Done - канал, закрывающийся при выходе всех host loop'ов.
+// Done - channel closed when all host loops have exited.
 func (h *ListenHandle) Done() <-chan struct{} {
 	return h.done
 }
 
-// Err — терминальный результат run; валиден только после Done.
+// Err — terminal result of the run; valid only after Done.
 func (h *ListenHandle) Err() error {
 	return h.err
 }
 
-// Stop отменяет все host loop'ы и блокируется до их выхода. Teardown каждого
-// идёт через HostLoop.Stop внутри run: сессии закрываются, graceful
-// disconnect'ы флешатся service-итерациями, очередь команд доразбирается,
-// host.Destroy.
+// Stop cancels all host loops and blocks until they exit. Teardown of each
+// goes through HostLoop.Stop inside run: sessions are closed, graceful
+// disconnects are flushed by service iterations, the command queue is
+// drained, host.Destroy.
 func (h *ListenHandle) Stop() {
 	h.cancel()
 	<-h.done
 }
 
-// Listen запускает по run-горутине на каждый host (порт из cfg.ListenPorts) и
-// возвращает handle для наблюдения за стартом (bind failure) и остановки.
-// Первый упавший run отменяет общий ctx - fail-fast: частично поднятый mux
-// считается failure (Err() = первая ошибка, выход остальных - context.Canceled
-// и её не перезаписывает). Без тега enet+cgo каждый run - stub: warn + чистый
-// выход (Err() == nil).
+// Listen starts one run goroutine per host (port from cfg.ListenPorts) and
+// returns a handle for observing startup (bind failure) and shutdown.
+// The first failed run cancels the shared ctx - fail-fast: a partially
+// started mux counts as a failure (Err() = the first error; the other exits
+// are context.Canceled and do not overwrite it). Without the enet+cgo tag
+// each run is a stub: warn + clean exit (Err() == nil).
 func (h *RoomsHandler) Listen() *ListenHandle {
 	ctx, cancel := context.WithCancel(h.ctx)
 	handle := &ListenHandle{done: make(chan struct{}), cancel: cancel}
@@ -128,8 +129,8 @@ func (h *RoomsHandler) Listen() *ListenHandle {
 		wg.Add(1)
 		go func(host *enetHost) {
 			defer wg.Done()
-			// Ошибку не логируем здесь: терминальный результат читается через
-			// ListenHandle.Err() и логируется в main.go с контекстом процесса.
+			// The error is not logged here: the terminal result is read via
+			// ListenHandle.Err() and logged in main.go with process context.
 			if err := h.run(ctx, host); err != nil {
 				errOnce.Do(func() { handle.err = err })
 				cancel()

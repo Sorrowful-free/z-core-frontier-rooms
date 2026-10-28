@@ -15,7 +15,7 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/env"
 )
 
-// listRoomIDs возвращает множество roomID из GET /rooms.
+// listRoomIDs returns the set of roomIDs from GET /rooms.
 func listRoomIDs(t *testing.T, e *env.Env) map[int64]bool {
 	t.Helper()
 	resp, body := e.Do(t, http.MethodGet, "/rooms", nil)
@@ -37,10 +37,10 @@ func listRoomIDs(t *testing.T, e *env.Env) map[int64]bool {
 	return ids
 }
 
-// P31 emptied-death: disconnect последнего peer'а оставляет комнату живой
-// в grace (слот admitted держит её — resume возможен); когда orphan sweep
-// отзывает последний grace-слот, комната умирает — исчезает из registry
-// и из GET /rooms.
+// P31 emptied-death: disconnecting the last peer leaves the room alive
+// in grace (the admitted slot keeps it — resume is possible); when the orphan
+// sweep revokes the last grace slot, the room dies — it disappears from the
+// registry and from GET /rooms.
 func TestIntegration_EmptyRoom_LastGraceSlotRevoked_KillsRoom(t *testing.T) {
 	t.Parallel()
 
@@ -56,7 +56,7 @@ func TestIntegration_EmptyRoom_LastGraceSlotRevoked_KillsRoom(t *testing.T) {
 	}
 	e.WaitPeerCount(t, roomID, 0)
 
-	// Grace ещё держит комнату: слот admitted, peers нет — не «пустая».
+	// Grace still holds the room: the slot is admitted, no peers — not "empty".
 	if _, err := e.Registry.GetRoom(ctx, roomID); err != nil {
 		t.Fatalf("room must survive disconnect within grace: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestIntegration_EmptyRoom_LastGraceSlotRevoked_KillsRoom(t *testing.T) {
 		t.Fatalf("admitted slots after disconnect = %v, %v; want 1 grace slot", slots, err)
 	}
 
-	// TTL=0: graceExpired истинно сразу — sweep ревокает последний слот.
+	// TTL=0: graceExpired is true at once — the sweep revokes the last slot.
 	sweep := useroom.NewSweepOrphanAdmittedUseCase(e.Registry, e.Reservation, 0, stdlib.New("test"), nil)
 	revoked, err := sweep.RunOnce(ctx)
 	if err != nil {
@@ -86,9 +86,9 @@ func TestIntegration_EmptyRoom_LastGraceSlotRevoked_KillsRoom(t *testing.T) {
 	}
 }
 
-// P31: disconnect последнего peer'а в пределах TTL НЕ убивает комнату —
-// resume reconnect-токеном работает (регрессия: убить по голому peers==0
-// значило бы сломать P20-resume — возвращаться было бы некуда).
+// P31: disconnecting the last peer within the TTL does NOT kill the room —
+// resume via the reconnect token works (regression: killing on bare peers==0
+// would break P20 resume — there would be nothing to return to).
 func TestIntegration_EmptyRoom_LastPeerResumeWithinTTL(t *testing.T) {
 	t.Parallel()
 
@@ -105,12 +105,12 @@ func TestIntegration_EmptyRoom_LastPeerResumeWithinTTL(t *testing.T) {
 	}
 	e.WaitPeerCount(t, roomID, 0)
 
-	// Комната жива: grace-слот admitted держит её.
+	// The room is alive: the admitted grace slot holds it.
 	if _, err := e.Registry.GetRoom(ctx, roomID); err != nil {
 		t.Fatalf("room must survive last-peer disconnect within TTL: %v", err)
 	}
 
-	// Resume под тем же peerID — комната принимает reconnect.
+	// Resume under the same peerID — the room accepts the reconnect.
 	resumed := e.DialWS(t, "token="+reconnectToken)
 	defer resumed.Close()
 	e.WaitPeerCount(t, roomID, 1)
@@ -119,9 +119,9 @@ func TestIntegration_EmptyRoom_LastPeerResumeWithinTTL(t *testing.T) {
 	}
 }
 
-// P31 never-joined: комната создана, но никто не вошёл. Живой reserve
-// держит её; когда слота нет (ticket истёк — здесь моделируется явным
-// Revoke, тот же конечный state), sweep пустых комнат убивает её.
+// P31 never-joined: the room was created, but nobody entered. A live reserve
+// holds it; once the slot is gone (the ticket expired — modeled here by an
+// explicit Revoke, same end state), the empty-room sweep kills it.
 func TestIntegration_EmptyRoom_NeverJoined_SweptAfterReserveGone(t *testing.T) {
 	t.Parallel()
 
@@ -129,11 +129,11 @@ func TestIntegration_EmptyRoom_NeverJoined_SweptAfterReserveGone(t *testing.T) {
 	ctx := context.Background()
 
 	roomID, _ := e.CreateRoom(t, "host")
-	// Join не выполняется — комната never-joined.
+	// Join is not performed — the room is never-joined.
 
 	sweep := useroom.NewSweepEmptyRoomsUseCase(e.Registry, e.Reservation, stdlib.New("test"), nil)
 
-	// Живой reserve (unexpired ticket TTL) блокирует kill.
+	// A live reserve (unexpired ticket TTL) blocks the kill.
 	killed, err := sweep.RunOnce(ctx)
 	if err != nil {
 		t.Fatalf("empty sweep RunOnce: %v", err)
@@ -145,8 +145,8 @@ func TestIntegration_EmptyRoom_NeverJoined_SweptAfterReserveGone(t *testing.T) {
 		t.Fatalf("room must survive while reserve slot is live: %v", err)
 	}
 
-	// Отзываем reserve-слот — тот же конечный state, что у истёкшего
-	// ticket'а (sweepExpiredLocked вычистил бы его при следующем Reserve).
+	// Revoke the reserve slot — the same end state as an expired ticket
+	// (sweepExpiredLocked would have reaped it on the next Reserve).
 	slots, err := e.Reservation.ListRoomSlots(ctx, roomID)
 	if err != nil || len(slots) != 1 {
 		t.Fatalf("ListRoomSlots = %v, %v; want 1 reserve slot", slots, err)
@@ -173,9 +173,9 @@ func TestIntegration_EmptyRoom_NeverJoined_SweptAfterReserveGone(t *testing.T) {
 	}
 }
 
-// P31: DELETE /rooms/:id — тот же closeRoom-путь, что и policy-death:
-// kicked peers получают 0x82 OpRoomClosed до disconnect, комната
-// unregister'ится из registry и reservation.
+// P31: DELETE /rooms/:id — the same closeRoom path as policy-death:
+// kicked peers get 0x82 OpRoomClosed before disconnect, the room is
+// unregistered from the registry and reservation.
 func TestIntegration_Delete_PeerGetsRoomClosed(t *testing.T) {
 	t.Parallel()
 

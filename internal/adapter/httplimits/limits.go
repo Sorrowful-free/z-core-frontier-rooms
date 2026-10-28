@@ -14,7 +14,7 @@ type limits struct {
 	rate *rateLimiter
 }
 
-// New собирает Limits из конфигурации (rate + max rooms).
+// New builds Limits from configuration (rate + max rooms).
 func New(cfg HTTPLimitsConfig) (porthttplimits.Limits, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err

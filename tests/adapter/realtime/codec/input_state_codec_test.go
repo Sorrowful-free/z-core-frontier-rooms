@@ -83,7 +83,7 @@ func TestInputStateCodec_decode_truncatedValueBytes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encode: %v", err)
 	}
-	// длина value = 2, а байт остался один: раньше buf.Read тихо возвращал короче
+	// value length = 2 but only one byte left: buf.Read used to silently return short
 	if _, err := c.Decode(data[:len(data)-1]); err == nil {
 		t.Fatal("expected error on truncated value bytes")
 	}

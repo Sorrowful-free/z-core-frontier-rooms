@@ -16,11 +16,12 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-// P34: prune-половина бывшего refreshPeerPings живёт на patch-тике
-// (pruneStalePeers): записи peers, которых уже нет в room (GetPeer →
-// ErrPeerNotFound), вычищаются за один тик, master переизбирается.
-// С реальной Room stale-запись не получить (leave вычищает state
-// атомарно с изъятием из r.peers) — фикстура на mock room.
+// P34: the prune half of the former refreshPeerPings lives on the patch
+// tick (pruneStalePeers): peer entries that are no longer in the room
+// (GetPeer → ErrPeerNotFound) are cleaned in a single tick, the master is
+// re-elected. A stale entry cannot be produced with a real Room (leave
+// cleans the state atomically with the removal from r.peers) — fixture on
+// a mock room.
 func TestOnTickPatchState_PrunesAllStalePeersAndReelectsMaster(t *testing.T) {
 	t.Parallel()
 
@@ -38,8 +39,8 @@ func TestOnTickPatchState_PrunesAllStalePeersAndReelectsMaster(t *testing.T) {
 	master := testpeer.New(1, "master")
 	member := testpeer.New(2, "member")
 	survivor := testpeer.New(3, "survivor")
-	// master и member выпали из room — записи в state остались (stale);
-	// survivor жив — ему достаётся переизбрание.
+	// master and member fell out of the room — their state entries remain
+	// (stale); survivor is alive — it gets the re-election.
 	room.EXPECT().GetPeer(master.GetID()).
 		Return(nil, fmt.Errorf("%w: %d", domain.ErrPeerNotFound, master.GetID())).AnyTimes()
 	room.EXPECT().GetPeer(member.GetID()).
@@ -73,8 +74,9 @@ func TestOnTickPatchState_PrunesAllStalePeersAndReelectsMaster(t *testing.T) {
 		t.Fatalf("OnTickPatchState: %v", err)
 	}
 
-	// Один тик: stale {1,2} вычищены из state, survivor избран — на wire
-	// это Added с is_master (prevState ещё не видел ни одной записи).
+	// One tick: stale {1,2} are cleaned from the state, survivor is
+	// elected — on the wire this is Added with is_master (prevState has
+	// not seen any entries yet).
 	patches := testpeer.FilterByOpcode(sent, state.OpCodePatchState)
 	if len(patches) != 1 {
 		t.Fatalf("patches = %d, want 1", len(patches))
@@ -111,8 +113,9 @@ func TestOnTickPatchState_PrunesAllStalePeersAndReelectsMaster(t *testing.T) {
 	}
 }
 
-// P34-сплит: ping перечитывается только на full-тике и едет в full-кадре.
-// Patch-тик ping в state не пишет — patch-diff его не видит и не несёт.
+// P34 split: the ping is re-read only on the full tick and rides in the
+// full frame. The patch tick does not write the ping into the state — the
+// patch diff neither sees nor carries it.
 func TestPeerPings_RefreshedOnFullTickOnly(t *testing.T) {
 	t.Parallel()
 

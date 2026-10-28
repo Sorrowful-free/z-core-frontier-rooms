@@ -18,19 +18,19 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/env"
 )
 
-// Общий клиентский слой e2e «живого матча» (планы docs/plans/P11-e2e-match.md,
-// P12-e2e-enet-mixed.md): транспорт-агностичная часть клиента + сценарный
-// драйвер. Реализации транспорта: wsClient (match_e2e_test.go) и enetClient
-// (match_e2e_enet_test.go, tag enet && cgo).
+// Shared client layer of the "live match" e2e (plans docs/plans/P11-e2e-match.md,
+// P12-e2e-enet-mixed.md): the transport-agnostic part of the client + the
+// scenario driver. Transport implementations: wsClient (match_e2e_test.go) and
+// enetClient (match_e2e_enet_test.go, tag enet && cgo).
 //
-// Сценарий один, параметр — набор клиентов и тайминги:
+// One scenario, parameterized by the set of clients and the timings:
 //
-//	join → все шлют PatchInput ~20 Гц, текущий master — PatchEntities →
-//	host замолкает (dropout) → сервер эвиктит его → миграция мастера →
-//	второй мастер уходит чисто → миграция №2 → финал: ≥2 живых.
+//	join → everyone sends PatchInput at ~20Hz, the current master — PatchEntities →
+//	the host goes silent (dropout) → the server evicts it → master migration →
+//	the second master leaves cleanly → migration #2 → final: ≥2 alive.
 //
-// Ассерты едут по наблюдениям wire-кадров клиентов (masterSeq из is_master,
-// entity Owner, Inputs), а не по внутренностям сервера.
+// Asserts run on wire-frame observations of the clients (masterSeq from
+// is_master, entity Owner, Inputs), not on server internals.
 
 const (
 	clientSendInterval = 50 * time.Millisecond
@@ -41,17 +41,17 @@ const (
 	entityTypeProbe = state.EntityTypeID(1)
 )
 
-// matchClient — то, что сценарный драйвер требует от клиента любого транспорта.
-// goSilent/leaveClean/stop — транспорт-специфичные способы дропа и ухода.
+// matchClient — what the scenario driver requires from a client of any transport.
+// goSilent/leaveClean/stop — transport-specific ways of dropping and leaving.
 type matchClient interface {
 	nickName() string
 	peer() domain.PeerID
-	master() bool // сервер держит за нами is_master
-	dead() bool   // транспорт/чтение мертвы (silent, disconnect, write fail)
+	master() bool // the server holds is_master for us
+	dead() bool   // transport/reads are dead (silent, disconnect, write fail)
 	sendDisabled() bool
-	goSilent()   // dropout: перестаём читать/слать, транспорт формально жив
-	leaveClean() // плановый уход: сервер получает disconnect → LeaveRoom
-	stop()       // финальный teardown (идемпотентно после silent/leftClean)
+	goSilent()   // dropout: stop reading/sending, transport is formally alive
+	leaveClean() // scheduled leave: the server gets a disconnect → LeaveRoom
+	stop()       // final teardown (idempotent after silent/leftClean)
 
 	mastersSeen() []domain.PeerID
 	entityOwnersSeen() map[domain.PeerID]bool
@@ -60,11 +60,11 @@ type matchClient interface {
 	lastFrame() time.Time
 }
 
-// matchClientBase — transport-агностичная часть клиента: кодеки, shadow
-// RoomState, наблюдения (masterSeq/entityOwners/inputNicks), stats-loop и
-// send-loop. Конкретный клиент встраивает базу и реализует pump + writeFrame +
-// способы ухода. Транспорт обязан закрыть pumpDone при выходе из pump'а —
-// statsLoop завершится следом.
+// matchClientBase — the transport-agnostic part of the client: codecs, shadow
+// RoomState, observations (masterSeq/entityOwners/inputNicks), the stats loop
+// and the send loop. A concrete client embeds the base and implements pump +
+// writeFrame + the leave paths. The transport must close pumpDone when the
+// pump exits — statsLoop finishes right after.
 type matchClientBase struct {
 	t    *testing.T
 	nick string
@@ -72,27 +72,27 @@ type matchClientBase struct {
 	roomCodec     *codec.RoomStateCodec
 	entitiesCodec *codec.EntitiesStateCodec
 	inputCodec    *codec.InputStateCodec
-	rnd           *rand.Rand // случайный input-пейлоад, seed по нику — воспроизводимо
+	rnd           *rand.Rand // random input payload, seeded by nick — reproducible
 
 	peerID    atomic.Uint32
 	isMaster  atomic.Bool
-	silent    atomic.Bool // dropout: не читаем и не шлём, транспорт жив
-	connDead  atomic.Bool // pump увидел ошибку/закрытие соединения
-	leftClean atomic.Bool // запланированный уход/stop — разрыв ожидаем
+	silent    atomic.Bool // dropout: we don't read or send, transport is alive
+	connDead  atomic.Bool // pump saw a connection error/close
+	leftClean atomic.Bool // scheduled leave/stop — the drop is expected
 
-	quit     chan struct{} // закрытие останавливает send-loop
+	quit     chan struct{} // closing stops the send loop
 	quitOnce sync.Once
 	pumpDone chan struct{}
 	sendDone chan struct{}
 
 	mu           sync.Mutex
-	room         *state.RoomState         // локальная реплика (nil до первого full)
-	masterSeq    []domain.PeerID          // последовательность держателей is_master
-	peerNicks    map[domain.PeerID]string // nick lookup, сохраняется после leave
-	inputNicks   map[string]bool          // чей input встречался в state (payload-проверка)
-	ownInputSeen bool                     // свой input вернулся через broadcast
-	entityOwners map[domain.PeerID]bool   // distinct Owner в entities (мастера-отправители)
-	entityPos    map[domain.PeerID]string // Owner → последняя позиция (для лога первого кадра)
+	room         *state.RoomState         // local replica (nil until the first full)
+	masterSeq    []domain.PeerID          // sequence of is_master holders
+	peerNicks    map[domain.PeerID]string // nick lookup, kept after leave
+	inputNicks   map[string]bool          // whose input was seen in state (payload check)
+	ownInputSeen bool                     // own input came back via broadcast
+	entityOwners map[domain.PeerID]bool   // distinct Owner in entities (sender masters)
+	entityPos    map[domain.PeerID]string // Owner → latest position (for first-frame log)
 	patchCount   int
 	lastFrameAt  time.Time
 }
@@ -128,9 +128,9 @@ func (b *matchClientBase) sendDisabled() bool {
 	return b.silent.Load() || b.connDead.Load() || b.leftClean.Load()
 }
 
-// statsLoop — периодический дайджест наблюдаемого state: видно, что стейт
-// реально течёт (позиции меняются, патчи приходят), а не только «первые»
-// события. Печатается каждые 5s пока клиент жив.
+// statsLoop — a periodic digest of the observed state: shows the state is
+// actually flowing (positions change, patches arrive), not just the "first"
+// events. Printed every 5s while the client is alive.
 func (b *matchClientBase) statsLoop() {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -166,10 +166,10 @@ func (b *matchClientBase) logStats() {
 		len(b.inputNicks), b.patchCount, b.peerID.Load())
 }
 
-// --- входящие кадры ---------------------------------------------------------
+// --- incoming frames ----------------------------------------------------------
 
-// handleFrame декодирует server→client кадры (0x01/0x02 state, 0x07 rpc,
-// 0x60-0x6F in-room errors) — общий wire-протокол для WS и ENet.
+// handleFrame decodes server→client frames (0x01/0x02 state, 0x07 rpc,
+// 0x60-0x6F in-room errors) — the wire protocol shared by WS and ENet.
 func (b *matchClientBase) handleFrame(op domain.OpCode, payload []byte) {
 	switch op {
 	case state.OpCodeFullState:
@@ -190,7 +190,7 @@ func (b *matchClientBase) handleFrame(op domain.OpCode, payload []byte) {
 		b.t.Logf("[%s] rpc frame, %d bytes", b.nick, len(payload))
 	default:
 		if op >= 0x60 && op <= 0x6F {
-			// In-room ошибки (напр. OpInRoomNotMaster) — лента событий, не фейл.
+			// In-room errors (e.g. OpInRoomNotMaster) — an event feed, not a failure.
 			b.t.Logf("[%s] in-room error frame: op=0x%02x", b.nick, byte(op))
 			return
 		}
@@ -213,7 +213,7 @@ func (b *matchClientBase) applyPatch(patch *state.RoomStatePatch) {
 		return
 	}
 	if err := b.room.ApplyPatch(*patch); err != nil {
-		// full-state resync каждые 4s вылечит локальную реплику.
+		// the full-state resync every 4s will heal the local replica.
 		b.t.Logf("[%s] apply patch failed: %v", b.nick, err)
 		return
 	}
@@ -221,8 +221,9 @@ func (b *matchClientBase) applyPatch(patch *state.RoomStatePatch) {
 	b.observeLocked()
 }
 
-// observeLocked — вся state-driven логика клиента: свой peer id по nick,
-// is_master → send-loop начнёт слать entities, masterSeq, inputs, entities.
+// observeLocked — all the state-driven client logic: own peer id by nick,
+// is_master → the send loop starts streaming entities, masterSeq, inputs,
+// entities.
 func (b *matchClientBase) observeLocked() {
 	rs := b.room
 	if rs == nil {
@@ -278,7 +279,7 @@ func (b *matchClientBase) observeLocked() {
 			continue
 		}
 		nick := b.peerNicks[pid]
-		// payload проверяем по nick-префиксу — input точно этого клиента.
+		// the payload is verified by the nick prefix — the input is definitely this client's.
 		if nick != "" && strings.HasPrefix(string(v), nick+":") && !b.inputNicks[nick] {
 			b.inputNicks[nick] = true
 			b.t.Logf("[%s] observed input of %s (peer %d)", b.nick, nick, pid)
@@ -313,9 +314,9 @@ func entityPosKey(ent state.EntityState) string {
 
 // --- send loop --------------------------------------------------------------
 
-// sendLoop — общий цикл отправки; write — транспорт-специфичная запись кадра
-// (OpCode + payload). PatchInput всегда (~20 Гц), PatchEntities — пока за
-// клиентом флаг is_master.
+// sendLoop — the shared send loop; write — the transport-specific frame write
+// (OpCode + payload). PatchInput always (~20Hz), PatchEntities — while the
+// client holds the is_master flag.
 func (b *matchClientBase) sendLoop(write func(domain.OpCode, []byte) error) {
 	defer close(b.sendDone)
 	ticker := time.NewTicker(clientSendInterval)
@@ -330,16 +331,17 @@ func (b *matchClientBase) sendLoop(write func(domain.OpCode, []byte) error) {
 		case <-b.quit:
 			return
 		case <-ticker.C:
-			// peerID становится валидным только после admit + первого full
-			// state: до этого слать кадры бессмысленно (peer ещё не в комнате),
-			// а на ENet — опасно: кадры, попавшие в провод до ticket-пакета,
-			// сервер скушает как admit → invalid token → disconnect.
+			// peerID becomes valid only after admit + the first full state:
+			// sending frames before that is pointless (the peer is not in the
+			// room yet), and on ENet it is dangerous: frames that hit the wire
+			// before the ticket packet get consumed by the server as an admit →
+			// invalid token → disconnect.
 			if b.sendDisabled() || !domain.PeerID(b.peerID.Load()).IsValid() {
 				continue
 			}
 			tick++
 			b.sendInput(tick, &prevInput, write)
-			// State-driven: entities только пока сервер держит нас master'ом.
+			// State-driven: entities only while the server keeps us as master.
 			if b.isMaster.Load() {
 				b.sendEntities(tick, &prevEntities, write)
 			}
@@ -347,9 +349,10 @@ func (b *matchClientBase) sendLoop(write func(domain.OpCode, []byte) error) {
 	}
 }
 
-// sendInput — PatchInput (0x06) со случайным значением "nick:<rand>:<tick>" в
-// inputValueProbe. Patch строится MakePatch от прошлого состояния → первый кадр
-// выходит как Added, дальше Updated — серверный apply требует ровно это различие.
+// sendInput — PatchInput (0x06) with a random "nick:<rand>:<tick>" value in
+// inputValueProbe. The patch is built by MakePatch against the previous state →
+// the first frame comes out as Added, then Updated — the server-side apply
+// requires exactly this distinction.
 func (b *matchClientBase) sendInput(tick uint64, prev *state.InputState, write func(domain.OpCode, []byte) error) {
 	next := state.InputState{Values: state.MapState[state.ValueId, state.ValueState]{
 		inputValueProbe: state.ValueState(fmt.Sprintf("%s:%x:%d", b.nick, b.rnd.Uint64(), tick)),
@@ -374,8 +377,8 @@ func (b *matchClientBase) sendInput(tick uint64, prev *state.InputState, write f
 	}
 }
 
-// sendEntities — PatchEntities (0x04), entity id = свой peer id, Owner = свой
-// peer id → по Owner на wire видно, какой мастер сейчас стримит позиции.
+// sendEntities — PatchEntities (0x04), entity id = own peer id, Owner = own
+// peer id → the Owner on the wire shows which master is streaming positions.
 func (b *matchClientBase) sendEntities(tick uint64, prev *state.EntitiesState, write func(domain.OpCode, []byte) error) {
 	selfID := domain.PeerID(b.peerID.Load())
 	if !selfID.IsValid() {
@@ -420,7 +423,7 @@ func (b *matchClientBase) sendEntities(tick uint64, prev *state.EntitiesState, w
 	}
 }
 
-// --- наблюдения для ассертов (mu) ------------------------------------------
+// --- observations for asserts (mu) --------------------------------------------
 
 func (b *matchClientBase) mastersSeen() []domain.PeerID {
 	b.mu.Lock()
@@ -480,7 +483,7 @@ func sleepUntil(deadline time.Time) {
 	}
 }
 
-// currentMaster возвращает клиента, у которого сейчас is_master.
+// currentMaster returns the client that currently holds is_master.
 func currentMaster(t *testing.T, clients []matchClient) matchClient {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -497,9 +500,10 @@ func currentMaster(t *testing.T, clients []matchClient) matchClient {
 	}
 }
 
-// waitPeerCount — e.WaitPeerCount с настраиваемым deadline: дефолтный pollPeers
-// в env даёт ~1s, чего мало для ENet join/evict (handshake с retry'ями libenet
-// может занять секунды; timeout-дропа ждём отдельно в evictBound).
+// waitPeerCount — e.WaitPeerCount with a configurable deadline: the default
+// pollPeers in env gives ~1s, too little for ENet join/evict (a handshake with
+// libenet retries can take seconds; the drop timeout is awaited separately in
+// evictBound).
 func waitPeerCount(t *testing.T, e *env.Env, roomID domain.RoomID, want int, timeout time.Duration) {
 	t.Helper()
 	waitFor(t, timeout, fmt.Sprintf("peer count = %d", want), func() bool {
@@ -511,21 +515,21 @@ func waitPeerCount(t *testing.T, e *env.Env, roomID domain.RoomID, want int, tim
 	})
 }
 
-// --- сценарный драйвер ------------------------------------------------------
+// --- scenario driver ----------------------------------------------------------
 
-// liveMatchTiming — параметры хронологии сценария. Различаются механизмом
-// эвикта замолчавшего host'а: WS — idle sweep (~6s), ENet — честный
-// libenet-таймаут peer'а (~5–30s).
+// liveMatchTiming — scenario chronology parameters. They differ in the
+// mechanism that evicts the silent host: WS — the idle sweep (~6s), ENet — the
+// honest libenet peer timeout (~5–30s).
 type liveMatchTiming struct {
 	hostSilentAt  time.Duration // t: host dropout
-	evictBound    time.Duration // bound ожидания эвикта + миграции №1
-	secondLeaveAt time.Duration // t: clean leave мастера №2
-	finishAt      time.Duration // t: финальные проверки
+	evictBound    time.Duration // bound for awaiting the eviction + migration #1
+	secondLeaveAt time.Duration // t: clean leave of master #2
+	finishAt      time.Duration // t: final checks
 }
 
-// runLiveMatch — общий сценарий «живого матча» поверх matchClient любых
-// транспортов: host (первый joiner, начальный master) + slaves. Предполагается,
-// что клиенты уже созданы и подключаются; teardown — ответственность вызывающего.
+// runLiveMatch — the shared "live match" scenario on top of matchClient of any
+// transport: host (first joiner, initial master) + slaves. Assumes the clients
+// are already created and connecting; teardown is the caller's responsibility.
 func runLiveMatch(t *testing.T, e *env.Env, roomID domain.RoomID, host matchClient, slaves []matchClient, tm liveMatchTiming) {
 	t.Helper()
 
@@ -544,7 +548,7 @@ func runLiveMatch(t *testing.T, e *env.Env, roomID domain.RoomID, host matchClie
 	})
 	hostPeerID := host.peer()
 
-	// Фаза 1: master=host стримит позиции, input всех течёт в state.
+	// Phase 1: master=host streams positions, everyone's input flows into state.
 	waitFor(t, 12*time.Second, "each slave observed entity positions from host", func() bool {
 		for _, s := range slaves {
 			if !s.entityOwnersSeen()[hostPeerID] {
@@ -562,12 +566,12 @@ func runLiveMatch(t *testing.T, e *env.Env, roomID domain.RoomID, host matchClie
 		return true
 	})
 
-	// t=hostSilentAt — host dropout: транспорт открыт, читать/слать перестаём.
+	// t=hostSilentAt — host dropout: transport open, we stop reading/sending.
 	sleepUntil(start.Add(tm.hostSilentAt))
 	t.Logf("[scenario] host goes silent (transport open, no reads, no sends)")
 	host.goSilent()
 
-	// Миграция №1: сервер эвиктит host (idle sweep / enet timeout) → is_master уезжает.
+	// Migration #1: the server evicts the host (idle sweep / enet timeout) → is_master moves on.
 	waitFor(t, tm.evictBound, "master migrated off silent host", func() bool {
 		for _, s := range slaves {
 			if seq := s.mastersSeen(); len(seq) >= 2 && seq[len(seq)-1] != hostPeerID {
@@ -578,7 +582,7 @@ func runLiveMatch(t *testing.T, e *env.Env, roomID domain.RoomID, host matchClie
 	})
 	waitPeerCount(t, e, roomID, len(clients)-1, 15*time.Second)
 
-	// Новый мастер state-driven: увидел is_master → начал слать свои entities.
+	// The new master is state-driven: it saw is_master → started sending its entities.
 	waitFor(t, 15*time.Second, "slave observed entity positions from second master", func() bool {
 		for _, s := range slaves {
 			for owner := range s.entityOwnersSeen() {
@@ -590,7 +594,7 @@ func runLiveMatch(t *testing.T, e *env.Env, roomID domain.RoomID, host matchClie
 		return false
 	})
 
-	// t=secondLeaveAt — текущий мастер уходит чисто → миграция №2.
+	// t=secondLeaveAt — the current master leaves cleanly → migration #2.
 	sleepUntil(start.Add(tm.secondLeaveAt))
 	m2 := currentMaster(t, slaves)
 	t.Logf("[scenario] master %s (peer %d) leaves cleanly", m2.nickName(), m2.peer())
@@ -613,7 +617,7 @@ func runLiveMatch(t *testing.T, e *env.Env, roomID domain.RoomID, host matchClie
 	})
 	waitPeerCount(t, e, roomID, len(clients)-2, 15*time.Second)
 
-	// Фаза 3: жизнь под мастером №3 до конца сценария.
+	// Phase 3: life under master #3 until the end of the scenario.
 	sleepUntil(start.Add(tm.finishAt))
 
 	var survivors []matchClient
@@ -626,7 +630,7 @@ func runLiveMatch(t *testing.T, e *env.Env, roomID domain.RoomID, host matchClie
 		t.Fatalf("survivors = %d, want %d", len(survivors), want)
 	}
 
-	// (a) slaves видели позиции от host И от второго distinct master'а.
+	// (a) slaves saw positions from the host AND from a second distinct master.
 	for _, s := range survivors {
 		owners := s.entityOwnersSeen()
 		if !owners[hostPeerID] {
@@ -643,8 +647,8 @@ func runLiveMatch(t *testing.T, e *env.Env, roomID domain.RoomID, host matchClie
 		}
 	}
 
-	// (b) input каждого slave доехал до чужого state (payload проверен по nick);
-	// в mixed-сценарии это же покрывает кросс-транспорт (WS↔ENet).
+	// (b) every slave's input reached someone else's state (payload verified by
+	// nick); in the mixed scenario this also covers cross-transport (WS↔ENet).
 	for _, s := range slaves {
 		seen := false
 		for _, other := range clients {
@@ -661,7 +665,7 @@ func runLiveMatch(t *testing.T, e *env.Env, roomID domain.RoomID, host matchClie
 		}
 	}
 
-	// (c) две миграции через is_master: host → m2 → m3 на каждом выжившем.
+	// (c) two migrations via is_master: host → m2 → m3 on every survivor.
 	for _, s := range survivors {
 		seq := s.mastersSeen()
 		if len(seq) < 3 {
@@ -672,7 +676,7 @@ func runLiveMatch(t *testing.T, e *env.Env, roomID domain.RoomID, host matchClie
 		}
 	}
 
-	// (d) финал: ≥2 клиента живы и кадры текут (patch-тик 50ms + input-трафик).
+	// (d) final: ≥2 clients alive and frames flowing (patch tick 50ms + input traffic).
 	live := 0
 	for _, c := range clients {
 		if !c.dead() {
@@ -691,6 +695,6 @@ func runLiveMatch(t *testing.T, e *env.Env, roomID domain.RoomID, host matchClie
 		}
 	}
 
-	// (e) peers в registry сошлись с тем, что видят клиенты.
+	// (e) peers in the registry converged with what the clients see.
 	waitPeerCount(t, e, roomID, len(clients)-2, 15*time.Second)
 }

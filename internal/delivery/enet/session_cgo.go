@@ -17,12 +17,13 @@ import (
 
 type peerSession struct {
 	id       uint16
-	host     *enetHost // для least-loaded счётчика (P18)
+	host     *enetHost // for the least-loaded counter (P18)
 	incoming chan domain.Frame
 	conn     transport.Connection
 	admitted bool
-	// roomSession — session-handle admitted-соединения (P20): teardown
-	// идёт через DisconnectPeer именно с этим peer-объектом (identity-check).
+	// roomSession — session handle of the admitted connection (P20):
+	// teardown goes through DisconnectPeer with exactly this peer object
+	// (identity check).
 	roomSession room.PeerSession
 	connectedAt time.Time
 	closeOnce   sync.Once
@@ -35,11 +36,12 @@ func newPeerSession(host *enetHost, loop *transportenet.HostLoop, peer libenet.P
 	}
 	incoming := make(chan domain.Frame, queueCap)
 	connection := connectionFactory.CreateConnection(peer, incoming)
-	// GetIncomingPeerId - peer-операция, диспатч через очередь loop'а
-	// (newPeerSession зовётся с run-горутины, не с loop-горутины).
+	// GetIncomingPeerId - a peer operation, dispatched through the loop's
+	// queue (newPeerSession is called from the run goroutine, not the loop
+	// goroutine).
 	id, _ := transportenet.Call(loop, func() uint16 { return peer.GetIncomingPeerId() })
-	// Живой peer на host'е: счётчик для AssignHost (least-loaded)
-	// и gauge peers-per-host (P19b) - то же число, что видит балансировка.
+	// A live peer on the host: counter for AssignHost (least-loaded) and
+	// the peers-per-host gauge (P19b) - the same number the balancing sees.
 	peers := host.peers.Add(1)
 	metrics := portmetrics.OrNoop(m)
 	metrics.EnetHostPeers(host.id, int(peers))
@@ -62,9 +64,9 @@ func (s *peerSession) deliver(frame domain.Frame) bool {
 	}
 }
 
-// close - единственная точка снятия сессии: каждый путь удаления из sessions
-// идёт через неё, поэтому счётчик живых peer'ов host'а декрементируется здесь
-// (once - повторные close безопасны, как и conn.Close).
+// close - the single teardown point of a session: every path removing it from
+// sessions goes through here, so the host's live-peer counter is decremented
+// here (once - repeated close is safe, as is conn.Close).
 func (s *peerSession) close() error {
 	s.closeOnce.Do(func() {
 		peers := s.host.peers.Add(-1)

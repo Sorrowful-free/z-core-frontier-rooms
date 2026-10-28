@@ -13,35 +13,36 @@ import (
 	portmetrics "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/metrics"
 )
 
-// ErrHostLoopStopped возвращается submit'ам, пришедшим после Stop: loop больше
-// не принимает blocking-команды (Call/Do), а host уже на пути к Destroy.
+// ErrHostLoopStopped is returned to submits arriving after Stop: the loop no
+// longer accepts blocking commands (Call/Do), and the host is already on its
+// way to Destroy.
 var ErrHostLoopStopped = errors.New("enet host loop stopped")
 
-// HostLoop владеет libenet.Host и сериализует ВСЕ обращения к нему: libenet не
-// thread-safe, поэтому host/peer/packet трогает только loop-горутина -
-// executor, разбирающий FIFO-очередь команд. Внешние горутины отправляют
-// работу через Call/Do (blocking - для владельцев host'а: серверный драйвер
-// service-итераций, клиентский pump, peer-операции из conn'ов) или enqueue
-// (async - EnetConnection). Никакого глобального лока: изоляция per-host,
-// конкурируют только submit'ы одного loop'а.
+// HostLoop owns a libenet.Host and serializes ALL access to it: libenet is
+// not thread-safe, so only the loop goroutine - an executor draining a FIFO
+// command queue - touches host/peer/packet. External goroutines submit work
+// via Call/Do (blocking - for host owners: the server-side service-iteration
+// driver, the client pump, peer operations from conns) or enqueue (async -
+// EnetConnection). No global lock: isolation is per-host, only submits to the
+// same loop contend.
 //
-// Инвариант живучести: executor исполняет только libenet-вызовы, каждый из
-// которых ограничен по времени (Service - serviceTimeoutMs). Blocking Call/Do
-// поэтому не может deadlock'нуться: executor никогда не ждёт внешних
-// горутин. Доменная работа, способная блокироваться (JoinRoom/LeaveRoom →
-// dispatchLifecycle → ожидание room-горутины), обязана выполняться ВНЕ
-// команд loop'а - иначе room-горутина, делающая blocking-вызов в loop
-// (EnetConnection.Ping), замкнёт cross-deadlock executor↔room.
+// Liveness invariant: the executor runs only libenet calls, each of which is
+// time-bounded (Service - serviceTimeoutMs). Blocking Call/Do therefore
+// cannot deadlock: the executor never waits on external goroutines. Domain
+// work that can block (JoinRoom/LeaveRoom → dispatchLifecycle → waiting on
+// the room goroutine) MUST run OUTSIDE loop commands - otherwise a room
+// goroutine making a blocking call into the loop (EnetConnection.Ping) would
+// close a cross-deadlock executor↔room.
 type HostLoop struct {
 	host libenet.Host
 
 	mu        sync.Mutex
 	queue     *list.List // *hostLoopCommand, FIFO
-	accepting bool       // false после Stop: blocking submit'ы отклоняются
-	exited    bool       // loop-горутина ушла в Destroy: любые submit'ы отклоняются
+	accepting bool       // false after Stop: blocking submits are rejected
+	exited    bool       // loop goroutine has gone into Destroy: all submits rejected
 
-	notify   chan struct{} // cap-1 будильник executor'а
-	done     chan struct{} // закрыт после host.Destroy
+	notify   chan struct{} // cap-1 executor wakeup
+	done     chan struct{} // closed after host.Destroy
 	stopOnce sync.Once
 
 	metrics portmetrics.Metrics
@@ -49,16 +50,16 @@ type HostLoop struct {
 
 type hostLoopCommand struct {
 	fn         func() error
-	ack        chan struct{} // != nil у blocking-команд: закрывается после исполнения
+	ack        chan struct{} // != nil for blocking commands: closed after execution
 	err        error
-	enqueuedAt time.Time // момент постановки в очередь: сэмпл queue latency
+	enqueuedAt time.Time // enqueue timestamp: queue latency sample
 }
 
-// NewHostLoop создаёт libenet host (addr = NewListenAddress для сервера, nil
-// для клиентского host'а) и запускает его loop-горутину. Host наружу не
-// отдаётся как "живой" объект: вся работа с ним - через Call/Do/enqueue
-// (Host() - только внутри таких команд). m - телеметрия ожидания команд в
-// очереди (nil-safe, Noop).
+// NewHostLoop creates a libenet host (addr = NewListenAddress for a server,
+// nil for a client host) and starts its loop goroutine. The host is not
+// handed out as a "live" object: all work with it goes through
+// Call/Do/enqueue (Host() - only inside such commands). m - command queue
+// wait telemetry (nil-safe, Noop).
 func NewHostLoop(addr libenet.Address, peerLimit, channelLimit uint64, m portmetrics.Metrics) (*HostLoop, error) {
 	host, err := libenet.NewHost(addr, peerLimit, channelLimit, 0, 0)
 	if err != nil {
@@ -76,15 +77,15 @@ func NewHostLoop(addr libenet.Address, peerLimit, channelLimit uint64, m portmet
 	return l, nil
 }
 
-// Host отдаёт owned libenet.Host для использования ВНУТРИ команд Call/Do (там
-// вызов уже исполняется на loop-горутине). Любое другое использование нарушает
-// confinement и является data race.
+// Host returns the owned libenet.Host for use INSIDE Call/Do commands (where
+// the call already runs on the loop goroutine). Any other use breaks
+// confinement and is a data race.
 func (l *HostLoop) Host() libenet.Host {
 	return l.host
 }
 
-// Call ставит fn в очередь loop'а и ждёт результата. Возвращает результат fn
-// или ErrHostLoopStopped, если loop остановлен до submit'а.
+// Call enqueues fn on the loop and waits for the result. Returns fn's result
+// or ErrHostLoopStopped if the loop was stopped before the submit.
 func Call[T any](l *HostLoop, fn func() T) (T, error) {
 	var result T
 	if err := l.Do(func() error {
@@ -97,7 +98,7 @@ func Call[T any](l *HostLoop, fn func() T) (T, error) {
 	return result, nil
 }
 
-// Do - вариант Call для команд, возвращающих только ошибку.
+// Do - variant of Call for commands returning only an error.
 func (l *HostLoop) Do(fn func() error) error {
 	cmd := &hostLoopCommand{fn: fn, ack: make(chan struct{})}
 	if err := l.submit(cmd, false); err != nil {
@@ -107,10 +108,10 @@ func (l *HostLoop) Do(fn func() error) error {
 	return cmd.err
 }
 
-// enqueue - async submit без ожидания исполнения. Безопасен с любой горутины.
-// Принимает команды, пока loop-горутина не ушла в shutdown-финал (exited):
-// graceful disconnect'ы из shutdown-пути обязаны доехать до очереди и
-// исполниться в drain до Destroy.
+// enqueue - async submit without waiting for execution. Safe from any
+// goroutine. Accepts commands until the loop goroutine enters the shutdown
+// finale (exited): graceful disconnects from the shutdown path must reach
+// the queue and execute during drain before Destroy.
 func (l *HostLoop) enqueue(fn func()) error {
 	return l.submit(&hostLoopCommand{
 		fn: func() error {
@@ -122,8 +123,8 @@ func (l *HostLoop) enqueue(fn func()) error {
 
 func (l *HostLoop) submit(cmd *hostLoopCommand, async bool) error {
 	l.mu.Lock()
-	// Blocking-команды отклоняются сразу после Stop; async (conn-операции)
-	// - только когда executor уже финишировал.
+	// Blocking commands are rejected right after Stop; async (conn
+	// operations) - only once the executor has finished.
 	if l.exited || (!async && !l.accepting) {
 		l.mu.Unlock()
 		return ErrHostLoopStopped
@@ -138,9 +139,10 @@ func (l *HostLoop) submit(cmd *hostLoopCommand, async bool) error {
 	return nil
 }
 
-// Stop прекращает приём blocking-команд, будит executor и ждёт его выхода:
-// очередь разгребается (все принятые команды исполняются), host.Destroy.
-// Повторный вызов идемпотентен и тоже ждёт реального завершения.
+// Stop stops accepting blocking commands, wakes the executor, and waits for
+// it to exit: the queue is drained (all accepted commands execute),
+// host.Destroy. A repeated call is idempotent and also waits for real
+// completion.
 func (l *HostLoop) Stop() {
 	l.stopOnce.Do(func() {
 		l.mu.Lock()
@@ -154,7 +156,7 @@ func (l *HostLoop) Stop() {
 	<-l.done
 }
 
-// Done закрывается, когда loop-горутина завершилась (host уже разрушен).
+// Done is closed when the loop goroutine has finished (the host is already destroyed).
 func (l *HostLoop) Done() <-chan struct{} {
 	return l.done
 }
@@ -168,9 +170,9 @@ func (l *HostLoop) run() {
 		}
 		l.exec(cmd)
 	}
-	// Финал: blocking submit'ы уже отклоняются (!accepting), async - режем
-	// здесь под тем же mutex, чтобы ни одна команда не провисела без
-	// обработчика, и добираем хвост очереди перед Destroy.
+	// Finale: blocking submits are already rejected (!accepting); async ones
+	// are cut off here under the same mutex so no command is left without a
+	// handler, and we pick up the queue tail before Destroy.
 	l.mu.Lock()
 	l.exited = true
 	l.mu.Unlock()
@@ -179,8 +181,8 @@ func (l *HostLoop) run() {
 }
 
 func (l *HostLoop) exec(cmd *hostLoopCommand) {
-	// Queue latency: enqueue → начало исполнения (P19b). Команды drain
-	// учитываются так же - их ожидание тоже было реальным.
+	// Queue latency: enqueue → start of execution (P19b). Drain commands
+	// count the same way - their wait was real too.
 	l.metrics.EnetHostLoopQueueLatency(time.Since(cmd.enqueuedAt))
 	cmd.err = cmd.fn()
 	if cmd.ack != nil {
@@ -188,7 +190,7 @@ func (l *HostLoop) exec(cmd *hostLoopCommand) {
 	}
 }
 
-// next ждёт и забирает следующую команду; nil - очередь пуста и приём закрыт.
+// next waits for and takes the next command; nil - queue empty and intake closed.
 func (l *HostLoop) next() *hostLoopCommand {
 	for {
 		l.mu.Lock()
@@ -206,7 +208,7 @@ func (l *HostLoop) next() *hostLoopCommand {
 	}
 }
 
-// drain исполняет команды, стоящие в очереди (владелец - только loop-горутина).
+// drain executes the commands standing in the queue (owner - only the loop goroutine).
 func (l *HostLoop) drain() {
 	for {
 		l.mu.Lock()

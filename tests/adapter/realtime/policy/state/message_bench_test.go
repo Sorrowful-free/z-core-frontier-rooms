@@ -9,9 +9,9 @@ import (
 	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
-// OnMessage-бенчи (P34): hot-path — decode + точечная COW-мутация state,
-// без clone/diff/encode/send. Два чередующихся payload'а — гарантированная
-// мутация на каждой итерации.
+// OnMessage benches (P34): hot path — decode + a targeted COW mutation of
+// state, no clone/diff/encode/send. Two alternating payloads guarantee a
+// real mutation on every iteration.
 
 func BenchmarkOnMessage_PatchInput(b *testing.B) {
 	h := newBenchHarness(b, domain.RoomID(7), 8)

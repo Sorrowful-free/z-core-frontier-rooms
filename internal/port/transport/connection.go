@@ -8,7 +8,7 @@ type Connection interface {
 	Close() error
 	// Ping returns round-trip time in milliseconds, or -1 if unknown.
 	Ping() int64
-	// IsAlive возвращает false, если транспорт мёртв и peer подлежит idle eviction;
-	// каждая реализация транспорта сама решает, что считается живостью.
+	// IsAlive returns false if the transport is dead and the peer is subject
+	// to idle eviction; each transport implementation decides what counts as alive.
 	IsAlive() bool
 }

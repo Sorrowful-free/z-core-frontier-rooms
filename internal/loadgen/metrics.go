@@ -6,13 +6,13 @@ import (
 	"time"
 )
 
-// Metrics — счётчики прогона. Горячий путь — атомики; редкие labelled
-// счётчики (reject'ы по opcode, ошибки по виду) — под mutex.
+// Metrics — run counters. The hot path is atomics; rare labelled counters
+// (rejects by opcode, errors by kind) are under a mutex.
 type Metrics struct {
 	RoomsCreated  atomic.Int64
 	TicketsIssued atomic.Int64
-	JoinAttempts  atomic.Int64 // dial'ы с join-ticket
-	JoinSuccess   atomic.Int64 // первый 0x01 FullState после join-dial
+	JoinAttempts  atomic.Int64 // dials with a join ticket
+	JoinSuccess   atomic.Int64 // first 0x01 FullState after a join dial
 
 	FramesSent    atomic.Int64
 	FramesRecv    atomic.Int64
@@ -21,26 +21,26 @@ type Metrics struct {
 	PatchRecv     atomic.Int64 // 0x02
 	RpcRecv       atomic.Int64 // 0x07
 
-	// Комнатные уведомления (0x80+).
+	// Room notifications (0x80+).
 	PeerDisconnectedRecv  atomic.Int64 // 0x80
 	PeerReconnectedRecv   atomic.Int64 // 0x81
-	RoomClosedRecv        atomic.Int64 // 0x82 (доставка до P30 — baseline)
-	UnexpectedDisconnects atomic.Int64 // смерть conn без нашего close/0x82/ctx
+	RoomClosedRecv        atomic.Int64 // 0x82 (delivery before P30 — baseline)
+	UnexpectedDisconnects atomic.Int64 // conn death without our close/0x82/ctx
 
-	ReconnectAttempts atomic.Int64 // запланированные разрывы (RECONNECT_RATE)
-	ReconnectSuccess  atomic.Int64 // первый кадр сессии после resume-dial'а
-	ResumeRejects     atomic.Int64 // reject-кадры на resume-dial (слот/комната мертвы)
+	ReconnectAttempts atomic.Int64 // planned drops (RECONNECT_RATE)
+	ReconnectSuccess  atomic.Int64 // first frame of a session after a resume dial
+	ResumeRejects     atomic.Int64 // reject frames on a resume dial (slot/room dead)
 
 	mu            sync.Mutex
 	joinRejects   map[uint8]int64  // wire opcode → count (0x40–0x7F)
 	inRoomErrors  map[uint8]int64  // wire opcode → count (0x60–0x6F)
 	dialErrors    map[string]int64 // transport → count
 	httpErrors    map[string]int64 // op (create|issue|list|metrics|netem) → count
-	netemAssigned map[string]int64 // netem-профиль → клиентов (inc2)
-	sendErrors    int64            // ошибки Send (кроме ожидаемого teardown)
-	recvErrors    int64            // ошибки Recv, не разрыв-ожидание
-	decodeErrors  int64            // codec decode state-кадров
-	dialLatencyMs []float64        // все замеры — сортировка на отчёте
+	netemAssigned map[string]int64 // netem profile → clients (inc2)
+	sendErrors    int64            // Send errors (excluding expected teardown)
+	recvErrors    int64            // Recv errors that are not an expected drop
+	decodeErrors  int64            // codec decode errors on state frames
+	dialLatencyMs []float64        // all samples — sorted at report time
 	joinLatencyMs []float64
 }
 
@@ -78,8 +78,8 @@ func (m *Metrics) httpError(op string) {
 	m.mu.Unlock()
 }
 
-// netemAssign — клиенту при спавне назначен профиль (доли сверяются с
-// NETEM_SHARE в отчёте, контракт ±5%).
+// netemAssign — a client was assigned a profile at spawn (shares are checked
+// against NETEM_SHARE in the report, contract ±5%).
 func (m *Metrics) netemAssign(profile string) {
 	m.mu.Lock()
 	m.netemAssigned[profile]++
@@ -116,7 +116,7 @@ func (m *Metrics) recordJoin(d time.Duration) {
 	m.mu.Unlock()
 }
 
-// --- snapshots для прогресса и отчёта ----------------------------------------
+// --- snapshots for progress and the report -----------------------------------
 
 func (m *Metrics) joinRejectsSnapshot() map[uint8]int64 {
 	m.mu.Lock()

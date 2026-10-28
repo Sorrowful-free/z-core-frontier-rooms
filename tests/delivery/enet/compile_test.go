@@ -16,7 +16,7 @@ func (discardLogger) Debug(string, ...any) {}
 func (discardLogger) Warn(string, ...any)  {}
 func (discardLogger) Fatal(string, ...any) {}
 
-// Smoke: линкует cgo-пакеты adapter/delivery enet (go-enet) при go test -tags enet.
+// Smoke: links the cgo adapter/delivery enet packages (go-enet) under go test -tags enet.
 func TestEnetPackagesCompile(t *testing.T) {
 	t.Parallel()
 

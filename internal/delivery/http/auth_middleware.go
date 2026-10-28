@@ -15,7 +15,7 @@ const (
 	bearerPrefix        = "Bearer "
 )
 
-// NewAPIKeyMiddleware защищает REST control plane статическим API key.
+// NewAPIKeyMiddleware protects the REST control plane with a static API key.
 func NewAPIKeyMiddleware(cfg httpauthadapter.HTTPAuthConfig) fiber.Handler {
 	expected := []byte(cfg.APIKey)
 	return func(c fiber.Ctx) error {

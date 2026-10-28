@@ -9,13 +9,13 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/registry"
 )
 
-// Значение label `sweep` для SweepRan/IdlePeersEvicted (bounded в адаптере).
+// Value of the `sweep` label for SweepRan/IdlePeersEvicted (bounded in the adapter).
 const sweepKindIdlePeers = "idle_peers"
 
-// EvictIdlePeersUseCase выводит zombie peer'ов с мёртвым транспортом (ADR 0001).
-// Вывод идёт через disconnect-поток (P20): zombie получает то же grace-окно —
-// полуоткрытый TCP (целевой сценарий флаки-клиентов) не отличается от чистого
-// разрыва.
+// EvictIdlePeersUseCase evicts zombie peers with a dead transport (ADR 0001).
+// Eviction goes through the disconnect flow (P20): a zombie gets the same
+// grace window — a half-open TCP (the target flaky-client scenario) is
+// indistinguishable from a clean drop.
 type EvictIdlePeersUseCase struct {
 	roomRegistry          registry.RoomRegistry
 	disconnectPeerUseCase *DisconnectPeerUseCase
@@ -37,12 +37,12 @@ func NewEvictIdlePeersUseCase(
 	}
 }
 
-// RunOnce проходит по комнатам и выводит peer'ов с !IsAlive() через disconnect-поток.
+// RunOnce iterates over rooms and evicts peers with !IsAlive() via the disconnect flow.
 func (uc *EvictIdlePeersUseCase) RunOnce(ctx context.Context) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	// Проход sweep считается отдельно от обработанных записей (P19b).
+	// A sweep pass is counted separately from processed records (P19b).
 	uc.metrics.SweepRan(sweepKindIdlePeers)
 
 	rooms, err := uc.roomRegistry.GetList(ctx)
@@ -73,10 +73,11 @@ func (uc *EvictIdlePeersUseCase) RunOnce(ctx context.Context) (int, error) {
 			}
 			evicted++
 		}
-		// closeRoomIfEmpty тут не нужна: DisconnectPeer уже делает
-		// empty-проверку на каждого выгнанного; безусловный вызов убил бы
-		// never-joined комнату (peers==0, живой reserve-тикет) на первом
-		// же sweep-проходе — её kill ведёт SweepEmptyRooms по слотам.
+		// closeRoomIfEmpty is not needed here: DisconnectPeer already does
+		// the empty check for each evicted peer; an unconditional call would
+		// kill a never-joined room (peers==0, live reserve ticket) on the
+		// very first sweep pass — its kill is SweepEmptyRooms' job, driven
+		// by slots.
 	}
 
 	if evicted > 0 {
@@ -85,7 +86,7 @@ func (uc *EvictIdlePeersUseCase) RunOnce(ctx context.Context) (int, error) {
 	return evicted, nil
 }
 
-// StartIdlePeerSweep запускает фоновый sweep; interval <= 0 — no-op (nil handle).
+// StartIdlePeerSweep starts the background sweep; interval <= 0 — no-op (nil handle).
 func StartIdlePeerSweep(
 	ctx context.Context,
 	uc *EvictIdlePeersUseCase,

@@ -111,12 +111,12 @@ func (h *RoomsHandler) DeleteRoom(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// LeaveSelf — self-leave по reconnect-токену (P32): credential kind=2
-// доказывает peerID+roomID из claims — клиент уходит только сам,
-// kick чужих по HTTP не существует. Graceful leave через
-// LeaveRoomUseCase — тот же путь, что у disconnect'а (room.Leave →
-// drain-aware Stop → Revoke, пустая комната умирает). Идемпотентно:
-// peer уже не в комнате → 204.
+// LeaveSelf — self-leave via reconnect token (P32): the kind=2 credential
+// proves peerID+roomID from claims — the client leaves only itself;
+// kicking others over HTTP does not exist. Graceful leave goes through
+// LeaveRoomUseCase — the same path as disconnect (room.Leave →
+// drain-aware Stop → Revoke, an empty room dies). Idempotent:
+// peer already not in the room → 204.
 func (h *RoomsHandler) LeaveSelf(c fiber.Ctx) error {
 	roomID, err := parseRoomIDParam(c, "id")
 	if err != nil {

@@ -5,16 +5,16 @@ import (
 	"net"
 )
 
-// MetricsConfig — телеметрия процесса (P19).
+// MetricsConfig — process telemetry (P19).
 type MetricsConfig struct {
-	// AdminListenAddr — адрес отдельного admin Fiber listener'а с
-	// `GET /metrics` (env `ADMIN_LISTEN_ADDR`). Пустой — telemetry
-	// endpoint выключен (коллекция сигналов работает, scrape нет).
+	// AdminListenAddr — address of the separate admin Fiber listener with
+	// `GET /metrics` (env `ADMIN_LISTEN_ADDR`). Empty — telemetry
+	// endpoint disabled (signal collection still runs, no scrape).
 	AdminListenAddr string
 }
 
-// Validate: пустой адрес легален (endpoint отключён); заданный должен
-// разрешаться как TCP listen addr.
+// Validate: an empty address is legal (endpoint disabled); a set address
+// must resolve as a TCP listen addr.
 func (c MetricsConfig) Validate() error {
 	if c.AdminListenAddr == "" {
 		return nil

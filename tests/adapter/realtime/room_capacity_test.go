@@ -9,8 +9,8 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
 
-// GetCapacity клампит к int8/diапазону домена даже при невалидной capacity —
-// защита state-кодека от значений, которые не влезают в wire int8.
+// GetCapacity clamps to the int8/domain range even for an invalid capacity —
+// protects the state codec from values that do not fit in wire int8.
 func TestGetCapacity_Clamps(t *testing.T) {
 	t.Parallel()
 

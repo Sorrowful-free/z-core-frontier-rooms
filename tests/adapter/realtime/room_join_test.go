@@ -47,10 +47,11 @@ func TestJoinCallsSendFromOnJoinWithoutDeadlock(t *testing.T) {
 	}
 }
 
-// P20-fix: повторный Join под тем же peerID отклоняется lifecycle'ом —
-// раньше runJoinLocked молча перезаписывал r.peers[peerID] и проигравший
-// peer-объект сиротел вне map (conn-утечка, teardown → ErrPeerStale).
-// Ошибка доходит до caller'а через ErrJoinDenied-обёртку Join.
+// P20-fix: a repeated Join under the same peerID is rejected by the
+// lifecycle — previously runJoinLocked silently overwrote r.peers[peerID]
+// and the losing peer object was orphaned outside the map (conn leak,
+// teardown → ErrPeerStale). The error reaches the caller via the
+// ErrJoinDenied wrapper from Join.
 func TestJoin_SecondJoinSamePeerIDRejected(t *testing.T) {
 	t.Parallel()
 
@@ -90,9 +91,9 @@ func TestJoin_SecondJoinSamePeerIDRejected(t *testing.T) {
 	}
 }
 
-// Проигравший гонку double-resume не сиротеет: даже при заполненной
-// комнате его Join доходит до lifecycle и получает ErrPeerAlreadyInRoom
-// (→ Replace в resume-потоке), а не ErrRoomFull.
+// The loser of a double-resume race is not orphaned: even with a full
+// room its Join reaches the lifecycle and gets ErrPeerAlreadyInRoom
+// (→ Replace in the resume flow), not ErrRoomFull.
 func TestJoin_DuplicatePeerIDNotFullRejected(t *testing.T) {
 	t.Parallel()
 
@@ -115,7 +116,7 @@ func TestJoin_DuplicatePeerIDNotFullRejected(t *testing.T) {
 	if err := room.Join(second); !errors.Is(err, domain.ErrPeerAlreadyInRoom) {
 		t.Fatalf("Join second err = %v, want ErrPeerAlreadyInRoom", err)
 	}
-	// Новый peerID при полной комнате — по-прежнему ErrRoomFull.
+	// A new peerID on a full room still gets ErrRoomFull.
 	if err := room.Join(testpeer.New(domain.PeerID(10), "other")); !errors.Is(err, domain.ErrRoomFull) {
 		t.Fatalf("Join other err = %v, want ErrRoomFull", err)
 	}
@@ -143,11 +144,12 @@ func TestJoinRollbackOnHandlerError(t *testing.T) {
 	}
 }
 
-// TestLifecyclePeerRegistryOrdering — регрессия P13: мутация r.peers и
-// OnJoin/OnLeave атомарны на room-loop'е. До фикса peer попадал в policy
-// state до записи в r.peers — patch-тик успевал прочитать state и выкинуть
-// нового peer'а как stale (pruning stale peer). Spy-policy проверяет
-// видимость изнутри колбэков: это та же точка наблюдения, что у тиков.
+// TestLifecyclePeerRegistryOrdering — P13 regression: the r.peers mutation
+// and OnJoin/OnLeave are atomic on the room loop. Before the fix, a peer
+// reached the policy state before the r.peers write — a patch tick could
+// read the state and drop the new peer as stale (pruning stale peer).
+// The spy policy checks visibility from inside the callbacks: the same
+// observation point that ticks have.
 func TestLifecyclePeerRegistryOrdering(t *testing.T) {
 	t.Parallel()
 
@@ -176,9 +178,9 @@ func TestLifecyclePeerRegistryOrdering(t *testing.T) {
 	}
 }
 
-// orderingProbePolicy — внутри OnJoin peer уже обязан быть в r.peers
-// (иначе refreshPeerPings выкинул бы его как stale до следующего тика);
-// внутри OnLeave — уже удалён.
+// orderingProbePolicy — inside OnJoin the peer must already be in r.peers
+// (otherwise refreshPeerPings would drop it as stale before the next tick);
+// inside OnLeave — already removed.
 type orderingProbePolicy struct {
 	t    *testing.T
 	room realtime.Room

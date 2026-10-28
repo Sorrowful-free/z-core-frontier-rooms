@@ -25,9 +25,9 @@ func freeUDPPort(t *testing.T) uint16 {
 	return uint16(conn.LocalAddr().(*net.UDPAddr).Port)
 }
 
-// enetTestClient - вспомогательный ENet-клиент на собственном HostLoop
-// (adapterenet): все libenet-вызовы сериализует его loop-горутина, глобального
-// mutex с серверным host'ом больше нет.
+// enetTestClient — a helper ENet client on its own HostLoop (adapterenet):
+// all libenet calls are serialized by its loop goroutine, there is no
+// global mutex shared with the server host anymore.
 type enetTestClient struct {
 	loop *adapterenet.HostLoop
 	peer libenet.Peer
@@ -39,7 +39,7 @@ func newEnetTestClient(t *testing.T, port uint16) *enetTestClient {
 	if err != nil {
 		t.Fatalf("client host: %v", err)
 	}
-	// Stop идемпотентен: drain + host.Destroy + ожидание выхода loop-горутины.
+	// Stop is idempotent: drain + host.Destroy + wait for the loop goroutine to exit.
 	t.Cleanup(loop.Stop)
 
 	var peer libenet.Peer
@@ -78,7 +78,7 @@ func (c *enetTestClient) waitEvent(t *testing.T, want libenet.EventType, timeout
 func newTestHandler(cfg adapterenet.EnetConfig) *deliveryenet.RoomsHandler {
 	return deliveryenet.NewRoomsHandler(
 		context.Background(),
-		nil, // admitPeerUseCase — e2e покрывает только пути до admit
+		nil, // admitPeerUseCase — e2e only covers the paths up to admit
 		nil, // disconnectPeerUseCase
 		adapterenet.NewEnetConnectionFactory(nil, discardLogger{}),
 		cfg,
@@ -87,9 +87,9 @@ func newTestHandler(cfg adapterenet.EnetConfig) *deliveryenet.RoomsHandler {
 	)
 }
 
-// P7-4: ошибка bind больше не проглатывается — ListenHandle.Done + Err().
+// P7-4: a bind error is no longer swallowed — ListenHandle.Done + Err().
 func TestListenBindFailurePropagates(t *testing.T) {
-	// Занимаем UDP-порт сами → NewHost (enet_host_create → bind) обязан упасть.
+	// Occupy the UDP port ourselves → NewHost (enet_host_create → bind) must fail.
 	blocker, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("0.0.0.0"), Port: 0})
 	if err != nil {
 		t.Fatalf("block udp port: %v", err)
@@ -111,7 +111,7 @@ func TestListenBindFailurePropagates(t *testing.T) {
 	}
 }
 
-// P7-5: Stop отменяет loop и ждёт реального выхода; результат — context.Canceled.
+// P7-5: Stop cancels the loop and waits for the real exit; the result is context.Canceled.
 func TestListenStopWaitsLoopExit(t *testing.T) {
 	cfg := adapterenet.DefaultEnetConfig()
 	cfg.ListenPorts = []uint16{freeUDPPort(t)}
@@ -132,7 +132,7 @@ func TestListenStopWaitsLoopExit(t *testing.T) {
 	}
 }
 
-// P7-3: peer, не прошедший admit за AdmitTimeout, отключается сервером.
+// P7-3: a peer that did not pass admit within AdmitTimeout is disconnected by the server.
 func TestAdmitTimeoutDisconnectsPeer(t *testing.T) {
 	cfg := adapterenet.DefaultEnetConfig()
 	cfg.ListenPorts = []uint16{freeUDPPort(t)}
@@ -144,16 +144,17 @@ func TestAdmitTimeoutDisconnectsPeer(t *testing.T) {
 	client := newEnetTestClient(t, cfg.ListenPorts[0])
 	client.waitEvent(t, libenet.EventConnect, 3*time.Second)
 
-	// Ничего не шлём — сервер должен сам разорвать соединение.
+	// We send nothing — the server must tear down the connection itself.
 	client.waitEvent(t, libenet.EventDisconnect, 5*time.Second)
 }
 
-// P7-1: join reject (пустой ticket → OpEmptyToken) реально доезжает до клиента
-// до disconnect — graceful peer.Disconnect флешит queued reliable-пакет.
+// P7-1: a join reject (empty ticket → OpEmptyToken) really reaches the
+// client before the disconnect — graceful peer.Disconnect flushes the
+// queued reliable packet.
 func TestJoinRejectFrameDelivered(t *testing.T) {
 	cfg := adapterenet.DefaultEnetConfig()
 	cfg.ListenPorts = []uint16{freeUDPPort(t)}
-	cfg.AdmitTimeout = 30 * time.Second // не должен сработать раньше reject-пути
+	cfg.AdmitTimeout = 30 * time.Second // must not fire before the reject path
 	handle := newTestHandler(cfg).Listen()
 	defer handle.Stop()
 
@@ -177,6 +178,6 @@ func TestJoinRejectFrameDelivered(t *testing.T) {
 		t.Fatalf("reject frame = %v, want single byte %#x", data, byte(domain.OpEmptyToken))
 	}
 
-	// После reject сервер инициирует graceful disconnect.
+	// After the reject the server initiates a graceful disconnect.
 	client.waitEvent(t, libenet.EventDisconnect, 3*time.Second)
 }

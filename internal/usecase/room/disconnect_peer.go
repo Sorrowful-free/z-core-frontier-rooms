@@ -11,14 +11,14 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/reservation"
 )
 
-// DisconnectPeerUseCase — разрыв соединения без потери идентичности (P20):
-// peer изымается из комнаты обычным leave-путём (state-запись чистится,
-// election мгновенный, remove-патч уходит остальным), но слот reservation
-// не ревокается — MarkDisconnected ставит lastSeen, от которого sweep
-// отсчитывает RESERVATION_RECONNECT_TTL grace-окна; остальным рассылается
-// OpPeerDisconnected. Все disconnect-триггеры (WS waiter, ENet
-// EventDisconnect/bad-frame, idle sweep) идут сюда; LeaveRoomUseCase
-// остаётся для явных leave и rollback'ов.
+// DisconnectPeerUseCase — connection drop without losing identity (P20):
+// the peer is removed from the room via the regular leave path (its state
+// record is cleaned, election is instant, a remove patch goes to the
+// others), but the reservation slot is not revoked — MarkDisconnected sets
+// lastSeen, from which the sweep counts down the RESERVATION_RECONNECT_TTL
+// grace window; the others get OpPeerDisconnected. All disconnect triggers
+// (WS waiter, ENet EventDisconnect/bad-frame, idle sweep) land here;
+// LeaveRoomUseCase remains for explicit leaves and rollbacks.
 type DisconnectPeerUseCase struct {
 	roomRegistry registry.RoomRegistry
 	reservation  reservation.Reservation
@@ -51,10 +51,11 @@ func (uc *DisconnectPeerUseCase) DisconnectPeer(ctx context.Context, session Pee
 		return err
 	}
 
-	// Identity pre-check до MarkDisconnected: session.Peer может быть
-	// старым объектом, вытесненным Replace/resume (stale teardown) — метка
-	// lastSeen и peer_disconnects_total принадлежат живому peer'у, а не
-	// ему. Узкое окно до Leave закрывает ErrPeerStale в lifecycle.
+	// Identity pre-check before MarkDisconnected: session.Peer may be an
+	// old object displaced by Replace/resume (stale teardown) — the
+	// lastSeen mark and peer_disconnects_total belong to the live peer, not
+	// to it. The narrow window before Leave is closed by ErrPeerStale in
+	// the lifecycle.
 	current, err := room.GetPeer(session.PeerID)
 	switch {
 	case errors.Is(err, domain.ErrPeerNotFound):
@@ -67,19 +68,21 @@ func (uc *DisconnectPeerUseCase) DisconnectPeer(ctx context.Context, session Pee
 		return nil
 	}
 
-	// Mark до leave: пока peer в комнате, sweep игнорирует слот (HasPeer) —
-	// метка lastSeen встаёт без окна «слот-сирота без timestamp». Ошибка
-	// метки не блокирует изъятие peer'а из комнаты.
-	// Known issue: два конкурентных teardown'а одной сессии (idle sweep ∥
-	// WS waiter / ENet EventDisconnect) могут оба пройти identity pre-check
-	// выше и оба доехать до метки — двойной mark (peer_disconnects_total
-	// +2, lastSeen освежается дважды). Broadcast при этом остаётся
-	// одиночным: проигравший room.Leave получает ErrPeerNotFound и выходит
-	// раньше рассылки. Принято как benign-шум, дедупликация не добавляется.
-	// Stale-mark — гонка того же класса: mark стоит между identity pre-check
-	// и авторитетным Leave, поэтому при вытеснении peer'а Replace'ом в этом
-	// окне метка ложится на слот уже нового peer'а (метрика +1, lastSeen
-	// освежается), а Leave затем отвечает ErrPeerStale.
+	// Mark before leave: while the peer is in the room the sweep ignores
+	// the slot (HasPeer) — the lastSeen mark is set with no "orphan slot
+	// without a timestamp" window. A mark error does not block removing
+	// the peer from the room.
+	// Known issue: two concurrent teardowns of the same session (idle
+	// sweep ∥ WS waiter / ENet EventDisconnect) can both pass the identity
+	// pre-check above and both reach the mark — a double mark
+	// (peer_disconnects_total +2, lastSeen refreshed twice). The broadcast
+	// stays single though: the losing room.Leave gets ErrPeerNotFound and
+	// exits before the send. Accepted as benign noise, no dedup added.
+	// Stale-mark — a race of the same class: the mark sits between the
+	// identity pre-check and the authoritative Leave, so if the peer is
+	// displaced by Replace in this window the mark lands on the new peer's
+	// slot (metric +1, lastSeen refreshed), and Leave then answers
+	// ErrPeerStale.
 	if err := uc.reservation.MarkDisconnected(ctx, session.RoomID, session.PeerID); err != nil {
 		uc.logging.Error("disconnect peer: mark disconnected failed", "error", err, "roomID", session.RoomID, "peerID", session.PeerID)
 	}
@@ -87,17 +90,18 @@ func (uc *DisconnectPeerUseCase) DisconnectPeer(ctx context.Context, session Pee
 	leaveErr := room.Leave(session.Peer)
 	switch {
 	case errors.Is(leaveErr, domain.ErrPeerStale):
-		// Ожидаемая гонка (T8): старый conn проснулся после Replace —
-		// идентичность у нового peer'а; ничего не удаляем и не рассылаем.
+		// Expected race (T8): the old conn woke up after Replace — the
+		// identity belongs to the new peer; nothing is removed or broadcast.
 		uc.logging.Debug("disconnect peer: stale teardown", "roomID", session.RoomID, "peerID", session.PeerID)
 		return nil
 	case errors.Is(leaveErr, domain.ErrPeerNotFound):
 		uc.logging.Warn("disconnect peer: peer already left", "roomID", session.RoomID, "peerID", session.PeerID)
 		return nil
 	case errors.Is(leaveErr, domain.ErrRoomShouldClose):
-		// Authoritative-host (P29): разрыв master'а убивает комнату сразу —
-		// grace-окно хосту не применяется; оставшимся уходит OpRoomClosed и
-		// разрыв, слоты (включая только что помеченный) ревокает teardown.
+		// Authoritative host (P29): a master disconnect kills the room at
+		// once — no grace window for the host; the rest get OpRoomClosed and
+		// a disconnect, and the teardown revokes the slots (including the one
+		// just marked).
 		stopErr := session.Peer.Stop()
 		if stopErr != nil {
 			uc.logging.Error("disconnect peer: peer stop failed", "error", stopErr, "roomID", session.RoomID, "peerID", session.PeerID)
@@ -112,7 +116,7 @@ func (uc *DisconnectPeerUseCase) DisconnectPeer(ctx context.Context, session Pee
 		uc.logging.Error("disconnect peer: peer stop failed", "error", stopErr, "roomID", session.RoomID, "peerID", session.PeerID)
 	}
 
-	// FIFO outbound каждого получателя держит порядок «remove-патч → opcode».
+	// Each recipient's FIFO outbound keeps the "remove patch → opcode" order.
 	sendErr := room.Send(events.PeerEvent{
 		Frame: domain.NewPeerNotificationFrame(domain.OpPeerDisconnected, session.PeerID),
 	})
@@ -124,10 +128,10 @@ func (uc *DisconnectPeerUseCase) DisconnectPeer(ctx context.Context, session Pee
 		return err
 	}
 	uc.logging.Info("peer disconnected to grace", "roomID", session.RoomID, "peerID", session.PeerID)
-	// P31: disconnect последнего peer'а обычно оставляет grace-слот
-	// admitted → closeRoomIfEmpty no-op и комната живёт до истечения
-	// RESERVATION_RECONNECT_TTL; kill здесь срабатывает только когда
-	// grace-слота уже нет (например, его ревокал IssueTicket).
+	// P31: disconnecting the last peer usually leaves a grace slot
+	// admitted → closeRoomIfEmpty is a no-op and the room lives until
+	// RESERVATION_RECONNECT_TTL expires; the kill here only fires when the
+	// grace slot is already gone (e.g. IssueTicket revoked it).
 	closeRoomIfEmpty(ctx, room, uc.roomRegistry, uc.reservation, uc.logging)
 	return nil
 }

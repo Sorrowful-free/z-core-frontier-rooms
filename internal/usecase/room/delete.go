@@ -42,7 +42,7 @@ func (uc *DeleteUseCase) Delete(ctx context.Context, roomID domain.RoomID, passw
 	return uc.deleteRoom(ctx, roomID)
 }
 
-// DeleteForShutdown удаляет комнату без проверки пароля (graceful shutdown процесса).
+// DeleteForShutdown deletes a room without a password check (process graceful shutdown).
 func (uc *DeleteUseCase) DeleteForShutdown(ctx context.Context, roomID domain.RoomID) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -50,13 +50,14 @@ func (uc *DeleteUseCase) DeleteForShutdown(ctx context.Context, roomID domain.Ro
 	return uc.deleteRoom(ctx, roomID)
 }
 
-// deleteRoom — тот же teardown, что у policy-death (P29/P31): OpRoomClosed
-// (0x82) всем peer'ам → DeleteRoom → UnregisterRoom → параллельные
-// drain-aware Stop. Заменяет серийный LeaveRoom-цикл: первый же master-kick
-// на no-migration комнате триггерил closeRoom и остальные LeaveRoom
-// сыпали ErrRoomNotFound в ответ (латентный баг), плюс O(N×drainTimeout).
-// ErrRoomNotFound из DeleteRoom внутри closeRoom tolerated (Warn) — гонка
-// с параллельной смертью комнаты.
+// deleteRoom — the same teardown as policy-death (P29/P31): OpRoomClosed
+// (0x82) to all peers → DeleteRoom → UnregisterRoom → parallel
+// drain-aware Stop. Replaces the serial LeaveRoom loop: the very first
+// master-kick on a no-migration room triggered closeRoom and the
+// remaining LeaveRoom calls replied with ErrRoomNotFound (latent bug),
+// plus O(N×drainTimeout).
+// ErrRoomNotFound from DeleteRoom inside closeRoom is tolerated (Warn) —
+// a race with a parallel room death.
 func (uc *DeleteUseCase) deleteRoom(ctx context.Context, roomID domain.RoomID) error {
 	room, err := uc.roomRegistry.GetRoom(ctx, roomID)
 	if err != nil {
@@ -65,11 +66,11 @@ func (uc *DeleteUseCase) deleteRoom(ctx context.Context, roomID domain.RoomID) e
 	}
 
 	if err := closeRoom(ctx, room, uc.roomRegistry, uc.reservation, uc.logging); err != nil {
-		// Контракт DELETE — «комната удалена»: ошибки per-peer
-		// deliver/stop, попавшие в join closeRoom'а, не должны
-		// превращаться в 5xx, когда цель уже достигнута. Проверяем
-		// факт: комнаты нет в registry → Warn + успех; есть →
-		// ошибка реальная, отдаём её.
+		// The DELETE contract is "room deleted": per-peer
+		// deliver/stop errors joined inside closeRoom must not
+		// turn into a 5xx when the goal is already achieved. We check
+		// the fact: room absent from registry → Warn + success; present →
+		// the error is real, return it.
 		if _, getErr := uc.roomRegistry.GetRoom(ctx, roomID); errors.Is(getErr, domain.ErrRoomNotFound) {
 			uc.logging.Warn("delete room: room deleted with teardown errors", "error", err, "roomID", roomID)
 			return nil

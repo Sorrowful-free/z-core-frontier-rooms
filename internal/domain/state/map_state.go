@@ -89,13 +89,14 @@ func MakeMapStatePatch[K comparable, S any, P any](oldMapState MapState[K, S], n
 	return patchState, nil
 }
 
-// ApplyMapStatePatch — мягкий apply (tick-coalesced эмиссия, P34): Added
-// на существующем ключе — upsert, Removed на отсутствующем — ignore.
-// Реплика может опережать поток дельт (full state джойнеру несёт слепок с
-// уже вписанным peer, а ближайший patch-тик потом шлёт тот же Added
-// всем, включая джойнера) — дупликаты штатны, не рассинхрон.
-// Updated на отсутствующем остаётся ошибкой: ключ обязан быть и в prev,
-// и в new, значит есть у всех реплик — его отсутствие детектор рассинхрона.
+// ApplyMapStatePatch — soft apply (tick-coalesced emission, P34): Added
+// on an existing key is an upsert, Removed on a missing key is ignored.
+// A replica may be ahead of the delta stream (the full state sent to a
+// joiner carries a snapshot with the peer already written in, and the
+// next patch tick then sends the same Added to everyone, including the
+// joiner) — duplicates are normal, not a desync.
+// Updated on a missing key remains an error: the key must exist in both
+// prev and new, so every replica has it — its absence is a desync detector.
 func ApplyMapStatePatch[K comparable, S any, P any](targetState MapState[K, S], patchState MapStatePatch[K, S, P], apply func(S, P) (*S, error)) error {
 	for k, v := range patchState.Added {
 		targetState[k] = v

@@ -19,8 +19,8 @@ func (discardLogger) Debug(string, ...any) {}
 func (discardLogger) Warn(string, ...any)  {}
 func (discardLogger) Fatal(string, ...any) {}
 
-// Stub build: Listen возвращает handle, host не поднимается — Done закрывается,
-// Err() == nil (listener disabled, не failure), Stop не блокируется.
+// Stub build: Listen returns a handle, the host does not come up — Done is
+// closed, Err() == nil (listener disabled, not a failure), Stop does not block.
 func TestListenStubExitsClean(t *testing.T) {
 	t.Parallel()
 

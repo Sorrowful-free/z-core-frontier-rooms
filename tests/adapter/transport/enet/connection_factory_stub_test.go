@@ -10,8 +10,9 @@ import (
 	portenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/enet"
 )
 
-// Compile-assertion: stub-реализация удовлетворяет тому же untagged port-интерфейсу
-// (portenet.Peer = any без enet/cgo) — единая сигнатура CreateConnection(peer, incoming).
+// Compile-time assertion: the stub implementation satisfies the same
+// untagged port interface (portenet.Peer = any without enet/cgo) — a single
+// CreateConnection(peer, incoming) signature.
 var _ portenet.EnetConnectionFactory = (*adapterenet.EnetConnectionFactory)(nil)
 
 type discardLogger struct{}
@@ -22,7 +23,7 @@ func (discardLogger) Debug(string, ...any) {}
 func (discardLogger) Warn(string, ...any)  {}
 func (discardLogger) Fatal(string, ...any) {}
 
-// Stub-ветка: CreateConnection игнорирует аргументы и отдаёт no-op connection.
+// Stub branch: CreateConnection ignores the arguments and returns a no-op connection.
 func TestEnetConnectionFactoryStubCreateConnection(t *testing.T) {
 	t.Parallel()
 
