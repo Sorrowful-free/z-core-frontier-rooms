@@ -1,20 +1,20 @@
-# Моки (mockgen)
+# Mocks (mockgen)
 
-Генерация из интерфейсов в `internal/port/` через [go.uber.org/mock](https://github.com/uber-go/mock) (`mockgen`).
+Generation from interfaces in `internal/port/` via [go.uber.org/mock](https://github.com/uber-go/mock) (`mockgen`).
 
 ```bash
-# из корня модуля
+# from the module root
 go generate ./tests/mocks/...
 ```
 
-Требуется в `go.mod`: `tool go.uber.org/mock/mockgen` и `require go.uber.org/mock`.
+Required in `go.mod`: `tool go.uber.org/mock/mockgen` and `require go.uber.org/mock`.
 
-Файлы `mock_*.go` **коммитятся** в репозиторий, чтобы `go test ./tests/...` работал без установки mockgen.
+`mock_*.go` files **are committed** to the repository so that `go test ./tests/...` works without installing mockgen.
 
-Пакет импорта в тестах:
+Import package in tests:
 
 ```go
 "github.com/Sorrowful-free/z-core-frontier-rooms/tests/mocks"
 ```
 
-Используйте `gomock.Controller` и `mocks.NewMock…(ctrl)`.
+Use `gomock.Controller` and `mocks.NewMock…(ctrl)`.

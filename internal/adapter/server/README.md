@@ -1,11 +1,11 @@
 # adapter/server
 
-Параметры HTTP-процесса (Fiber listen).
+HTTP process parameters (Fiber listen).
 
 ## ServerConfig
 
-- `HTTPAddr` — адрес `fiber.App.Listen` (env `HTTP_ADDR`, default `:3000`)
+- `HTTPAddr` — `fiber.App.Listen` address (env `HTTP_ADDR`, default `:3000`)
 
-`Validate()` — непустой адрес.
+`Validate()` — non-empty address.
 
-Env-индекс: [adapter/config/README.md](../config/README.md).
+Env index: [adapter/config/README.md](../config/README.md).

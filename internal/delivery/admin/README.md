@@ -1,13 +1,13 @@
 # delivery/admin
 
-Admin listener процесса (P19): отдельный `*fiber.App` вне публичного API — телеметрия не смешивается с control/data plane и не проходит через их auth/rate-limit middleware.
+Process admin listener (P19): a separate `*fiber.App` outside the public API — telemetry is not mixed with the control/data plane and does not go through their auth/rate-limit middleware.
 
 ## Endpoint
 
-`GET /metrics` — prometheus exposition (`text/plain; version=0.0.4`): сигналы приложения (`rooms_*`, см. [adapter/metrics](../../adapter/metrics/README.md)) + стандартные `go_*`/`process_*` коллекторы.
+`GET /metrics` — prometheus exposition (`text/plain; version=0.0.4`): application signals (`rooms_*`, see [adapter/metrics](../../adapter/metrics/README.md)) + standard `go_*`/`process_*` collectors.
 
-Реализация — ручной `Gatherer.Gather()` + `expfmt` энкодер (без `net/http`/promhttp-adaptor: правило «только Fiber»). `NewMetricsApp(gatherer, logger)`: ошибки gather/encode логируются и отдаются как 500 с обёрнутым контекстом (P19b), не голый `ErrInternalServerError`.
+Implementation — manual `Gatherer.Gather()` + `expfmt` encoder (no `net/http`/promhttp adaptor: "Fiber only" rule). `NewMetricsApp(gatherer, logger)`: gather/encode errors are logged and returned as 500 with wrapped context (P19b), not a bare `ErrInternalServerError`.
 
 ## Listen
 
-Адрес — `ADMIN_LISTEN_ADDR` (`adapter/metrics.MetricsConfig.AdminListenAddr`); **пустой дефолт = listener выключен**, endpoint поднимается только явным env. `cmd/rooms` биндит `net.Listener` синхронно до serve-горутины (P19b: bind failure виден сразу, нет race «shutdown до listen») и гасит app своим timeout-ctx (`ShutdownWithContext`).
+Address — `ADMIN_LISTEN_ADDR` (`adapter/metrics.MetricsConfig.AdminListenAddr`); **empty default = listener disabled**, the endpoint comes up only via explicit env. `cmd/rooms` binds `net.Listener` synchronously before the serve goroutine (P19b: bind failure is visible immediately, no "shutdown before listen" race) and shuts the app down with its own timeout ctx (`ShutdownWithContext`).

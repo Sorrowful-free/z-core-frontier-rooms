@@ -1,73 +1,75 @@
 # State sync
 
-Authoritative room state на сервере (`StateRoomPolicy`). Клиент **принимает** full/patch от сервера и **отправляет** input, entities (master), RPC.
+Authoritative room state lives on the server (`StateRoomPolicy`). The client **receives** full/patch from the server and **sends** input, entities (master), RPC.
 
-## OpCode и направление
+## OpCodes and direction
 
-| OpCode | Hex | Направление | Кто может отправлять |
-|--------|-----|-------------|----------------------|
-| FullState | `0x01` | server → all | Сервер |
-| PatchState | `0x02` | server → all | Сервер |
-| FullEntities | `0x03` | client → server | **Только master** |
-| PatchEntities | `0x04` | client → server | **Только master** |
-| FullInput | `0x05` | client → server | Любой peer |
-| PatchInput | `0x06` | client → server | Любой peer |
-| Rpc | `0x07` | client → relay | Любой peer |
+| OpCode | Hex | Direction | Who may send |
+|--------|-----|-----------|--------------|
+| FullState | `0x01` | server → all | Server |
+| PatchState | `0x02` | server → all | Server |
+| FullEntities | `0x03` | client → server | **Master only** |
+| PatchEntities | `0x04` | client → server | **Master only** |
+| FullInput | `0x05` | client → server | Any peer |
+| PatchInput | `0x06` | client → server | Any peer |
+| Rpc | `0x07` | client → relay | Any peer |
 
-Payload: [wire-state-codec.md](../wire-state-codec.md). Payload с лишними trailing bytes — ошибка на сервере.
+Payload: [wire-state-codec.md](../wire-state-codec.md). A payload with trailing bytes is an error on the server.
 
 ## Server → client
 
 ### On join
 
-- Новому peer: `0x01` FullState (полный snapshot, включая его собственную запись).
-- Остальным: join-дельта доезжает ближайшим `0x02` PatchState (не сразу — см. модель эмиссии ниже). Джойнер тоже получает этот patch с `Added[себя]` поверх уже полученного full — apply обязан быть идемпотентным (см. «Мягкий apply»).
+- The new peer gets `0x01` FullState (a full snapshot, including its own record).
+- The rest learn via the join delta on the next `0x02` PatchState (not immediately — see the emission model below). The joiner also receives that patch with `Added[itself]` on top of the full it already has — apply must be idempotent (see "Soft apply").
 
-### Модель эмиссии (tick-coalesced, P34)
+### Emission model (tick-coalesced, P34)
 
-`0x02` PatchState — **единственный регулярный** кадр дельт и шлётся **только на patch-тике** (default 50 ms): все изменения state (client→server сообщения, join/leave, перевыборы master) копятся на сервере и уходят одним patch'ем на тике. Задержка любой дельты ≤ `patchStateInterval`. Immediate-эмиссия одна — full state джойнеру на join.
+`0x02` PatchState is the **only regular** delta frame and is sent **only on the patch tick** (default 50 ms): every state change (client→server messages, join/leave, master re-election) accumulates on the server and leaves as a single patch on the tick. Any delta's delay ≤ `patchStateInterval`. The only immediate *state* emission is the full state to the joiner on join (RPC relay and `0x80`/`0x81`/`0x82` notifications are also immediate sends — they are not state frames).
 
-Broadcast **универсальный**: patch идёт всем peer без исключений — publisher получает **эхо своих дельт** (например, master видит patch с собственными entities-изменениями). Клиентский apply идемпотентен и обязан это переваривать.
+Broadcast is **universal**: the patch goes to every peer without exclusions — the publisher receives an **echo of its own deltas** (e.g. the master sees a patch carrying its own entities changes). Client-side apply is idempotent and must digest this.
 
-| Интервал | Кадр | Default |
-|----------|------|---------|
-| Full state | `0x01` | каждые **4 s** |
-| Patch state | `0x02` | каждые **50 ms** |
+| Interval | Frame | Default |
+|----------|-------|---------|
+| Full state | `0x01` | every **4 s** |
+| Patch state | `0x02` | every **50 ms** |
 
-Клиент должен уметь применять patch поверх локального state (merge maps по правилам wire-doc).
+(The intervals are compile-time defaults — `DefaultFullStateInterval`/`DefaultPatchStateInterval`, not env-tunable.)
 
-**Ping:** поле `ping` в peer state обновляется сервером **только на full-тике** и едет в `0x01` FullState (каденция ~4 s); patch'и ping не несут.
+The client must be able to apply a patch on top of its local state (merge maps per the wire-doc rules).
 
-### Мягкий apply (обязательная семантика клиента)
+**Ping:** the `ping` field in peer state is refreshed by the server **only on the full tick** and travels inside `0x01` FullState (~4 s cadence); patch frames carry no ping *updates* (an `Added` peer record inside a patch still carries whatever ping value it had at add time).
 
-Реплика может опережать поток дельт (full state джойнеру несёт уже вписанные записи, tick-patch потом шлёт те же `Added` всем; эхо publisher'у). Поэтому map-patch применяется мягко:
+### Soft apply (mandatory client semantics)
 
-| Секция | Ключ есть у реплики | Ключа нет у реплики |
-|--------|---------------------|---------------------|
-| `Added` | **upsert** (перезаписать) | добавить |
-| `Updated` | применить | **ошибка** — рассинхрон, ждать full state |
-| `Removed` | удалить | **ignore** |
+A replica can run ahead of the delta stream (the joiner's full state already contains its record, the tick patch then sends the same `Added` to everyone; the publisher echo). Therefore map patches are applied softly:
 
-`Updated` на отсутствующем ключе — единственный строгий случай: в корректном потоке невозможен, трактовать как признак рассинхрона реплики.
+| Section | Key exists on replica | Key missing on replica |
+|---------|-----------------------|------------------------|
+| `Added` | **upsert** (overwrite) | add |
+| `Updated` | apply | **error** — desync, wait for a full state |
+| `Removed` | remove | **ignore** |
 
-### После client → server
+`Updated` on a missing key is the only strict case: impossible in a correct stream, treat it as a sign of replica desync.
 
-| Клиент шлёт | Сервер делает |
-|-------------|---------------|
-| `0x05` / `0x06` input | Обновляет `Inputs[peer_id]`; дельта всем — ближайшим patch-тиком |
-| `0x03` / `0x04` entities (master) | Обновляет `Entities`; дельта всем (включая master — эхо) patch-тиком |
-| `0x07` RPC | Relay по target (см. ниже) — единственный путь с immediate-ответом другим peer'ам |
+### After client → server
+
+| Client sends | Server does |
+|--------------|-------------|
+| `0x05` / `0x06` input | Updates `Inputs[peer_id]`; delta to everyone on the next patch tick |
+| `0x03` / `0x04` entities (master) | Updates `Entities`; delta to everyone (including the master — echo) on the patch tick |
+| `0x07` RPC | Relay by target (below) — the only path with an immediate response to other peers |
 
 ## Master
 
-- **Первый** peer в комнате становится master.
-- **Failover:** среди peer с `ping >= 0` — минимальный ping; при равенстве — минимальный `peer_id`. Если ping ни у кого не известен (`-1`) — минимальный `peer_id`.
-- Перевыбор происходит не только при уходе master: если прошлая попытка election упала, сервер переизбирает master на следующем patch-тике или лениво при входящем `0x07` RPC с `target=master` — `is_master` может поменяться в любом patch.
-- `is_master` никогда не указывает на мёртвого peer: сервер пишет флаг только после проверки, что избранный peer жив (validate-first), а кандидаты, уже отсутствующие в комнате, выборами пропускаются.
-- В peer state на wire: поле `is_master` (bool).
-- Только master может слать `0x03` / `0x04`. Иначе сервер шлёт in-room `0x61` `OpInRoomNotMaster` отправителю.
+- The **first** peer in a room becomes master.
+- **Failover:** among peers with `ping >= 0` — lowest ping; on ties — lowest `peer_id`. If nobody has a known ping (`-1`) — lowest `peer_id`.
+- Re-election happens not only when the master leaves: if the last election attempt failed, the server re-elects on the next patch tick or lazily on an incoming `0x07` RPC with `target=master` — `is_master` may flip in any patch.
+- `is_master` never points at a dead peer: the server writes the flag only after checking the electee is alive (validate-first), and candidates already absent from the room are skipped by elections.
+- In peer state on the wire: the `is_master` field (bool).
+- Only the master may send `0x03` / `0x04`. Otherwise the server sends in-room `0x61` `OpInRoomNotMaster` to the sender.
 
-### Godot: проверка master
+### Godot: master check
 
 ```gdscript
 func is_local_master(room_state: Dictionary, local_peer_id: int) -> bool:
@@ -79,15 +81,15 @@ func is_local_master(room_state: Dictionary, local_peer_id: int) -> bool:
 
 ## Input
 
-- `peer_id` **не** в payload — сервер берёт из соединения.
-- Любой peer может слать full (`0x05`) или patch (`0x06`) своего input map.
-- Значения — opaque bytes (`ValueId` → blob); семантику задаёт игра.
+- `peer_id` is **not** in the payload — the server takes it from the connection.
+- Any peer may send a full (`0x05`) or a patch (`0x06`) of its input map.
+- Values are opaque bytes (`ValueId` → blob); the game assigns semantics.
 
 ## Entities (master only)
 
-OpCodes `0x03` / `0x04` несут **только** entities map (не полный room). После приёма сервер merge в authoritative state и шлёт room patch остальным.
+OpCodes `0x03` / `0x04` carry **only** the entities map (not the whole room). After receiving them the server merges them into the authoritative state and sends the room patch to the rest.
 
-Каждая entity в map содержит `entity_type_id u8` — тип сущности для spawn на клиенте (игровой enum). Instance id — ключ map `EntityID u16`.
+Each entity in the map contains `entity_type_id u8` — the entity type for client-side spawn (a game enum). The instance id is the map key `EntityID u16`.
 
 ## RPC (`0x07`)
 
@@ -98,33 +100,33 @@ values  map
 peer_id u32
 ```
 
-| `target` | Имя | Доставка |
-|----------|-----|----------|
-| `0` | none | Ошибка `0x63` invalid RPC |
-| `1` | peer | Одному `peer_id` из payload (должен быть в комнате) |
-| `2` | master | Текущему master |
-| `3` | all | Всем peer **кроме отправителя** |
+| `target` | Name | Delivery |
+|----------|------|----------|
+| `0` | none | Error `0x63` invalid RPC |
+| `1` | peer | To the single `peer_id` from the payload (must be in the room) |
+| `2` | master | To the current master |
+| `3` | all | To every peer **except the sender** |
 
-Сервер **relay** — пересылает тот же payload (`0x07`) получателям; не интерпретирует `rpc_id` / values.
+The server is a **relay** — it forwards the same payload (`0x07`) to the recipients; it does not interpret `rpc_id` / values.
 
 ## Reconnect (P20)
 
-Модель reconnect (P20): разрыв транспорта **удаляет** peer'а из комнаты обычным leave-путём — остальным уходит remove-патч и `0x80` `OpPeerDisconnected`; если ушёл master, election идёт сразу на leave. Идентичность при этом живёт: admitted-слот reservation держит capacity и `peer_id` в grace-окне `RESERVATION_RECONNECT_TTL` (серверный, default `30s`, от `lastSeen` слота — момента разрыва).
+The reconnect model (P20): a transport break **removes** the peer from the room via the normal leave path — the rest get a remove patch and `0x80` `OpPeerDisconnected`; if the master left, election runs immediately on leave. Identity survives: the admitted reservation slot keeps capacity and `peer_id` within the `RESERVATION_RECONNECT_TTL` grace window (server-side, default `30s`, from the slot's `lastSeen` — the disconnect moment).
 
-- **Resume** — повторный admit с `reconnect_token` (kind `2`) вместо join-тикета (`?token=` / первый ENet-пакет): тот же `peer_id`, nick — из слота (в токене его нет). Успех — как обычный join: вернувшемуся `0x01` FullState, остальным `0x81` `OpPeerReconnected`. Поток и reject-коды: [realtime.md](realtime.md#reconnect-p20), [errors.md](errors.md).
-- **Мастерство не возвращается:** election при disconnect уже отдал `is_master` другому — вернувшийся вступает обычным peer и становится master только по общим правилам выше (первый в опустевшей комнате / failover).
-- **Replace (newest-wins):** resume при **живом** старом conn вытесняет его — старое соединение получает разрыв; grace-дедлайн на этот путь не действует.
-- Ошибки: `0x45` `OpReplaceFailed` / `0x51` `OpPeerStartFailed` — как при join; просроченная grace — `0x74` `OpReservationExpired` (если sweep уже отозвал слот — `0x73`), дальше только новый issue ticket (новый `peer_id`).
+- **Resume** — re-admit with the `reconnect_token` (kind `2`) instead of the join ticket (`?token=` / first ENet packet): same `peer_id`, nick from the slot (the token carries none). Success — like a regular join: the returner gets `0x01` FullState, the rest get `0x81` `OpPeerReconnected`. Flow and reject codes: [realtime.md](realtime.md#reconnect-p20), [errors.md](errors.md).
+- **Mastery is not restored:** the election at disconnect already handed `is_master` to someone else — the returner joins as a regular peer and becomes master only under the general rules above (first in an emptied room / failover).
+- **Replace (newest-wins):** resuming while the old conn is **alive** evicts it — the old connection is torn down; the grace deadline does not apply to this path.
+- Errors: `0x45` `OpReplaceFailed` / `0x51` `OpPeerStartFailed` — same as join; expired grace → `0x74` `OpReservationExpired` (if the sweep already revoked the slot → `0x73`); after that only a new issue ticket (new `peer_id`).
 
-## Рекомендуемая структура Godot
+## Recommended Godot structure
 
 ```text
-RoomClient          — HTTP + WS lifecycle
-WireCodec           — encode/decode payload (wire-state-codec)
-RoomStateModel      — локальная копия maps peers/inputs/entities
-StateSync           — apply full/patch, diff для отправки input
-MasterLogic         — entities update только если is_master
-RpcHandler          — encode/decode 0x07 по игровым RpcID
+RoomClient          — HTTP + WS/ENet lifecycle
+WireCodec           — encode/decode payloads (wire-state-codec)
+RoomStateModel      — local copy of the peers/inputs/entities maps
+StateSync           — apply full/patch, diff for outgoing input
+MasterLogic         — entities update only while is_master
+RpcHandler          — encode/decode 0x07 by game RpcIDs
 ```
 
-Источник поведения сервера: `internal/adapter/realtime/policy/state/`.
+Source of server behavior: `internal/adapter/realtime/policy/state/`.

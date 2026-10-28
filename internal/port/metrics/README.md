@@ -1,25 +1,25 @@
 # port/metrics
 
-Потребительский порт телеметрии процесса (P19). Реализация — [`adapter/metrics`](../../adapter/metrics/README.md) (prometheus), экспорт — `GET /metrics` на отдельном admin listener'е ([`delivery/admin`](../../delivery/admin/README.md)).
+Consumer-side port for process telemetry (P19). Implementation — [`adapter/metrics`](../../adapter/metrics/README.md) (prometheus), export — `GET /metrics` on a separate admin listener ([`delivery/admin`](../../delivery/admin/README.md)).
 
-## Интерфейс
+## Interface
 
-`Metrics` — плоский интерфейс типизированных сигналов (в стиле `port/logging.Logger`): компоненты сообщают доменные события, маппинг на имена/label'ы метрик — внутри адаптера. Кардинальность ограничена типами параметров (reject counter по `domain.OpCode`).
+`Metrics` — flat interface of typed signals (in the style of `port/logging.Logger`): components report domain events, mapping to metric names/labels lives inside the adapter. Cardinality is bounded by parameter types (reject counter by `domain.OpCode`).
 
-| Группа | Методы |
-|--------|--------|
+| Group | Methods |
+|-------|---------|
 | Gauges | `SetActiveRooms`, `AddActivePeers`, `RoomIncomingDepth(n)`, `PeerOutboundDepth(n)`, `EnetHostPeers(hostID, n)`, `ReservationActiveSlots(delta)` |
-| Комнаты | `PeerJoined`, `PeerLeft`, `JoinRejected(op)`, `MasterElected`, `RoomTickObserved(kind, d)` |
-| Очереди | `RoomIncomingDropped`, `PeerOutboundDropped`, `EnetIncomingDropped`, `EnetHostLoopQueueLatency(d)` |
+| Rooms | `PeerJoined`, `PeerLeft`, `JoinRejected(op)`, `MasterElected`, `RoomTickObserved(kind, d)` |
+| Queues | `RoomIncomingDropped`, `PeerOutboundDropped`, `EnetIncomingDropped`, `EnetHostLoopQueueLatency(d)` |
 | Peer | `PeerSendError`, `PeerDisconnected`, `ReconnectSucceeded` |
 | Reservation | `ReservationReserved`, `ReservationAdmitted`, `ReservationRevoked` |
 | Sweeps | `OrphanAdmittedRevoked(n)`, `IdlePeersEvicted(n)`, `SweepRan(sweep)` |
 | HTTP | `HTTPRequestObserved(route, method, status, d)` |
 
-`PeerJoined`/`PeerLeft` считают переходы членства на room-loop'е: `Replace` = leave + join (пара событий, gauge peer'ов без дельты). Метрики членства привязаны к реальной мутации `peers` map (P19b): повторный join того же peer'а и повторный leave не искажают `active_peers`.
+`PeerJoined`/`PeerLeft` count membership transitions on the room loop: `Replace` = leave + join (a pair of events, peers gauge without a delta). Membership metrics are tied to the actual mutation of the `peers` map (P19b): re-join of the same peer and repeated leave do not distort `active_peers`.
 
-Gauge-сигналы глубины очередей - сэмплы `len(chan)` в точках enqueue/dequeue (приближение last-write-wins между инстансами, не строгая сумма). `JoinRejected` считается только после успешной отправки reject-кадра: `delivery/errors.SendJoinReject` возвращает ошибку send, caller эмитит по её результату.
+Queue-depth gauge signals are `len(chan)` samples at enqueue/dequeue points (a last-write-wins approximation across instances, not a strict sum). `JoinRejected` is counted only after the reject frame is sent successfully: `delivery/errors.SendJoinReject` returns the send error, and the caller emits based on its result.
 
 ## Noop
 
-`Noop()` / `OrNoop(m)` — заглушка и nil-нормализация: компоненты принимают `nil` в конструкторах и нормализуют к `Noop`, поэтому прямое конструирование в тестах безопасно без мока.
+`Noop()` / `OrNoop(m)` — stub and nil normalization: components accept `nil` in constructors and normalize to `Noop`, so direct construction in tests is safe without a mock.

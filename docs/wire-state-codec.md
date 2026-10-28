@@ -1,27 +1,27 @@
 # Wire: state codec (room sync)
 
-Бинарный контракт для игрового state между **Go-сервером** и **Godot-клиентом**.  
-E2e-поток (HTTP → join → sync): [client-protocol/README.md](client-protocol/README.md).  
-Реализация: [internal/adapter/realtime/codec/README.md](../internal/adapter/realtime/codec/README.md).  
-OpCode ошибок: [internal/delivery/errors/README.md](../internal/delivery/errors/README.md).  
-Кадр транспорта: `domain.Frame` = `OpCode` (1 байт) + `Payload` (этот документ описывает **payload** state/input/rpc).
+Binary contract for game state between the **Go server** and the **Godot client**.  
+E2E flow (HTTP → join → sync): [client-protocol/README.md](client-protocol/README.md).  
+Implementation: [internal/adapter/realtime/codec/README.md](../internal/adapter/realtime/codec/README.md).  
+Error OpCodes: [internal/delivery/errors/README.md](../internal/delivery/errors/README.md).  
+Transport frame: `domain.Frame` = `OpCode` (1 byte) + `Payload` (this document describes the **payload** of state/input/rpc).
 
-## Общие правила
+## General rules
 
-| Правило | Значение |
-|---------|----------|
-| Порядок байт | **Big-endian** для всех multi-byte чисел |
+| Rule | Value |
+|------|-------|
+| Byte order | **Big-endian** for all multi-byte numbers |
 | Map (full) | `count u16` + `count` × (`key` + `value`) |
 | Map (patch) | `added_count u16` + entries + `updated_count u16` + entries + `removed_count u16` + keys |
-| Value payload | `len u8` + `len` raw bytes (opaque, без Go `binary` slice encoding) |
+| Value payload | `len u8` + `len` raw bytes (opaque, no Go `binary` slice encoding) |
 | String | `len u8` + UTF-8 bytes (`nick`) |
-| Пустой / отсутствует ID | `PeerID(0)`, `RoomID(0)` и т.д. — невалидны; на wire `peer_id u32 = 0` = «нет целевого peer» (RPC) |
-| Trailing bytes | Decode отвергает payload, если после разобранного значения остались байты (`buf.Len() > 0` → ошибка) |
-| Лимиты | См. константы в codec; при превышении encode/decode возвращает ошибку |
+| Empty / absent ID | `PeerID(0)`, `RoomID(0)` etc. are invalid; on wire `peer_id u32 = 0` = "no target peer" (RPC) |
+| Trailing bytes | Decode rejects a payload when bytes remain after the parsed value (`buf.Len() > 0` → error) |
+| Limits | See constants in the codec; encode/decode return an error on overflow |
 
-**ID в map:** ключ map — единственный instance id на wire. В теле value **не** дублируется `PeerID` / `EntityID` (u16) / `ComponentID` / `ValueId` (кроме ключа map). Поле `entity_type_id u8` в entity payload — тип сущности, не instance id.
+**IDs in maps:** the map key is the only instance id on the wire. The value body does **not** duplicate `PeerID` / `EntityID` (u16) / `ComponentID` / `ValueId` (except as the map key). The `entity_type_id u8` field inside an entity payload is the entity *type*, not an instance id.
 
-**Отправитель input:** `RoomEvent.PeerID` на сервере; в payload input **нет** `peer_id`.
+**Input sender:** `RoomEvent.PeerID` on the server; the input payload carries **no** `peer_id`.
 
 ## Primitives
 
@@ -31,7 +31,7 @@ u16  — 2 bytes BE
 u32  — 4 bytes BE
 i8   — 1 byte (room capacity)
 i64  — 8 bytes BE (peer ping)
-bool — 1 byte (0 = false, 1 = true; Go `binary.Write` для bool)
+bool — 1 byte (0 = false, 1 = true; Go `binary.Write` for bool)
 
 string — u8 len + bytes (max len 255)
 value  — u8 len + bytes (max len 255)
@@ -44,26 +44,26 @@ value_id  u8
 value     value (len + bytes)
 ```
 
-`ValueState` в домене = opaque `[]byte`.
+`ValueState` in the domain is an opaque `[]byte`.
 
-## Component (payload в entity map)
+## Component (payload in the entity map)
 
-Только map values (см. Value map). Max entries: **32** (`ComponentStateMaxValues`).
+Only a values map (see Value map). Max entries: **32** (`ComponentStateMaxValues`).
 
 ```text
-component_id u8   — ключ в entity.Components
+component_id u8   — key in entity.Components
 payload      — writeComponentState (values map)
 ```
 
-## Entity (payload в room map)
+## Entity (payload in the room map)
 
 ```text
-entity_type_id u8   — тип сущности (игровой enum на клиенте)
+entity_type_id u8   — entity type (game enum on the client)
 owner          u32
 components     map ComponentID → component payload
 ```
 
-Ключ map: `EntityID u16` — instance id. Поле `entity_type_id` в payload — **тип** сущности, не дублирует ключ map.
+Map key: `EntityID u16` — the instance id. The `entity_type_id` field in the payload is the **type** of the entity and does not duplicate the map key.
 
 Max components: **64** (`EntityStateMaxComponents`).
 
@@ -80,9 +80,9 @@ flags u8
 [components patch]
 ```
 
-Флаги: `EntityStateFlagsEntityTypeID = 1`, `EntityStateFlagsOwner = 2`, `EntityStateFlagsComponents = 4`.
+Flags: `EntityStateFlagsEntityTypeID = 1`, `EntityStateFlagsOwner = 2`, `EntityStateFlagsComponents = 4`.
 
-## Peer (payload в room.Peers map)
+## Peer (payload in the room.Peers map)
 
 ```text
 nick      string
@@ -90,7 +90,7 @@ is_master bool
 ping      i64
 ```
 
-Ключ map: `peer_id u32`. Max peers in room map: **255**.
+Map key: `peer_id u32`. Max peers in the room map: **255**.
 
 ### Peer patch
 
@@ -103,13 +103,13 @@ flags u8
 [optional fields in flag order]
 ```
 
-Флаги: `PeerStateFlagsNickName = 1`, `PeerStateFlagsIsMaster = 2`, `PeerStateFlagsPing = 4`.
+Flags: `PeerStateFlagsNickName = 1`, `PeerStateFlagsIsMaster = 2`, `PeerStateFlagsPing = 4`.
 
 ## Input (opcode `0x05` full / `0x06` patch)
 
-Только map values. Max values: **32** (`InputStateMaxValues`).
+Only a values map. Max values: **32** (`InputStateMaxValues`).
 
-Patch = map patch (added/updated/removed value entries).
+A patch is a map patch (added/updated/removed value entries).
 
 ## RPC (opcode `0x07`)
 
@@ -117,7 +117,7 @@ Patch = map patch (added/updated/removed value entries).
 rpc_id    u8
 target    u8   — 0 none, 1 peer, 2 master, 3 all
 values    map ValueId → value
-peer_id   u32  — 0 = нет целевого peer
+peer_id   u32  — 0 = no target peer
 ```
 
 Max values: **32** (`RpcStateMaxValues`).
@@ -132,9 +132,9 @@ inputs    map PeerID → input payload
 entities  map EntityID → entity payload
 ```
 
-Лимиты: peers/inputs **255**, entities **65535**.
+Limits: peers/inputs **255**, entities **65535**.
 
-Пароль комнаты — серверный секрет в `reservation`, в state на wire не сериализуется.
+The room password is a server secret in `reservation` and is not serialized to the wire.
 
 ## Room patch (`OpCodePatchState` = `0x02`)
 
@@ -148,25 +148,25 @@ flags u8
 [optional sections in bit order]
 ```
 
-Секция пишется/читается **только если** соответствующий bit в `flags`.
+A section is written/read **only if** the corresponding bit is set in `flags`.
 
-Флаги: `RoomStateFlagsCapacity = 1`, `RoomStateFlagsPeers = 2`, `RoomStateFlagsInputs = 4`, `RoomStateFlagsEntities = 8`.
+Flags: `RoomStateFlagsCapacity = 1`, `RoomStateFlagsPeers = 2`, `RoomStateFlagsInputs = 4`, `RoomStateFlagsEntities = 8`.
 
 ## Entities standalone (`OpCodeFullEntities` = `0x03` / `OpCodePatchEntities` = `0x04`)
 
-Отдельные opcodes **только от master** к серверу. Payload — **не** room header, только entities map:
+Standalone opcodes **only from the master** to the server. The payload is **not** a room header, only the entities map:
 
 | OpCode | Hex | Payload |
 |--------|-----|---------|
-| `OpCodeFullEntities` | `0x03` | `entities` map (full), как секция entities в room full |
-| `OpCodePatchEntities` | `0x04` | `entities` map patch, как секция entities в room patch |
+| `OpCodeFullEntities` | `0x03` | `entities` map (full), same as the entities section of room full |
+| `OpCodePatchEntities` | `0x04` | `entities` map patch, same as the entities section of room patch |
 
-После приёма сервер мерджит entities в authoritative state; дельта уходит `OpCodePatchState` (`0x02`) на ближайшем patch-тике **всем** peer (tick-coalesced эмиссия, P34 — master получает эхо). Семантика apply и каденция — [client-protocol/state-sync.md](client-protocol/state-sync.md).
+After receiving them the server merges the entities into the authoritative state; the delta goes out as `OpCodePatchState` (`0x02`) on the next patch tick to **all** peers (tick-coalesced emission, P34 — the master gets the echo). Apply semantics and cadence: [client-protocol/state-sync.md](client-protocol/state-sync.md).
 
 ## OpCodes (state traffic)
 
-| OpCode | Hex | Направление | Payload |
-|--------|-----|-------------|---------|
+| OpCode | Hex | Direction | Payload |
+|--------|-----|-----------|---------|
 | `OpCodeFullState` | `0x01` | server → client | Room full |
 | `OpCodePatchState` | `0x02` | server → client | Room patch |
 | `OpCodeFullEntities` | `0x03` | master → server | Entities map only |
@@ -175,26 +175,31 @@ flags u8
 | `OpCodePatchInput` | `0x06` | client → server | Input map patch |
 | `OpCodeRpc` | `0x07` | client → server → relay | RPC |
 
-Источник истины: [internal/domain/state/opcodes.go](../internal/domain/state/opcodes.go).
+Source of truth: [internal/domain/state/opcodes.go](../internal/domain/state/opcodes.go).
 
-Ошибки join/reservation/in-room: `0x40+` — см. [client-protocol/errors.md](client-protocol/errors.md).
+Join/reservation/in-room errors: `0x40+` — see [client-protocol/errors.md](client-protocol/errors.md).
 
-## Godot (кратко)
+## Godot (short)
 
 ```gdscript
-# u32 BE из PackedByteArray b at offset
+# u32 BE from PackedByteArray b at offset
 func read_u32_be(b: PackedByteArray, off: int) -> int:
     return (b[off] << 24) | (b[off+1] << 16) | (b[off+2] << 8) | b[off+3]
 
-# value после value_id
+# value after value_id
 func read_value(b: PackedByteArray, off: int) -> Dictionary:
     var n = b[off]
     off += 1
     return {"bytes": b.slice(off, off + n), "next": off + n}
 ```
 
-Константы флагов и лимиты держите в синхроне с Go (`room_state_codec.go`, `entity_codec.go`, …).
+Keep flag constants and limits in sync with Go (`room_state_codec.go`, `entity_codec.go`, …).
 
-## Тесты
+Notes a client should know:
+
+- **Map entry order is unspecified** — the server serializes Go maps, so entries arrive in arbitrary order. Do not rely on ordering.
+- **Patch counts are per section** — `added`, `updated`, and `removed` counts are each independently bounded by the section's max, so a patch may legally carry more total entries than the nominal map max. Size buffers accordingly.
+
+## Tests
 
 Round-trip: `go test ./tests/adapter/realtime/codec/...`

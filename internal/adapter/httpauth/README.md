@@ -1,16 +1,16 @@
 # adapter/httpauth
 
-Конфигурация аутентификации HTTP control plane.
+HTTP control plane authentication configuration.
 
 ## HTTPAuthConfig
 
-| Поле | Описание |
-|------|----------|
-| `APIKey` | Секрет для REST; заголовок `Authorization: Bearer …` или `X-API-Key` |
-| `Disabled` | `true` — middleware пропускает все запросы (только dev) |
+| Field | Description |
+|-------|-------------|
+| `APIKey` | REST secret; `Authorization: Bearer …` or `X-API-Key` header |
+| `Disabled` | `true` — middleware lets all requests through (dev only) |
 
-`Validate()` — ключ обязателен и ≥ 16 байт, если auth не отключён.
+`Validate()` — the key is required and ≥ 16 bytes if auth is not disabled.
 
-Env и загрузка — [adapter/config/README.md](../config/README.md).
+Env and loading — [adapter/config/README.md](../config/README.md).
 
 Middleware — [delivery/http/README.md](../../delivery/http/README.md).

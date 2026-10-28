@@ -1,14 +1,14 @@
 # delivery/errors
 
-Маппинг `domain` ошибок → wire OpCode. Кадр: **1 байт OpCode + пустой payload** (для reject/error).
+Mapping of `domain` errors → wire OpCode. Frame: **1 byte OpCode + empty payload** (for reject/error).
 
-Импорт: `deliveryerrors "github.com/.../internal/delivery/errors"`.
+Import: `deliveryerrors "github.com/.../internal/delivery/errors"`.
 
 ## Join / admit (`0x40–0x5F`)
 
 | OpCode | Hex | Sentinel |
 |--------|-----|----------|
-| `OpEmptyToken` | `0x40` | пустой ticket |
+| `OpEmptyToken` | `0x40` | empty ticket |
 | `OpInvalidToken` | `0x41` | `ErrInvalidToken` |
 | `OpExpiredToken` | `0x42` | `ErrExpiredToken` |
 | `OpRoomNotFound` | `0x43` | `ErrRoomNotFound` |
@@ -18,15 +18,15 @@
 | `OpInternal` | `0x50` | default |
 | `OpPeerStartFailed` | `0x51` | `ErrPeerStartFailed` |
 
-`JoinRejectOpCode`, `SendJoinReject` — `join_reject.go`. Reservation-ошибки на join делегируются в `0x70+`; `ErrRoomFull` (`Room.Join` переполнение) мапится в `OpReservationFull` (`0x71`), case выше `ErrJoinDenied` — `ErrRoomFull` может прийти обёрнутым в него (policy `OnJoin`), тогда ordering решает.
+`JoinRejectOpCode`, `SendJoinReject` — `join_reject.go`. Reservation errors on join are delegated to `0x70+`; `ErrRoomFull` (`Room.Join` overflow) maps to `OpReservationFull` (`0x71`), the case sits above `ErrJoinDenied` — `ErrRoomFull` may arrive wrapped in it (policy `OnJoin`), in which case ordering decides.
 
-`SendJoinReject` / `SendReservationReject` / `SendInRoomError` возвращают ошибку `conn.Send` (P19b): caller считает `join_rejects_total` только при успешной отправке, без неё - логирует. Ошибку можно безопасно игнорировать.
+`SendJoinReject` / `SendReservationReject` / `SendInRoomError` return the `conn.Send` error (P19b): the caller counts `join_rejects_total` only on a successful send, otherwise it logs. The error can be safely ignored.
 
-`IsJoinRejectOpCode` покрывает **оба** reject-диапазона (`0x40–0x5F` и `0x70–0x7F`) — оба закрывают соединение. `IsReservationRejectOpCode` — только `0x70–0x7F`, `IsInRoomErrorOpCode` — только `0x60–0x6F`.
+`IsJoinRejectOpCode` covers **both** reject ranges (`0x40–0x5F` and `0x70–0x7F`) — both close the connection. `IsReservationRejectOpCode` — only `0x70–0x7F`, `IsInRoomErrorOpCode` — only `0x60–0x6F`.
 
 ## In-room (`0x60–0x6F`)
 
-Ошибка **отправителю**; соединение остаётся открытым.
+Error **to the sender**; the connection stays open.
 
 | OpCode | Hex | Sentinel |
 |--------|-----|----------|
@@ -38,7 +38,7 @@
 | `OpInRoomNoMaster` | `0x65` | `ErrNoMaster` |
 | `OpInRoomUnknownOpcode` | `0x66` | `ErrInRoomUnknownOpcode` |
 
-Маппинг: `domain.InRoomErrorOpCode` (`room_errors.go`); в этом пакете — обёртка + `SendInRoomError` (`join_reject.go`).
+Mapping: `domain.InRoomErrorOpCode` (`room_errors.go`); this package holds the wrapper + `SendInRoomError` (`join_reject.go`).
 
 ## Reservation (`0x70–0x7F`)
 
@@ -56,18 +56,18 @@
 | `OpWrongHost` | `0x77` | `ErrWrongHost` (strict binding admit, P18) |
 | `OpReservationInternal` | `0x7F` | `ErrReservationInternal` |
 
-`OpReservationExpired` (`0x74`) на resume — истёкший grace-дедлайн `lastSeen + RESERVATION_RECONNECT_TTL` (P24, гейт в `ReconnectRoomUseCase` до refresh'а); на join — просроченный `reserved`-слот в `Admit`.
+`OpReservationExpired` (`0x74`) on resume — expired grace deadline `lastSeen + RESERVATION_RECONNECT_TTL` (P24, gate in `ReconnectRoomUseCase` before the refresh); on join — an overdue `reserved` slot in `Admit`.
 
-`ErrPeerStale` (identity-scoped teardown реестра peer'ов, P20) — **internal-only** sentinel: в таблицах нет и до wire недостижим (мапился бы в `OpInternal`), отдельного opcode у него нет.
+`ErrPeerStale` (identity-scoped teardown in the peer registry, P20) — **internal-only** sentinel: absent from the tables and unreachable on the wire (it would map to `OpInternal`); it has no dedicated opcode.
 
 ## Room notifications (`0x80+`, P20)
 
-Не ошибки и **не через этот пакет**: `OpPeerDisconnected` (`0x80`), `OpPeerReconnected` (`0x81`) рассылают use case'ы (`DisconnectPeer`/`ReconnectRoom`) напрямую через `room.Send` после leave/join — FIFO outbound держит порядок «state-патч → opcode». Payload: `peerID u64 BE` (`domain.NewPeerNotificationFrame`). См. [docs/client-protocol/errors.md](../../../docs/client-protocol/errors.md).
+Not errors and **not via this package**: `OpPeerDisconnected` (`0x80`), `OpPeerReconnected` (`0x81`) are broadcast by use cases (`DisconnectPeer`/`ReconnectRoom`) directly through `room.Send` after leave/join — the outbound FIFO preserves "state patch → opcode" order. Payload: `peerID u64 BE` (`domain.NewPeerNotificationFrame`). See [docs/client-protocol/errors.md](../../../docs/client-protocol/errors.md).
 
 ## State traffic (`0x01–0x07`)
 
-Игровой payload — `domain/state/opcodes.go`, layout [docs/wire-state-codec.md](../../../docs/wire-state-codec.md).
+Game payload — `domain/state/opcodes.go`, layout [docs/wire-state-codec.md](../../../docs/wire-state-codec.md).
 
-Клиентская спека (Godot): [docs/client-protocol/errors.md](../../../docs/client-protocol/errors.md).
+Client spec (Godot): [docs/client-protocol/errors.md](../../../docs/client-protocol/errors.md).
 
-Чеклист изменений: [.cursor/rules/join-error-opcodes.mdc](../../../.cursor/rules/join-error-opcodes.mdc).
+Change checklist: [.cursor/rules/join-error-opcodes.mdc](../../../.cursor/rules/join-error-opcodes.mdc).

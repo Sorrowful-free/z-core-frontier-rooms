@@ -1,73 +1,73 @@
 # z-core-frontier-rooms
 
-Сервис игровых комнат: control plane (HTTP) и data plane (WebSocket, ENet). Термины домена комнат, peers и живости соединений.
+A game-room service: control plane (HTTP) and data plane (WebSocket, ENet). Domain terms for rooms, peers, and connection liveness.
 
 ## Language
 
 **Zombie peer**:
-Peer, который остаётся зарегистрированным в комнате, но его транспорт фактически мёртв (полуоткрытый TCP и т.п.). Слот reservation занят, кадры клиенту не доходят.
+A peer that stays registered in a room while its transport is effectively dead (half-open TCP, etc.). Its reservation slot stays occupied and frames never reach the client.
 _Avoid_: dead peer, ghost peer, stale peer
 
 **Idle eviction**:
-Периодический sweep, выводящий zombie peer'ов из комнат через стандартный leave-поток (`Leave` → `Stop` → `Revoke`).
+A periodic sweep that removes zombie peers from rooms through the standard disconnect path (`DisconnectPeer` → `MarkDisconnected` → `room.Leave` → `Peer.Stop`): the peer leaves the room immediately, its reservation slot keeps a grace window for reconnect (P20), and a later sweep revokes it on expiry. Applies to transports whose `IsAlive` reflects idleness (WS); ENet zombies die by the transport's own protocol timeout → `EventDisconnect` → the same `DisconnectPeer` path.
 _Avoid_: reaper, cleaner, GC peers
 
 **IsAlive**:
-Контракт живости соединения/peer'а: `false` — транспорт считается мёртвым и peer подлежит idle eviction. Каждая реализация транспорта сама решает, что считается живостью.
+The liveness contract of a connection/peer: `false` means the transport is considered dead and the peer is subject to idle eviction. Each transport implementation decides what counts as alive — for WS it is recent inbound activity, for ENet it is the connection's closed flag (protocol timeouts surface as `EventDisconnect`).
 _Avoid_: Connected, Active, Online
 
 **Last seen**:
-Внутренний момент последней подтверждённой живости клиента. Для WS — успешный входящий кадр или pong; исходящие кадры живость не подтверждают. Не путать с RTT (`Ping()`): RTT — устаревающее значение, а не метка времени.
+The internal moment of the client's last confirmed liveness. For WS — a successful inbound frame or pong; outbound frames do not confirm liveness. Not to be confused with RTT (`Ping()`): RTT is a stale-able value, not a timestamp.
 _Avoid_: LastActivity, heartbeat timestamp
 
 **ENet host / HostID** (shard):
-Один ENet host процесса: свой UDP-порт из `EnetConfig.ListenPorts` и свой `HostLoop`. `domain.HostID` - индекс+1 в списке портов; попадает в claims ticket'а для strict binding admit (P18). `HostIDUnbound` (`0`) - ticket без привязки (выписан без HostRegistry, WS-only) → reject `OpWrongHost` на ENet-admit. Комната транспорт-агностична: её peer'ы могут сидеть на разных host'ах.
+One ENet host of the process: its own UDP port from `EnetConfig.ListenPorts` and its own `HostLoop`. `domain.HostID` = index+1 into the port list; it lands in ticket claims for strict binding admit (P18). `HostIDUnbound` (`0`) = a ticket without binding (issued without a HostRegistry, WS-only) → `OpWrongHost` reject on ENet admit. A room is transport-agnostic: its peers may sit on different hosts.
 _Avoid_: shard index, node, listener id
 
 **Orphan admitted**:
-Слот reservation в состоянии `admitted`, для которого в комнате нет живого peer'а (клиент получил ticket и зашёл, но peer ушёл/умер без revoke). Вычищается фоновым `SweepOrphanAdmittedUseCase` после `lastSeen + RESERVATION_RECONNECT_TTL` (P20) или точечным revoke+reserve в `IssueTicket` при повторном issue того же peer'а.
+A reservation slot in `admitted` state with no live peer in the room (the client got a ticket and joined, but the peer left/died without a revoke). Cleaned up by the background `SweepOrphanAdmittedUseCase` after `lastSeen + RESERVATION_RECONNECT_TTL` (P20), or by a targeted revoke+reserve inside `IssueTicket` when the same peer re-issues.
 _Avoid_: stale slot, dangling slot, orphan reservation
 
-**Grace window** (окно реконнекта):
-Период после разрыва транспорта, в течение которого peerID можно воскресить reconnect-токеном. Peer при этом удаляется из комнаты сразу (delete-peer модель, P20): grace живёт на admitted-слоте reservation — слот держит capacity и отсчитывает `disconnectedAt + RESERVATION_RECONNECT_TTL`; по истечении sweep делает Revoke.
-_Avoid_: reconnect TTL от issue тикета, suspended peer, offline peer
+**Grace window** (reconnect window):
+The period after a transport break during which the peerID can be revived with a reconnect token. The peer leaves the room immediately (delete-peer model, P20): grace lives on the admitted reservation slot — the slot holds capacity and counts down `disconnectedAt + RESERVATION_RECONNECT_TTL`; on expiry the sweep revokes it.
+_Avoid_: reconnect TTL from the issue ticket, suspended peer, offline peer
 
 **Reconnect token**:
-HMAC-credential (kind `2`) для resume под тем же peerID: `kind | roomID | peerID | hostID | MAC` — без nickName и expiry, grace — серверное состояние на слоте. Отличен от join-тикета (kind `1`) по kind-байту credential'а и `Claims.Kind` в claims; одноразовый входной тикет и reconnect-credential — разные сущности.
-_Avoid_: resume ticket (это термин про peerID в join-ticket'е), session token
+An HMAC credential (kind `2`) for resuming under the same peerID: `kind | roomID | peerID | hostID | MAC` — no nickName and no expiry; grace is server-side state on the slot. Distinguished from the join ticket (kind `1`) by the credential's kind byte and by `Claims.Kind` in claims; the one-shot join ticket and the reconnect credential are different entities.
+_Avoid_: resume ticket (that term refers to peerID inside a join ticket), session token
 
 **Ghost input**:
-Входной кадр (input/RPC/state) от peer'а, которого уже нет в комнате (zombie или удалённый без вычистки из state). Policy отклоняет такие кадры проверкой членства (`ErrPeerNotFound`), иначе state получал бы записи от несуществующего peer'а.
+An inbound frame (input/RPC/state) from a peer that is no longer in the room (zombie, or removed without state cleanup). The policy rejects such frames with a membership check (`ErrPeerNotFound`), otherwise state would accumulate records from a nonexistent peer.
 _Avoid_: phantom input, stale input
 
-**Masterless episode** (эпизод без мастера):
-Период, когда в комнате есть живые peers, но `p.master == nil` — обычно после упавшего election. Переизбрание идёт на patch-тиках и лениво при RPC→master; `Error` об эпизоде логируется один раз (не на каждый тик), `Info` — при восстановлении.
+**Masterless episode**:
+A period when a room has live peers but `p.master == nil` — usually after a failed election. Re-election runs on patch ticks and lazily on RPC→master; the `Error` about the episode is logged once (not per tick), `Info` on recovery.
 _Avoid_: election gap, missing master
 
 **Admin listener**:
-Отдельный Fiber-инстанс вне публичного API (`ADMIN_LISTEN_ADDR`, пустой дефолт = выключен): служебные endpoint'ы процесса, сейчас `GET /metrics` (prometheus exposition, P19). Не путать с REST control plane на `HTTP_ADDR` — там auth + rate limits, тут голая телеметрия для scrape.
+A separate Fiber instance outside the public API (`ADMIN_LISTEN_ADDR`, empty default = disabled): process-internal endpoints, currently `GET /metrics` (prometheus exposition, P19). Not to be confused with the REST control plane on `HTTP_ADDR` — that one has auth + rate limits, this one is bare telemetry for scraping.
 _Avoid_: metrics port, health server, internal API
 
-**Authoritative host** (режим деплоя, P33):
-Режим деплоя `STATE_POLICY_ALLOW_MASTER_MIGRATION=false`, при котором master-peer — единственный «хост» матча: его уход (leave И disconnect, grace не применяется) убивает комнату целиком — оставшимся `OpRoomClosed` (`0x82`) + disconnect, слоты ревокаются. Антоним — дефолтный режим с master-миграцией (`true`). До P33 был per-room полем `policy` в `POST /rooms`.
+**Authoritative host** (deploy mode, P33):
+The deploy mode `STATE_POLICY_ALLOW_MASTER_MIGRATION=false`, where the master peer is the match's only "host": its departure (leave OR disconnect, grace does not apply) kills the whole room — the rest get `OpRoomClosed` (`0x82`) + disconnect and slots are revoked. Antonym — the default mode with master migration (`true`). Before P33 this was a per-room `policy` field on `POST /rooms`.
 _Avoid_: host-pinned, dedicated host, listen server flag
 
 **Host migration** (master migration):
-Перевыборы master'а при его уходе (`electAndAssign`, min ping → min PeerID) — есть только при `STATE_POLICY_ALLOW_MASTER_MIGRATION=true`; в no-migration деплое миграции нет, комната умирает.
+Re-electing the master when it leaves (`electAndAssign`, min ping → min PeerID) — exists only under `STATE_POLICY_ALLOW_MASTER_MIGRATION=true`; in a no-migration deploy there is no migration, the room dies.
 _Avoid_: failover host, master handoff
 
 **Master election semantics**:
-Правила выбора master в `StateRoomPolicy`: stale-кандидаты (`ErrPeerNotFound` от `GetPeer` — peer в state, но не в room) пропускаются, выборы идут среди живых; все stale → пустые выборы (`PeerIDInvalid`, не ошибка); прочие ошибки `GetPeer` фейлят выборы; `IsMaster`-флаги пишутся в state только после успешной проверки избранного peer (validate-first) — state не рекламирует master, которого нет у policy.
+The rules for choosing a master in `StateRoomPolicy`: stale candidates (`ErrPeerNotFound` from `GetPeer` — peer in state but not in the room) are skipped, elections run among the live; all stale → empty election (`PeerIDInvalid`, not an error); other `GetPeer` errors fail the election; `IsMaster` flags are written into state only after the electee passes validation (validate-first) — state never advertises a master the policy does not have.
 _Avoid_: quorum, leader election
 
 **Peer drain** (drain-aware close, P30):
-Слив `peer.outbound` при `Peer.Stop` до закрытия соединения: по отмене ctx write-loop дочитывает закоммиченные кадры и вызывает `Send`, `Stop` ждёт слива в пределах `TRANSPORT_PEER_CLOSE_DRAIN_TIMEOUT` (`0` — выключен) и только затем `conn.Close`. Гарантия — «`Send` до `Close`», не «клиент получил». Не путать с **grace window**: grace — уровень reservation (воскрешение peerID после разрыва), drain — транспортный flush последних кадров на прощание.
-_Avoid_: graceful disconnect (это про ENet `DisconnectLater`), send flush, linger
+Draining `peer.outbound` at `Peer.Stop` before closing the connection: on ctx cancel the write loop flushes committed frames via `Send`, `Stop` waits for the drain within `TRANSPORT_PEER_CLOSE_DRAIN_TIMEOUT` (`0` — disabled) and only then `conn.Close`. The guarantee is "`Send` before `Close`", not "the client received it". Not to be confused with the **grace window**: grace is a reservation-level concept (reviving a peerID after a break), drain is a transport-level flush of final frames on the way out.
+_Avoid_: graceful disconnect (that's ENet `DisconnectLater`), send flush, linger
 
-**Tick-coalesced patch** (модель эмиссии state, P34):
-Все дельты `RoomState` копятся в `p.state` и уходят одним `OpCodePatchState` на patch-тике (`patchStateInterval`, default 50ms) — единственный регулярный эмиттер; per-message рассылки нет. Broadcast универсальный (publisher получает эхо своих дельт, apply идемпотентен — мягкий: `Added`→upsert, `Removed`→ignore). Immediate-исключение одно: full state джойнеру на join.
+**Tick-coalesced patch** (state emission model, P34):
+All `RoomState` deltas accumulate in `p.state` and leave as a single `OpCodePatchState` on the patch tick (`patchStateInterval`, default 50ms) — the only regular emitter; there is no per-message fan-out. Broadcast is universal (the publisher gets an echo of its own deltas, apply is idempotent — soft: `Added`→upsert, `Removed`→ignore). The single immediate exception: full state to the joiner on join.
 _Avoid_: per-message replication, delta broadcast, push diff
 
-**Empty-room death** (смерть пустой комнаты, P31):
-Уничтожение комнаты, в которой не осталось ни живых peers, ни admitted-слотов reservation. Два подкласса: **emptied** — ушёл последний peer (transition-триггер `closeRoomIfEmpty` в `LeaveRoom`/`DisconnectPeer`/`EvictIdlePeers`/orphan-sweep revoke); **never-joined** — комната создана, но никто не вошёл (time-based `SweepEmptyRoomsUseCase`: kill когда все reserve истекли или слотов нет). Broadcast `0x82` не шлётся — слушать некому. Отличие от **authoritative host**-деплое (P33): та убивает комнату с живыми peers по уходу хоста и рассылает `0x82` оставшимся; общий teardown (`DeleteRoom` → `UnregisterRoom` → Stop), разные триггеры.
+**Empty-room death** (P31):
+Destroying a room that has neither live peers nor admitted reservation slots. Two sub-cases: **emptied** — the last peer left (transition trigger `closeRoomIfEmpty` in `LeaveRoom`/`DisconnectPeer`/`EvictIdlePeers`/orphan-sweep revoke); **never-joined** — the room was created but nobody entered (time-based `SweepEmptyRoomsUseCase`: kill when all reserves have expired or there are no slots). No `0x82` broadcast — nobody to hear it. Distinct from the **authoritative host** deploy (P33): that one kills a room *with* live peers on host departure and broadcasts `0x82` to the rest; shared teardown (`DeleteRoom` → `UnregisterRoom` → Stop), different triggers.
 _Avoid_: room GC, idle room cleanup, room reaper

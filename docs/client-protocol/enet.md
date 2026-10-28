@@ -1,33 +1,33 @@
-# ENet data plane (основной транспорт)
+# ENet data plane (primary transport)
 
-**ENet UDP** — целевой data plane для Godot-клиента.  
-**WebSocket** — только для быстрой отладки без ENet-плагина: [realtime.md#websocket-отладка](realtime.md#websocket-отладка).
+**ENet UDP** is the target data plane for the Godot client.  
+**WebSocket** is only for quick debugging without an ENet plugin: [realtime.md](realtime.md#websocket-debug).
 
-После [HTTP issue ticket](http.md) клиент подключается по UDP, проходит admit и обменивается теми же кадрами `OpCode + payload`, что описаны в [wire-state-codec.md](../wire-state-codec.md) и [state-sync.md](state-sync.md).
+After the [HTTP issue ticket](http.md) the client connects over UDP, passes admit, and exchanges the same `OpCode + payload` frames described in [wire-state-codec.md](../wire-state-codec.md) and [state-sync.md](state-sync.md).
 
-## Порты и сервер
+## Ports and server
 
-| Параметр | Default | Примечание |
-|----------|---------|------------|
+| Parameter | Default | Note |
+|-----------|---------|------|
 | HTTP (ticket) | `:3000` | `HTTP_ADDR` |
-| ENet UDP | `7777` | `ENET_LISTEN_PORTS` (CSV: `7777,7778,...` = N host'ов/shard'ов) |
-| Peer limit | `64` | `ENET_PEER_LIMIT` - **на host** |
-| Admit deadline | `10s` | `ENET_ADMIT_TIMEOUT` — connect→первый пакет |
-| Build сервера | `-tags enet` + `CGO_ENABLED=1` | Без тега ENet host не поднимается |
+| ENet UDP | `7777` | `ENET_LISTEN_PORTS` (CSV: `7777,7778,...` = N hosts/shards) |
+| Peer limit | `64` | `ENET_PEER_LIMIT` — **per host** |
+| Admit deadline | `10s` | `ENET_ADMIT_TIMEOUT` — connect → first packet |
+| Server build | `-tags enet` + `CGO_ENABLED=1` | Without the tag no ENet host is started |
 
-**Host sharding (P18):** на каждый порт из `ENET_LISTEN_PORTS` поднимается отдельный ENet host со своим service loop. Ticket привязывается к конкретному host'у: сервер выбирает наименее загруженный (least-loaded по живым peer'ам) и возвращает его порт в поле `enet_port` ответа issue ticket - клиент **обязан** подключаться именно на этот порт. Комната транспорт-агностична: её peer'ы могут сидеть на разных host'ах.
+**Host sharding (P18):** a separate ENet host with its own service loop runs on every port in `ENET_LISTEN_PORTS`. Tickets are bound to a specific host: the server picks the least-loaded one (by live peers) and returns its port in the `enet_port` field of the issue-ticket response — the client **must** connect to that port. The room is transport-agnostic: its peers may sit on different hosts.
 
 ```bash
 CGO_ENABLED=1 go build -tags enet -o bin/rooms ./cmd/rooms
 ```
 
-Остальные параметры host — код: `ChannelLimit=2`, `ServiceTimeoutMs=10` — [internal/adapter/transport/enet/enet_config.go](../../internal/adapter/transport/enet/enet_config.go).
+Other host parameters: `ChannelLimit=2` (constant), `ServiceTimeoutMs` — env `ENET_SERVICE_TIMEOUT_MS`, default `1` — [internal/adapter/transport/enet/enet_config.go](../../internal/adapter/transport/enet/enet_config.go).
 
-Общие лимиты транспорта (env): `TRANSPORT_MAX_INCOMING_FRAME_BYTES` (default **256 KiB**), `TRANSPORT_ENET_INCOMING_QUEUE` (default **256**) — [internal/adapter/transport/README.md](../../internal/adapter/transport/README.md).
+Shared transport limits (env): `TRANSPORT_MAX_INCOMING_FRAME_BYTES` (default **256 KiB**), `TRANSPORT_ENET_INCOMING_QUEUE` (default **256**) — [internal/adapter/transport/README.md](../../internal/adapter/transport/README.md).
 
 ---
 
-## E2e-поток (ENet)
+## E2E flow (ENet)
 
 ```mermaid
 sequenceDiagram
@@ -59,14 +59,14 @@ sequenceDiagram
 
 ---
 
-## Ticket: HTTP → первый UDP-пакет
+## Ticket: HTTP → first UDP packet
 
-1. `POST /rooms/:id/tickets` → JSON `{"token":"<base64url>","reconnect_token":"<base64url>","enet_port":7777}` (`reconnect_token` — reconnect-токен kind `2` для resume, см. [Reconnect](#reconnect-p20) ниже).
-2. Клиент **декодирует** base64url (`RawURLEncoding`, без padding) → `PackedByteArray` / `[]byte` join-ticket'а.
-3. Подключается на UDP-порт **`enet_port`** из ответа (если поле есть; без него - дефолтный порт сервера).
-4. **Первый** исходящий ENet-пакет после `EVENT_CONNECT` = **только** эти байты, **без** префикса OpCode.
+1. `POST /rooms/:id/tickets` → JSON `{"token":"<base64url>","reconnect_token":"<base64url>","enet_port":7777}` (`reconnect_token` is the kind `2` reconnect credential for resume, see [Reconnect](#reconnect-p20) below).
+2. The client **decodes** base64url (`RawURLEncoding`, no padding) → `PackedByteArray` / `[]byte` of the join ticket.
+3. Connects to the UDP port **`enet_port`** from the response (the field is always present in practice — the server requires ≥1 port in `ENET_LISTEN_PORTS` at startup and always assigns a host).
+4. The **first** outbound ENet packet after `EVENT_CONNECT` = **only** those bytes, **without** an OpCode prefix.
 
-Формат join-ticket'а (kind `1`; P18: `host_id` для strict binding):
+Join-ticket format (kind `1`; P18: `host_id` for strict binding):
 
 ```text
 kind        u8   = 1
@@ -74,155 +74,155 @@ room_id     u64 BE
 peer_id     u64 BE
 issued_at   u64 BE
 expires_at  u64 BE
-host_id     u16 BE  (0 = без привязки; на ENet-admit → reject 0x77)
+host_id     u16 BE  (0 = unbound; on ENet admit → reject 0x77)
 nick_len    u8
 nick        UTF-8 (1…64 bytes)
 hmac        32 bytes
 ```
 
-Размер: `68 + len(nick)` … `132` байт. Подробнее: [internal/adapter/admission/README.md](../../internal/adapter/admission/README.md).
+Size: `68 + len(nick)` … `132` bytes. Details: [internal/adapter/admission/README.md](../../internal/adapter/admission/README.md).
 
-### Отличие от WebSocket
+### Difference from WebSocket
 
-| Транспорт | Что передаётся при join |
-|-----------|-------------------------|
-| **ENet** | Сырые байты ticket (после base64 decode) |
-| WebSocket | Строка base64url в query `?token=...` (decode на сервере) |
-
----
-
-## Admit (первый пакет)
-
-Сервер ждёт **первый** `EventReceive` от нового ENet-peer:
-
-| Условие | Действие сервера |
-|---------|------------------|
-| Нет первого пакета за `ENET_ADMIT_TIMEOUT` (default 10s) | Disconnect **без** wire-кадра |
-| Пакет пустой | Join reject `0x40` → disconnect |
-| Размер > `MaxIncomingFrameBytes` | Disconnect **без** wire-кадра |
-| `host_id` тикета ≠ этот host | Reject `0x77` `OpWrongHost` → disconnect (слот reservation не тратится) |
-| `JoinRoom` ошибка | 1 байт OpCode `0x40+` / `0x70+` → disconnect |
-| Успех | `admitted=true`; дальше только кадры `OpCode+payload` |
-
-Reject-кадр reliable и гарантированно доезжает: сервер шлёт graceful disconnect (`enet_peer_disconnect_later`), который сначала выпускает queued пакеты.
-
-Отдельного success OpCode **нет**. Первый игровой пакет — `0x01` FullState (reliable, channel 0).
+| Transport | What is sent at join |
+|-----------|----------------------|
+| **ENet** | Raw ticket bytes (after base64 decode) |
+| WebSocket | base64url string in the `?token=...` query (decoded on the server) |
 
 ---
 
-## Кадры после admit
+## Admit (first packet)
+
+The server waits for the **first** `EventReceive` from a new ENet peer:
+
+| Condition | Server action |
+|-----------|---------------|
+| No first packet within `ENET_ADMIT_TIMEOUT` (default 10s) | Disconnect **without** a wire frame |
+| Empty packet | Join reject `0x40` → disconnect |
+| Size > `MaxIncomingFrameBytes` | Disconnect **without** a wire frame |
+| Ticket `host_id` ≠ this host | Reject `0x77` `OpWrongHost` → disconnect (reservation slot is not consumed) |
+| `JoinRoom` error | 1 byte OpCode `0x40+` / `0x70+` → disconnect |
+| Success | `admitted=true`; only `OpCode+payload` frames from here |
+
+The reject frame is reliable and guaranteed to arrive: the server sends a graceful disconnect (`enet_peer_disconnect_later`), which flushes queued packets first.
+
+There is **no** separate success OpCode. The first game packet is `0x01` FullState (reliable, channel 0).
+
+---
+
+## Frames after admit
 
 ```text
 [OpCode: u8][Payload: variable]
 ```
 
-| OpCode | Назначение |
-|--------|------------|
+| OpCode | Purpose |
+|--------|---------|
 | `0x01`–`0x07` | State / input / RPC |
-| `0x40`–`0x5F` | Join reject (только при admit) |
-| `0x60`–`0x6F` | In-room error (соединение живо) |
-| `0x70`–`0x7F` | Reservation reject (при admit) |
-| `0x80` `OpPeerDisconnected` | Peer ушёл в reconnect grace — payload `peer_id u64` BE (P20) |
-| `0x81` `OpPeerReconnected` | Peer вернулся под тем же peerID — payload `peer_id u64` BE (P20) |
-| `0x82` `OpRoomClosed` | Комната закрыта сервером (P33, no-migration деплой: ушёл хост) — payload пустой, за кадром graceful disconnect; отправка до разрыва гарантирована peer drain'ом (P30) |
+| `0x40`–`0x5F` | Join reject (only at admit) |
+| `0x60`–`0x6F` | In-room error (connection stays open) |
+| `0x70`–`0x7F` | Reservation reject (at admit) |
+| `0x80` `OpPeerDisconnected` | Peer entered reconnect grace — payload `peer_id u64` BE (P20) |
+| `0x81` `OpPeerReconnected` | Peer returned under the same peerID — payload `peer_id u64` BE (P20) |
+| `0x82` `OpRoomClosed` | Room closed by the server — host left in a no-migration deploy (P33), `DELETE /rooms/:id`, or shutdown. Empty payload, graceful disconnect follows; delivery before teardown is guaranteed by peer drain (P30) |
 
-Лимит длины пакета = `MaxIncomingFrameBytes` (OpCode + payload). Превышение → **disconnect** без wire-ошибки.
+Packet length limit = `MaxIncomingFrameBytes` (OpCode + payload). Exceeding it → **disconnect** with no wire error.
 
-Ошибки: [errors.md](errors.md). Payload layout: [wire-state-codec.md](../wire-state-codec.md).
+Errors: [errors.md](errors.md). Payload layout: [wire-state-codec.md](../wire-state-codec.md).
 
 ---
 
-## Channel и reliable / unreliable
+## Channels and reliable / unreliable
 
-Сервер шлёт **всё на channel `0`** ([connection_cgo.go](../../internal/adapter/transport/enet/connection_cgo.go)).
+The server sends **everything on channel `0`** ([connection_cgo.go](../../internal/adapter/transport/enet/connection_cgo.go)).
 
-| Направление | Reliable flag | Поведение на сервере |
-|-------------|---------------|----------------------|
-| Server → client | **всегда reliable** | `DeliveryDefault` → `PACKET_FLAG_RELIABLE` |
+| Direction | Reliable flag | Server-side behavior |
+|-----------|---------------|----------------------|
+| Server → client | **always reliable** | `DeliveryDefault` → `PACKET_FLAG_RELIABLE` |
 | Client → server | reliable (bit 0) | `DeliveryReliable` |
-| Client → server | без флага | `DeliveryUnreliable` |
+| Client → server | no flag | `DeliveryUnreliable` |
 
-Константа ENet (стандартная, та же в go-enet / Godot): **`PACKET_FLAG_RELIABLE = 1`**.
+ENet constant (standard, same in go-enet / Godot): **`PACKET_FLAG_RELIABLE = 1`**.
 
-### Рекомендации клиенту (Godot)
+### Recommendations for the client (Godot)
 
-| Трафик | Reliable |
-|--------|----------|
-| Первый пакет (ticket) | **да** |
-| Entities `0x03`/`0x04` (master) | **да** |
-| RPC `0x07` | **да** |
-| Input `0x05`/`0x06` full | **да** |
-| Input patch `0x06` высокочастотный | можно **unreliable** (сервер примет; потери допустимы по игровой логике) |
+| Traffic | Reliable |
+|---------|----------|
+| First packet (ticket) | **yes** |
+| Entities `0x03`/`0x04` (master) | **yes** |
+| RPC `0x07` | **yes** |
+| Input `0x05`/`0x06` full | **yes** |
+| Input patch `0x06` high-frequency | may be **unreliable** (server accepts; losses are tolerable per game logic) |
 
-WS delivery не различает — для отладки всё implicit reliable.
+WS does not distinguish delivery — everything is implicit reliable for debugging.
 
 ---
 
 ## RTT (ping)
 
-На ENet сервер берёт `peer.GetRoundTripTime()` (мс) → поле `ping` в peer state; обновляется и едет только в `0x01` FullState (~4 s, P34), patch'и ping не несут.  
-Отдельного игрового ping OpCode **нет**.
+On ENet the server takes `peer.GetRoundTripTime()` (ms) → the `ping` field in peer state; it is refreshed and travels only inside `0x01` FullState (~4 s, P34) — patches carry no ping updates.  
+There is **no** separate game ping OpCode.
 
 ---
 
-## Disconnect и Leave (P20)
+## Disconnect and Leave (P20)
 
-Разрыв admitted-сессии идёт через `DisconnectPeer` (все триггеры: `EventDisconnect`, bad/oversized frame, idle peer sweep): peer изымается из комнаты обычным leave-путём (state-запись чистится, remove-патч уходит остальным), но слот reservation **не ревокается** — `MarkDisconnected` ставит lastSeen и открывает grace-окно `RESERVATION_RECONNECT_TTL` (default `30s`, от момента разрыва); остальным рассылается `0x80 OpPeerDisconnected`. Resume в окне — см. ниже; по истечении sweep ревокает слот и peerID умирает окончательно.
+An admitted session teardown goes through `DisconnectPeer` (all triggers: `EventDisconnect`, bad/oversized frame, idle peer sweep): the peer is removed from the room via the normal leave path (its state record is cleaned, a remove patch goes to the rest), but the reservation slot is **not revoked** — `MarkDisconnected` sets lastSeen and opens the `RESERVATION_RECONNECT_TTL` grace window (default `30s`, from the disconnect); `0x80 OpPeerDisconnected` is broadcast to the rest. Resume within the window — below; on expiry the sweep revokes the slot and the peerID dies for good.
 
-- Клиент закрыл соединение / UDP timeout (`EventDisconnect`) → `DisconnectPeer` → grace.
-- Не завершил admit за `ENET_ADMIT_TIMEOUT` → disconnect (дедлайн на факт admit в host loop, не на прибытие пакета; слот peer limit не висит; grace нет — peer ещё не admitted).
-- Oversized frame / invalid frame после admit → `DisconnectPeer` + graceful disconnect; queued outbound-фреймы доезжают до разрыва.
-- Переполнение входной очереди ENet на сервере → **drop** кадра (warn в логах), соединение не рвётся.
-- Idle/zombie соединение (`!IsAlive`, peer sweep) → тот же `DisconnectPeer`, то же grace-окно.
-- В no-migration деплое (`STATE_POLICY_ALLOW_MASTER_MIGRATION=false`, P33): разрыв **хоста** (leave/disconnect/idle evict — тот же leave-путь) убивает комнату без grace и перевыборов — оставшимся `0x82 OpRoomClosed` + graceful disconnect (`DisconnectLater` дожидается кадр; порядок `Send` → disconnect гарантирован peer drain'ом, P30 — обе команды в одной FIFO host loop'а), слоты reservation ревокаются.
+- Client closed the connection / UDP timeout (`EventDisconnect`) → `DisconnectPeer` → grace.
+- Did not finish admit within `ENET_ADMIT_TIMEOUT` → disconnect (the deadline is on the admit fact in the host loop, not on packet arrival; the peer-limit slot does not linger; no grace — the peer was never admitted).
+- Oversized/invalid frame after admit → `DisconnectPeer` + graceful disconnect; queued outbound frames are flushed before teardown.
+- Server-side ENet inbound queue overflow → frame **dropped** (warn in logs), the connection survives.
+- ENet zombie connection → the transport's own protocol timeout kills it → `EventDisconnect` → the same `DisconnectPeer` + grace. (The `!IsAlive` idle sweep is the **WS** mechanism — `TRANSPORT_PEER_IDLE_TIMEOUT`; for ENet, `IsAlive` reflects the connection's closed flag, not idleness.)
+- In a no-migration deploy (`STATE_POLICY_ALLOW_MASTER_MIGRATION=false`, P33): the **host's** teardown (leave/disconnect/idle evict — the same leave path) kills the room without grace or re-election — the rest get `0x82 OpRoomClosed` + graceful disconnect (`DisconnectLater` waits for the frame; `Send` → disconnect ordering is guaranteed by peer drain, P30 — both commands ride the same host-loop FIFO), and the reservation slots are revoked.
 
 ### Reconnect (P20)
 
-`POST /rooms` и `POST /rooms/:id/tickets` возвращают `reconnect_token` (base64url) — сохранить до разрыва; expiry у токена нет, credential живёт, пока жив admitted-слот. Первый пакет admit принимает **оба** вида credential'а: join-ticket (kind `1`) и reconnect-токен (kind `2`) — для resume шлите сырые байты `reconnect_token` так же, как join-тикет (channel 0, reliable).
+`POST /rooms` and `POST /rooms/:id/tickets` return a `reconnect_token` (base64url) — keep it for the disconnect case; the token has no expiry, the credential lives while the admitted slot lives. The first admit packet accepts **both** credential kinds: join ticket (kind `1`) and reconnect token (kind `2`) — for resume send the raw `reconnect_token` bytes the same way as the join ticket (channel 0, reliable).
 
-Reconnect-токен (kind `2`) — фиксированная длина **51 байт**, без nick и timestamps:
+Reconnect token (kind `2`) — fixed length **51 bytes**, no nick, no timestamps:
 
 ```text
 kind        u8   = 2
 room_id     u64 BE
 peer_id     u64 BE
-host_id     u16 BE  (привязка исходного ticket'а - strict binding действует и для reconnect: admit на другом host'е → reject 0x77)
+host_id     u16 BE  (binding of the original ticket — strict binding applies to reconnect too: admit on another host → reject 0x77)
 hmac        32 bytes
 ```
 
-Успех: peer воскресает под **тем же peerID** и тем же nick'ом (nick берётся из слота reservation — в токене его нет); первый кадр — `0x01` FullState как обычный join, остальным — `0x81 OpPeerReconnected` (payload `peer_id u64`). Новейшее соединение побеждает: resume при живом старом conn вытесняет его. Просроченный grace или чужой/битый токен → обычный join-reject. Общий поток: [realtime.md](realtime.md#reconnect-p20).
+Success: the peer revives under the **same peerID** with the same nick (nick comes from the reservation slot — the token carries none); the first frame is `0x01` FullState like a regular join, others get `0x81 OpPeerReconnected` (payload `peer_id u64`). Newest connection wins: resuming while the old conn is alive evicts it. Expired grace or a foreign/corrupt token → the usual join reject. Overall flow: [realtime.md](realtime.md#reconnect-p20).
 
 ---
 
-## Godot: пошаговая реализация
+## Godot: step-by-step implementation
 
-Godot 4 встроенно использует ENet для `ENetMultiplayerPeer`, но для **кастомного** протокола нужен прямой доступ к ENet (GDExtension, модуль или обёртка над `enet.h`). Ниже — логика, совместимая с сервером.
+Godot 4 uses ENet internally for `ENetMultiplayerPeer`, but a **custom** protocol needs direct ENet access (GDExtension, a module, or a wrapper over `enet.h`). Below is the logic compatible with the server.
 
 ### 1. HTTP → ticket bytes
 
-Декодируйте `token` из JSON так же, как сервер кодирует в `tokenToResponse`: **base64.RawURLEncoding** (без `=` padding). В GDScript — своя функция или готовая URL-safe base64 decode; результат — `PackedByteArray`.
+Decode `token` from the JSON the same way the server encodes it in `tokenToResponse`: **base64.RawURLEncoding** (no `=` padding). In GDScript — your own function or a ready URL-safe base64 decode; the result is a `PackedByteArray`.
 
-Проверка: `ticket_bytes[0] == 1` (kind byte; для resume первым пакетом вместо join-тикета идут байты `reconnect_token` — kind byte `2`).
+Check: `ticket_bytes[0] == 1` (the kind byte; for resume the first packet carries the `reconnect_token` bytes instead — kind byte `2`).
 
 ### 2. ENet host + connect
 
 ```text
-host = enet_host_create(NULL, 1, 2, 0, 0)   # 1 peer, 2 channels — как на сервере
+host = enet_host_create(NULL, 1, 2, 0, 0)   # 1 peer, 2 channels — same as the server
 peer = enet_host_connect(host, address, enet_port, 0)
 ```
 
-В Godot-обёртке: создать client host, `connect_to_host("127.0.0.1", enet_port)` - порт **из ответа issue ticket** (`enet_port`), не захардкоженный `7777`: при нескольких host'ах ticket привязан к назначенному, admit на другом → reject `0x77`.
+In a Godot wrapper: create a client host, `connect_to_host("127.0.0.1", enet_port)` — the port comes **from the issue-ticket response** (`enet_port`), not a hardcoded `7777`: with several hosts the ticket is bound to the assigned one, admit on another → reject `0x77`.
 
-### 3. После EVENT_CONNECT — admit
+### 3. After EVENT_CONNECT — admit
 
 ```gdscript
 # channel 0, PACKET_FLAG_RELIABLE
 peer.send(0, ticket_bytes, ENetPacketPeer.FLAG_RELIABLE)
 ```
 
-До admit **не** слать кадры с OpCode.
+Do **not** send OpCode frames before admit.
 
-### 4. Приём после admit
+### 4. Receiving after admit
 
 ```gdscript
 func _process(_delta):
@@ -239,9 +239,9 @@ func _process(_delta):
         event = host.check_events()
 ```
 
-Если первый принятый кадр после connect имеет `opcode >= 0x40` и длина `1` — join failed, см. [errors.md](errors.md).
+If the first received frame after connect has `opcode >= 0x40` and length `1` — join failed, see [errors.md](errors.md).
 
-### 5. Отправка игрового кадра
+### 5. Sending a game frame
 
 ```gdscript
 const PACKET_FLAG_RELIABLE := 1
@@ -253,45 +253,45 @@ func send_frame(opcode: int, payload: PackedByteArray, reliable: bool = true) ->
     peer.send(0, frame, flags)
 ```
 
-Примеры:
+Examples:
 
 ```gdscript
 send_frame(0x05, encoded_input, true)       # full input
-send_frame(0x06, encoded_patch, false)      # частый patch — optional unreliable
+send_frame(0x06, encoded_patch, false)      # frequent patch — optional unreliable
 send_frame(0x07, encoded_rpc, true)
 ```
 
-### 6. Цикл игры
+### 6. Game loop
 
-1. Дождаться `0x01` FullState — построить локальный room state.
-2. Применять `0x02` PatchState.
-3. Шлить input каждый тик / по изменению.
-4. Если `is_master` — entities `0x03`/`0x04`.
-5. RPC по необходимости.
+1. Wait for `0x01` FullState — build the local room state.
+2. Apply `0x02` PatchState.
+3. Send input every tick / on change.
+4. If `is_master` — entities `0x03`/`0x04`.
+5. RPC as needed.
 
 ---
 
-## Чеклист ENet-клиента
+## ENet client checklist
 
-1. HTTP: create room → issue ticket → decode base64url → `ticket_bytes`; запомнить `enet_port`.
-2. ENet client host, connect `host:enet_port` (назначенный host, strict binding).
-3. На connect: send `ticket_bytes` reliable ch0.
-4. Парсер кадра `opcode + payload` на каждый `EVENT_RECEIVE`.
+1. HTTP: create room → issue ticket → decode base64url → `ticket_bytes`; remember `enet_port`.
+2. ENet client host, connect `host:enet_port` (assigned host, strict binding).
+3. On connect: send `ticket_bytes` reliable ch0.
+4. Frame parser `opcode + payload` on every `EVENT_RECEIVE`.
 5. Wire codec: [wire-state-codec.md](../wire-state-codec.md).
 6. State sync / master: [state-sync.md](state-sync.md).
-7. Join errors → disconnect; in-room `0x60+` → лог, stay connected.
-8. Channel **0**; reliable по умолчанию.
-9. Не превышать 256 KiB на пакет.
-10. WS — только для smoke-test ([realtime.md](realtime.md)).
+7. Join errors → disconnect; in-room `0x60+` → log, stay connected; `0x80+` → notifications (see [errors.md](errors.md)).
+8. Channel **0**; reliable by default.
+9. Do not exceed 256 KiB per packet.
+10. WS — only for smoke tests ([realtime.md](realtime.md)).
 
 ---
 
-## Серверный код (reference)
+## Server code (reference)
 
-| Файл | Роль |
+| File | Role |
 |------|------|
 | `internal/delivery/enet/run_cgo.go` | Host loop, admit, receive |
 | `internal/adapter/transport/enet/connection_cgo.go` | Send/Receive, RTT |
 | `internal/delivery/enet/flags_cgo.go` | Reliable mapping |
 
-Тесты compile (cgo): `CGO_ENABLED=1 go test -tags enet ./tests/delivery/enet/...`
+Compile tests (cgo): `CGO_ENABLED=1 go test -tags enet ./tests/delivery/enet/...`

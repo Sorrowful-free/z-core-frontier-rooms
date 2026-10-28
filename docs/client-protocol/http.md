@@ -1,34 +1,36 @@
 # HTTP control plane
 
-REST JSON на том же хосте, что WebSocket. Default: `http://localhost:3000` (`HTTP_ADDR`).
+REST JSON on the same host as WebSocket. Default bind: `:3000` (`HTTP_ADDR`, all interfaces).
 
-Data plane: **ENet UDP** (основной) или WebSocket (отладка) — join только по ticket.
+Data plane: **ENet UDP** (primary) or WebSocket (debug) — join only with a ticket.
 
-## Аутентификация
+## Authentication
 
-Один из заголовков (если `HTTP_AUTH_DISABLED` не `true`):
+One of the headers (unless `HTTP_AUTH_DISABLED` is `true`):
 
 ```http
 Authorization: Bearer <HTTP_API_KEY>
 ```
 
-или
+or
 
 ```http
 X-API-Key: <HTTP_API_KEY>
 ```
 
-Без ключа или неверный ключ → `401`:
+Missing or wrong key → `401`:
 
 ```json
 {"code":"unauthorized","message":"..."}
 ```
 
+Auth covers only the REST endpoints below. `GET /ws` (the WebSocket join entry) is registered outside the auth group — it requires **no API key** and is not rate-limited.
+
 ## Endpoints
 
-### `POST /rooms` — создать комнату и выдать ticket хосту
+### `POST /rooms` — create a room and issue the host ticket
 
-**Запрос:**
+**Request:**
 
 ```json
 {
@@ -42,21 +44,21 @@ X-API-Key: <HTTP_API_KEY>
 }
 ```
 
-| Поле | Тип | Правила |
-|------|-----|---------|
-| `capacity` | int | Обязательно, `1…127` (`domain.MaxRoomCapacity`) |
-| `nick_name` | string | Обязательно; см. [Правила nick_name](#правила-nick_name) |
-| `password` | string | Опционально; если задан — нужен при join через `/tickets` и delete |
-| `attributes` | object | Опционально; произвольный JSON-словарь (название карты, режим и т.п.); возвращается в create/list |
+| Field | Type | Rules |
+|-------|------|-------|
+| `capacity` | int | Required, `1…127` (`domain.MaxRoomCapacity`) |
+| `nick_name` | string | Required; see [nick_name rules](#nick_name-rules) |
+| `password` | string | Optional; when set — required on join via `/tickets` and on delete |
+| `attributes` | object | Optional; arbitrary JSON dictionary (map name, mode, etc.); returned by create/list |
 
-ID комнаты выдаёт сервер — в запросе поля `id` нет.
+The room ID is assigned by the server — the request has no `id` field.
 
-**Успех `201`:**
+**Success `201`:**
 
 ```json
 {
-  "token": "AwAAAA...base64url...",
-  "reconnect_token": "BAAAAA...base64url...",
+  "token": "AQAAAA...base64url...",
+  "reconnect_token": "AgAAAA...base64url...",
   "enet_port": 7777,
   "room": {
     "id": 42,
@@ -69,19 +71,19 @@ ID комнаты выдаёт сервер — в запросе поля `id` 
 }
 ```
 
-`token` - **base64.RawURLEncoding** (без padding `=`). Декодировать в сырые байты join-ticket'а (kind `1`) → первый UDP-пакет ([enet.md](enet.md)) или query `?token=` для WS.
+`token` — **base64.RawURLEncoding** (no `=` padding). Decode into the raw join-ticket bytes (kind `1`) → first UDP packet ([enet.md](enet.md)) or the `?token=` query for WS.
 
-`reconnect_token` - **base64.RawURLEncoding**, reconnect-токен (kind `2`, P20): resume под тем же peerID после разрыва в пределах grace-окна `RESERVATION_RECONNECT_TTL`; идёт на тот же admit-вход (`?token=` / первый ENet-пакет). См. [realtime.md](realtime.md#reconnect-p20).
+`reconnect_token` — **base64.RawURLEncoding**, reconnect token (kind `2`, P20): resume under the same peerID after a disconnect within the `RESERVATION_RECONNECT_TTL` grace window; goes to the same admit entry (`?token=` / first ENet packet). See [realtime.md](realtime.md#reconnect-p20).
 
-`enet_port` - назначенный UDP-порт ENet host'а (P18, привязка тикета к host'у/shard'у). Поле присутствует, только если на сервере поднят ENet listener.
+`enet_port` — assigned UDP port of the ENet host (P18, ticket-to-host binding). In practice the field is **always present**: the server requires at least one port in `ENET_LISTEN_PORTS` at startup and always assigns a host. Note the port reflects configured hosts — in a binary built without `-tags enet` nothing actually listens on it.
 
-**Ошибки:** `400` `invalid_capacity`, `400` `invalid_nick_name`, `503` `rooms_limit_reached`, `429` `rate_limited`, а также ошибки issue ticket (`401` `invalid_credentials`, `409` `reservation_full` и т.д.) — при сбое issue созданная комната откатывается.
+**Errors:** `400` `invalid_capacity`, `invalid_nick_name`, `invalid_request`; `503` `rooms_limit_reached`; `429` `rate_limited`; plus issue-ticket errors (`401` `invalid_credentials`, `409` `reservation_full`, `ticket_slot_held`, etc.) — on an issue failure the created room is rolled back.
 
 ---
 
-### `GET /rooms` — список комнат
+### `GET /rooms` — room list
 
-**Успех `200`:**
+**Success `200`:**
 
 ```json
 {
@@ -99,31 +101,33 @@ ID комнаты выдаёт сервер — в запросе поля `id` 
 }
 ```
 
-**Ошибки:** `429` `rate_limited`.
+`ping` is in **milliseconds** (ENet RTT).
+
+**Errors:** `429` `rate_limited`.
 
 ---
 
-### `DELETE /rooms/:id` — удалить комнату
+### `DELETE /rooms/:id` — delete a room
 
-**Запрос** (если у комнаты был password):
+**Request** (if the room has a password):
 
 ```json
 {"password": "optional-secret"}
 ```
 
-**Успех:** `204` без body.
+**Success:** `204` with no body.
 
-**Поведение для подключённых peers (P31):** выгнанные peer'ы получают `0x82 OpRoomClosed` (payload пустой) до разрыва соединения — тот же кадр, что при смерти комнаты по уходу хоста в no-migration деплое; обработка клиентом идентична (комнаты больше нет, см. [errors.md](errors.md#room-notifications-0x80-не-ошибки-p20)).
+**Behavior for connected peers (P31):** evicted peers receive `0x82 OpRoomClosed` (empty payload) before the connection is torn down — the same frame as a room death on host leave in a no-migration deploy; client handling is identical (the room no longer exists, see [errors.md](errors.md#room-notifications-0x80-not-errors)).
 
-**Ошибки:** `400` `invalid_room_id` (невалидный `:id`), `404` `room_not_found`, `401` `invalid_credentials`, `429` `rate_limited`.
+**Errors:** `400` `invalid_room_id` (invalid `:id`), `404` `room_not_found`, `401` `invalid_credentials`, `429` `rate_limited`.
 
 ---
 
-### `POST /rooms/:id/tickets` — выдать ticket (joiners)
+### `POST /rooms/:id/tickets` — issue a ticket (joiners)
 
-Для игроков, присоединяющихся к **уже существующей** комнате. Хост получает ticket сразу при create.
+For players joining an **existing** room. The host gets a ticket on create.
 
-**Запрос:**
+**Request:**
 
 ```json
 {
@@ -132,17 +136,17 @@ ID комнаты выдаёт сервер — в запросе поля `id` 
 }
 ```
 
-| Поле | Тип | Правила |
-|------|-----|---------|
-| `nick_name` | string | Обязательно; см. ниже |
-| `password` | string | Пароль комнаты (пустая строка, если комната без пароля) |
+| Field | Type | Rules |
+|-------|------|-------|
+| `nick_name` | string | Required; see below |
+| `password` | string | Room password (empty string if the room has none) |
 
-**Успех `201`:**
+**Success `201`:**
 
 ```json
 {
-  "token": "AwAAAA...base64url...",
-  "reconnect_token": "BAAAAA...base64url...",
+  "token": "AQAAAA...base64url...",
+  "reconnect_token": "AgAAAA...base64url...",
   "enet_port": 7778,
   "room": {
     "id": 42,
@@ -154,38 +158,46 @@ ID комнаты выдаёт сервер — в запросе поля `id` 
 }
 ```
 
-`room` — тот же DTO, что в create/list: `id`, `attributes?`, `peers[]` (текущие peer **в комнате**, без только что зарезервированного слота).
+`room` — the same DTO as in create/list: `id`, `attributes?`, `peers[]` (peers currently **in** the room, excluding the just-reserved slot).
 
-`token` — **base64.RawURLEncoding** (без padding `=`). `reconnect_token` — reconnect-токен (kind `2`, P20) для resume под тем же peerID после разрыва ([realtime.md](realtime.md#reconnect-p20)).
+`token` — **base64.RawURLEncoding** (no `=` padding). `reconnect_token` — reconnect token (kind `2`, P20) for resuming under the same peerID after a disconnect ([realtime.md](realtime.md#reconnect-p20)).
 
-- **ENet (основной):** декодировать в сырые байты join-ticket'а → первый UDP-пакет на порт `enet_port` ([enet.md](enet.md)). Ticket привязан к назначенному host'у: admit на другом порту → reject `0x77`.
-- **WebSocket (отладка):** строка как есть в query `?token=` ([realtime.md](realtime.md#websocket-отладка)).
+- **ENet (primary):** decode into raw join-ticket bytes → first UDP packet to port `enet_port` ([enet.md](enet.md)). The ticket is bound to the assigned host: admitting on a different port → reject `0x77`.
+- **WebSocket (debug):** the string as-is in the `?token=` query ([realtime.md](realtime.md#websocket-debug)).
 
-**Ошибки:**
+**Errors:**
 
-| HTTP | `code` | Когда |
-|------|--------|-------|
-| `400` | `invalid_nick_name` | Пустой nick, control chars, > 64 байт UTF-8 |
-| `400` | `invalid_request` | Невалидный JSON body |
-| `400` | `invalid_room_id` | Невалидный `:id` в path |
-| `401` | `invalid_credentials` | Неверный пароль комнаты |
-| `404` | `room_not_found` | Нет комнаты |
-| `409` | `ticket_slot_held` | Слот reserved другим peer (TTL не истёк) |
-| `409` | `peer_already_in_room` | Peer с этим nick уже в комнате (политика A) |
-| `409` | `reservation_full` | Нет свободных слотов |
-| `429` | `rate_limited` | Лимит REST endpoint'ов с IP |
+| HTTP | `code` | When |
+|------|--------|------|
+| `400` | `invalid_nick_name` | Empty nick, control chars, > 64 UTF-8 bytes |
+| `400` | `invalid_request` | Malformed JSON body |
+| `400` | `invalid_room_id` | Invalid `:id` in path |
+| `401` | `invalid_credentials` | Wrong room password |
+| `404` | `room_not_found` | No such room |
+| `409` | `ticket_slot_held` | A `reserved` slot with the **same** `nick_name` already exists (TTL not expired) |
+| `409` | `peer_already_in_room` | `ErrPeerAlreadyInRoom` — mapped, but effectively unreachable on the HTTP issue path (issue always allocates a fresh peerID). Duplicate nicks are allowed |
+| `409` | `reservation_full` | No free slots |
+| `429` | `rate_limited` | REST endpoint limit from this IP |
 
-## Правила `nick_name`
+Generic mapper codes that can also surface on edge races: `404` `reservation_not_found`, `500` `internal_error`.
 
-- Непустая UTF-8 строка
-- Длина **в байтах** ≤ 64
-- Без control-символов (`codepoint < 0x20`)
+### `POST /rooms/:id/leave` — self-leave (P32)
 
-## Слоты reservation (кратко)
+Body: `{"reconnect_token": "<base64url>"}` — the peer's reconnect token (kind=2 claims prove `peerID`+`roomID`; `roomID` must match `:id`). Invalid/foreign/join token → `401 invalid_credentials`. Idempotent: peer already out of the room → `204`. The peer's connection is closed by the server (drain-aware stop). Kicking other players over HTTP does not exist.
 
-Issue ticket резервирует слот на TTL (`ADMISSION_TTL`). Пока слот `reserved` или `admitted` без активного peer — повторный issue с другим nick может дать `ticket_slot_held`. Подробнее: [internal/adapter/reservation/README.md](../../internal/adapter/reservation/README.md).
+**Errors:** `400` `invalid_room_id`, `400` `invalid_request`, `401` `invalid_credentials`, `429` `rate_limited` (shares the **delete** bucket `HTTP_DELETE_RATE_PER_MIN`).
 
-## Godot: пример create room (хост)
+## `nick_name` rules
+
+- Non-empty UTF-8 string
+- Length **in bytes** ≤ 64
+- No control characters (`codepoint < 0x20`)
+
+## Reservation slots (short)
+
+Issuing a ticket reserves a slot for a TTL (`ADMISSION_TTL`). While a slot is `reserved` with the same `nick_name`, a repeat issue returns `ticket_slot_held`; duplicate nicks and additional slots are otherwise allowed. Details: [internal/adapter/reservation/README.md](../../internal/adapter/reservation/README.md).
+
+## Godot: create room example (host)
 
 ```gdscript
 var http := HTTPRequest.new()
@@ -198,10 +210,10 @@ var body := JSON.stringify({
 	"attributes": {"map": "de_dust2"}
 })
 http.request("http://localhost:3000/rooms", headers, HTTPClient.METHOD_POST, body)
-# В ответе JSON: var token: String = parsed["token"], var room_id: int = parsed["room"]["id"]
+# Response JSON: var token: String = parsed["token"], var room_id: int = parsed["room"]["id"]
 ```
 
-## Godot: пример issue ticket (joiner)
+## Godot: issue ticket example (joiner)
 
 ```gdscript
 var http := HTTPRequest.new()
@@ -209,11 +221,7 @@ add_child(http)
 var headers := PackedStringArray(["Authorization: Bearer " + api_key, "Content-Type: application/json"])
 var body := JSON.stringify({"nick_name": "Player1", "password": ""})
 http.request("http://localhost:3000/rooms/%d/tickets" % room_id, headers, HTTPClient.METHOD_POST, body)
-# В ответе JSON: var token: String = parsed["token"]
+# Response JSON: var token: String = parsed["token"]
 ```
 
-Далее: [enet.md](enet.md) (основной) или [realtime.md](realtime.md#websocket-отладка) (WS smoke-test).
-
-### `POST /rooms/:id/leave` — self-leave (P32)
-
-Body: `{"reconnect_token": "<base64url>"}` — reconnect-токен peer'а (kind=2 claims доказывают `peerID`+`roomID`; roomID обязан совпадать с `:id`). Невалидный/чужой/join-токен → `401 invalid_credentials`. Идемпотентно: peer уже не в комнате → `204`. Conn peer'а закрывается сервером (drain-aware stop). Kick чужих по HTTP не существует.
+Next: [enet.md](enet.md) (primary) or [realtime.md](realtime.md#websocket-debug) (WS smoke test).

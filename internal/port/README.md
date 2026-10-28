@@ -1,9 +1,9 @@
 # port
 
-Интерфейсы (границы приложения). Реализации — `internal/adapter/`.
+Interfaces (application boundaries). Implementations — `internal/adapter/`.
 
-| Пакет | Интерфейс | Реализация |
-|-------|-----------|------------|
+| Package | Interface | Implementation |
+|---------|-----------|----------------|
 | `admission` | `Admission` | `adapter/admission` |
 | `reservation` | `Reservation` | `adapter/reservation` |
 | `registry` | `RoomRegistry` | `adapter/registry` |
@@ -16,4 +16,4 @@
 | `httplimits` | `Limits` | `adapter/httplimits` |
 | `metrics` | `Metrics` | `adapter/metrics` |
 
-Интерфейсы объявляет **потребитель** (use case / adapter), маленькие, без «на будущее».
+Interfaces are declared by the **consumer** (use case / adapter), kept small, nothing "for the future".

@@ -1,117 +1,117 @@
 # adapter/config
 
-Сборка конфигурации процесса из env. См. [.cursor/rules/config.mdc](../../../.cursor/rules/config.mdc).
+Process configuration assembled from env. See [.cursor/rules/config.mdc](../../../.cursor/rules/config.mdc).
 
 ## API
 
-- `LoadFromEnv() (*Config, error)` — единая точка загрузки при старте.
+- `LoadFromEnv() (*Config, error)` — single loading entry point at startup.
 
-## Структура
+## Structure
 
-`Config` содержит поля типов из adapter-пакетов модулей (`Logging`, `Server`, `Admission`, `HTTPAuth`, `HTTPLimits`, `Reservation`, `StatePolicy`, `Transport`, `Enet`, `Metrics`).
+`Config` contains fields of types from the adapter packages of the modules (`Logging`, `Server`, `Admission`, `HTTPAuth`, `HTTPLimits`, `Reservation`, `StatePolicy`, `Transport`, `Enet`, `Metrics`).
 
 ## Env (process)
 
-| Переменная | Обязательна | Default | Описание |
-|------------|-------------|---------|----------|
-| `LOG_MODE` | нет | `prod` | Корневой zap: `prod` или `dev` |
-| `HTTP_ADDR` | нет | `:3000` | Адрес `fiber.App.Listen` |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `LOG_MODE` | no | `prod` | Root zap: `prod` or `dev` |
+| `HTTP_ADDR` | no | `:3000` | `fiber.App.Listen` address |
 
-Валидация — `logging/zap.RootConfig.Validate()`, `server.ServerConfig.Validate()`.
+Validation — `logging/zap.RootConfig.Validate()`, `server.ServerConfig.Validate()`.
 
 ## Env (admission)
 
-| Переменная | Обязательна | Default | Описание |
-|------------|-------------|---------|----------|
-| `ADMISSION_SECRET` | да | — | HMAC-секрет ticket, ≥ 32 байт; `dev-secret-change-me` запрещён |
-| `ADMISSION_TTL` | нет | `1h` | TTL ticket (`time.ParseDuration`) |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `ADMISSION_SECRET` | yes | — | HMAC ticket secret, ≥ 32 bytes; `dev-secret-change-me` is forbidden |
+| `ADMISSION_TTL` | no | `1h` | Ticket TTL (`time.ParseDuration`) |
 
-Валидация полей admission — `admission.AdmissionConfig.Validate()`.
+Validation of admission fields — `admission.AdmissionConfig.Validate()`.
 
 ## Env (http auth)
 
-| Переменная | Обязательна | Default | Описание |
-|------------|-------------|---------|----------|
-| `HTTP_API_KEY` | да* | — | API key REST; ≥ 16 байт; `Authorization: Bearer` или `X-API-Key` |
-| `HTTP_AUTH_DISABLED` | нет | `false` | `true` — отключить auth (только local dev) |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `HTTP_API_KEY` | yes* | — | REST API key; ≥ 16 bytes; `Authorization: Bearer` or `X-API-Key` |
+| `HTTP_AUTH_DISABLED` | no | `false` | `true` — disable auth (local dev only) |
 
-\* Не обязателен, если `HTTP_AUTH_DISABLED=true`.
+\* Not required if `HTTP_AUTH_DISABLED=true`.
 
-Валидация — `httpauth.HTTPAuthConfig.Validate()`.
+Validation — `httpauth.HTTPAuthConfig.Validate()`.
 
 ## Env (http limits)
 
-| Переменная | Обязательна | Default | Описание |
-|------------|-------------|---------|----------|
-| `MAX_ROOMS` | нет | `500` | Макс. комнат в процессе; `0` — без лимита |
-| `HTTP_CREATE_RATE_PER_MIN` | нет | `30` | `POST /rooms` на IP в минуту; `0` — без лимита |
-| `HTTP_ISSUE_RATE_PER_MIN` | нет | `60` | `POST /rooms/:id/tickets` на IP в минуту; `0` — без лимита |
-| `HTTP_DELETE_RATE_PER_MIN` | нет | `30` | `DELETE /rooms/:id` на IP в минуту; `0` — без лимита |
-| `HTTP_LIST_RATE_PER_MIN` | нет | `60` | `GET /rooms` на IP в минуту; `0` — без лимита |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `MAX_ROOMS` | no | `500` | Max rooms per process; `0` — no limit |
+| `HTTP_CREATE_RATE_PER_MIN` | no | `30` | `POST /rooms` per IP per minute; `0` — no limit |
+| `HTTP_ISSUE_RATE_PER_MIN` | no | `60` | `POST /rooms/:id/tickets` per IP per minute; `0` — no limit |
+| `HTTP_DELETE_RATE_PER_MIN` | no | `30` | `DELETE /rooms/:id` per IP per minute; `0` — no limit |
+| `HTTP_LIST_RATE_PER_MIN` | no | `60` | `GET /rooms` per IP per minute; `0` — no limit |
 
-Валидация — `httplimits.HTTPLimitsConfig.Validate()`.
+Validation — `httplimits.HTTPLimitsConfig.Validate()`.
 
-## Зависимости
+## Dependencies
 
-`adapter/config` импортирует adapter-модули (например `adapter/admission`). Обратный импорт запрещён.
+`adapter/config` imports adapter modules (e.g. `adapter/admission`). The reverse import is forbidden.
 
 ## Env (reservation reconnect grace / orphan sweep)
 
-| Переменная | Обязательна | Default | Описание |
-|------------|-------------|---------|----------|
-| `RESERVATION_RECONNECT_TTL` | нет | `30s` | Grace admitted-слота от lastSeen (разрыв/resume) до revoke; `0` — сразу при sweep |
-| `RESERVATION_ORPHAN_SWEEP_INTERVAL` | нет | `10s` | Период фоновых sweep'ей — orphan admitted **и** empty rooms (P31); `0` — отключить оба |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `RESERVATION_RECONNECT_TTL` | no | `30s` | Grace of the admitted slot from lastSeen (disconnect/resume) until revoke; `0` — immediately at sweep |
+| `RESERVATION_ORPHAN_SWEEP_INTERVAL` | no | `10s` | Interval of background sweeps — orphan admitted **and** empty rooms (P31); `0` — disable both |
 
-Валидация — `reservation.ReservationConfig.Validate()`.
+Validation — `reservation.ReservationConfig.Validate()`.
 
 ## Env (state room policy)
 
-| Переменная | Обязательна | Default | Описание |
-|------------|-------------|---------|----------|
-| `STATE_POLICY_ALLOW_MASTER_MIGRATION` | нет | `true` | Режим master-миграции деплоя (P33): `false` — комната умирает с уходом master'а (`OnLeave` → `ErrRoomShouldClose` → teardown); не-bool значение — ошибка загрузки |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `STATE_POLICY_ALLOW_MASTER_MIGRATION` | no | `true` | Deploy master-migration mode (P33): `false` — the room dies when the master leaves (`OnLeave` → `ErrRoomShouldClose` → teardown); a non-bool value — load error |
 
-Валидация — `realtime/policy/state.StatePolicyConfig.Validate()` (тривиальная, для единообразия ModuleConfig).
+Validation — `realtime/policy/state.StatePolicyConfig.Validate()` (trivial, for ModuleConfig uniformity).
 
 ## Env (enet listener)
 
-Часть `LoadFromEnv()` → `Config.Enet` (тип `transport/enet.EnetConfig`).
+Part of `LoadFromEnv()` → `Config.Enet` (type `transport/enet.EnetConfig`).
 
-| Переменная | Обязательна | Default | Описание |
-|------------|-------------|---------|----------|
-| `ENET_LISTEN_PORTS` | нет | `7777` | CSV UDP-портов ENet host'ов (shard'ов, P18): `7777,7778,...`; один HostLoop на порт; 1–65535, без дублей |
-| `ENET_PEER_LIMIT` | нет | `64` | Макс. одновременных ENet peers **на host** |
-| `ENET_ADMIT_TIMEOUT` | нет | `10s` | Deadline connect→admit; просроченный peer отключается |
-| `ENET_SERVICE_TIMEOUT_MS` | нет | `1` | Бюджет host.Service итерации = потолок latency очереди команд HostLoop; >0 |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `ENET_LISTEN_PORTS` | no | `7777` | CSV of ENet host (shard, P18) UDP ports: `7777,7778,...`; one HostLoop per port; 1–65535, no duplicates |
+| `ENET_PEER_LIMIT` | no | `64` | Max simultaneous ENet peers **per host** |
+| `ENET_ADMIT_TIMEOUT` | no | `10s` | connect→admit deadline; an overdue peer is disconnected |
+| `ENET_SERVICE_TIMEOUT_MS` | no | `1` | host.Service iteration budget = ceiling of HostLoop command queue latency; >0 |
 
-`HostID` host'а (shard) - индекс+1 в `ListenPorts`; попадает в claims ticket'а для strict binding admit. Балансировка issue ticket'ов - `port/transport/enet.HostRegistry` (least-loaded по живым peer'ам, round-robin tie-break), реализована `delivery/enet.RoomsHandler`.
+A host's (shard) `HostID` — index+1 in `ListenPorts`; it lands in the ticket claims for strict binding admit. Ticket issue balancing — `port/transport/enet.HostRegistry` (least-loaded by live peers, round-robin tie-break), implemented by `delivery/enet.RoomsHandler`.
 
-Валидация — `transport/enet.EnetConfig.Validate()` (вызывается в `loadEnetFromEnv` и повторно в `cmd/rooms` после копирования transport-лимитов).
+Validation — `transport/enet.EnetConfig.Validate()` (called in `loadEnetFromEnv` and again in `cmd/rooms` after copying transport limits).
 
 ## Env (transport / data plane)
 
-| Переменная | Обязательна | Default | Описание |
-|------------|-------------|---------|----------|
-| `TRANSPORT_MAX_INCOMING_FRAME_BYTES` | нет | `262144` (256 KiB) | Макс. входящий кадр WS/ENet и ENet admit-пакет; `0` — **без лимита** (см. ниже) |
-| `TRANSPORT_ROOM_INCOMING_QUEUE` | нет | `128` | Буфер `room.incoming`; `0` — unbuffered; полный → drop |
-| `TRANSPORT_PEER_OUTBOUND_QUEUE` | нет | `128` | Буфер `peer.outbound`; `0` — unbuffered; полный → drop |
-| `TRANSPORT_ENET_INCOMING_QUEUE` | нет | `256` | Буфер ENet session; полный → drop кадра |
-| `TRANSPORT_PEER_IDLE_TIMEOUT` | нет | `30s` | Окно живости `IsAlive` (WS lastSeen); `0` — отключить idle eviction (отрицательные — ошибка Validate) |
-| `TRANSPORT_PEER_IDLE_SWEEP_INTERVAL` | нет | `10s` | Период фонового sweep idle peer'ов; `0` — отключить (отрицательные — ошибка Validate) |
-| `TRANSPORT_WS_WRITE_DEADLINE` | нет | `10s` | Дедлайн записи WS-кадра (`SetWriteDeadline` перед `WriteMessage`); `0` — без дедлайна (отрицательные — ошибка Validate) |
-| `TRANSPORT_PEER_CLOSE_DRAIN_TIMEOUT` | нет | `1s` | Потолок drain'а `peer.outbound` при `peer.Stop` (P30): закоммиченные до Stop кадры получают `Send` до `conn.Close`; `0` — drain выключен (отрицательные — ошибка Validate) |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `TRANSPORT_MAX_INCOMING_FRAME_BYTES` | no | `262144` (256 KiB) | Max incoming WS/ENet frame and ENet admit packet; `0` — **no limit** (see below) |
+| `TRANSPORT_ROOM_INCOMING_QUEUE` | no | `128` | `room.incoming` buffer; `0` — unbuffered; full → drop |
+| `TRANSPORT_PEER_OUTBOUND_QUEUE` | no | `128` | `peer.outbound` buffer; `0` — unbuffered; full → drop |
+| `TRANSPORT_ENET_INCOMING_QUEUE` | no | `256` | ENet session buffer; full → frame drop |
+| `TRANSPORT_PEER_IDLE_TIMEOUT` | no | `30s` | `IsAlive` liveness window (WS lastSeen); `0` — disable idle eviction (negative — Validate error) |
+| `TRANSPORT_PEER_IDLE_SWEEP_INTERVAL` | no | `10s` | Background idle peer sweep interval; `0` — disable (negative — Validate error) |
+| `TRANSPORT_WS_WRITE_DEADLINE` | no | `10s` | WS frame write deadline (`SetWriteDeadline` before `WriteMessage`); `0` — no deadline (negative — Validate error) |
+| `TRANSPORT_PEER_CLOSE_DRAIN_TIMEOUT` | no | `1s` | `peer.outbound` drain ceiling on `peer.Stop` (P30): frames committed before Stop get `Send` before `conn.Close`; `0` — drain off (negative — Validate error) |
 
-`TRANSPORT_MAX_INCOMING_FRAME_BYTES=0` / `MaxIncomingFrameBytes=0` — **unlimited входящий кадр**: ни `SetReadLimit` (WS), ни проверка размера пакета (ENet) не применяются. Опасно (один клиент может сожрать память гигантским кадром) — только как явный opt-in, не для prod-дефолта.
+`TRANSPORT_MAX_INCOMING_FRAME_BYTES=0` / `MaxIncomingFrameBytes=0` — **unlimited incoming frame**: neither `SetReadLimit` (WS) nor the packet size check (ENet) is applied. Dangerous (a single client can eat memory with a giant frame) — only as an explicit opt-in, not for a prod default.
 
-Валидация — `transport.TransportConfig.Validate()`.
+Validation — `transport.TransportConfig.Validate()`.
 
-Wiring — `cmd/rooms`: `LoadFromEnv()` → `ws.NewWsConnectionFactory(..., cfg.Transport)`; `cfg.Enet` → `enetCfg`, затем `enetCfg.MaxIncomingFrameBytes = cfg.Transport.MaxIncomingFrameBytes`, `enetCfg.EnetIncomingQueueSize = cfg.Transport.EnetIncomingQueueSize`.
+Wiring — `cmd/rooms`: `LoadFromEnv()` → `ws.NewWsConnectionFactory(..., cfg.Transport)`; `cfg.Enet` → `enetCfg`, then `enetCfg.MaxIncomingFrameBytes = cfg.Transport.MaxIncomingFrameBytes`, `enetCfg.EnetIncomingQueueSize = cfg.Transport.EnetIncomingQueueSize`.
 
 ## Env (metrics / admin listener)
 
-| Переменная | Обязательна | Default | Описание |
-|------------|-------------|---------|----------|
-| `ADMIN_LISTEN_ADDR` | нет | `` (выключен) | Адрес отдельного admin Fiber listener'а с `GET /metrics` (prometheus exposition). Пустой — endpoint не поднимается |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `ADMIN_LISTEN_ADDR` | no | `` (disabled) | Address of a separate admin Fiber listener with `GET /metrics` (prometheus exposition). Empty — the endpoint is not started |
 
-Дефолт выключен намеренно: scrape-endpoint — opt-in, порт не биндится без явного env. Валидация — `metrics.MetricsConfig.Validate()` (`net.ResolveTCPAddr`).
+The default is intentionally off: the scrape endpoint is opt-in, the port is not bound without an explicit env. Validation — `metrics.MetricsConfig.Validate()` (`net.ResolveTCPAddr`).
 
-Wiring — `cmd/rooms`: `metricsadapter.New(cfg.Metrics)` → `port/metrics` во все эмиттеры; при заданном адресе - `net.Listen` синхронно до serve-горутины, затем `admin.NewMetricsApp(gatherer).Listener(ln)` (P19b).
+Wiring — `cmd/rooms`: `metricsadapter.New(cfg.Metrics)` → `port/metrics` into all emitters; when an address is set — `net.Listen` synchronously before the serve goroutine, then `admin.NewMetricsApp(gatherer).Listener(ln)` (P19b).

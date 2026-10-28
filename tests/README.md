@@ -1,71 +1,71 @@
-# Тесты
+# Tests
 
-Все тесты проекта лежат здесь, а не рядом с исходниками в `internal/` и `cmd/`.
+All project tests live here, not next to the sources in `internal/` and `cmd/`.
 
-Структура зеркалит слои приложения:
+The structure mirrors the application layers:
 
 ```text
 tests/
-  mocks/                — mockgen из internal/port (gomock), go generate ./tests/mocks/...
+  mocks/                — mockgen from internal/port (gomock), go generate ./tests/mocks/...
   delivery/errors/      — join_reject, reservation_reject, in_room, wire helpers
   adapter/config/       — LoadFromEnv, admission + http auth + transport + enet env
   adapter/httpauth/     — HTTPAuthConfig.Validate
   adapter/httplimits/   — HTTPLimitsConfig, Limiter
   adapter/admission/    — ticket Issue/Validate, AdmissionConfig
-  adapter/reservation/  — слоты: Reserve / Admit / Revoke / State
+  adapter/reservation/  — slots: Reserve / Admit / Revoke / State
   adapter/identity/     — Counter: AllocateRoomID / AllocatePeerID, wrap skip 0
-  adapter/realtime/     — Room Join/Replace, policy без deadlock, peer factory nick
+  adapter/realtime/     — Room Join/Replace, policy without deadlock, peer factory nick
   adapter/realtime/policy/state/ — StateRoomPolicy, master election, tick intervals
   adapter/realtime/codec/ — round-trip state/input/rpc/room wire codec
   domain/               — ValidateNickName, DecodeIncomingFrame
   domain/state/         — atomic apply patch (entity/component)
   adapter/registry/     — RoomRegistry, Shutdown
-  adapter/metrics/      — prometheus Metrics: counters/gauges через Gatherer, MetricsConfig.Validate
-  delivery/admin/       — GET /metrics admin listener'а: 200 + exposition-текст (app.Test)
+  adapter/metrics/      — prometheus Metrics: counters/gauges via Gatherer, MetricsConfig.Validate
+  delivery/admin/       — GET /metrics of the admin listener: 200 + exposition text (app.Test)
   usecase/room/         — Create, Delete, GetList, IssueTicket, JoinRoom, LeaveRoom (gomock)
-  testutil/peer/        — параметризуемый realtime.Peer: ping/alive/deliverErr + захват PeerEvent
-  testutil/env/         — общий composition root: adapters + use cases + HTTP/WS routes на fiber.App
-                          (defaults обязаны зеркалить prod transport config: zero-значения маскируют ошибки доставки — см. кейс ErrQueueFull)
-  delivery/http/        — REST JSON (app.Test поверх testutil/env)
-  delivery/ws/          — WS join lifecycle (реальный listener + fasthttp/websocket)
-  integration/          — сквозные сценарии: room lifecycle create→issue→2×WS join→disconnect→leave;
-                          reconnect (P20): WS разрыв → 0x80 → resume → 0x81 + resync;
-                          ENet (tag enet): базовый reconnect, grace-expiry 0x74 (P24),
+  testutil/peer/        — parameterizable realtime.Peer: ping/alive/deliverErr + PeerEvent capture
+  testutil/env/         — shared composition root: adapters + use cases + HTTP/WS routes on fiber.App
+                          (defaults must mirror prod transport config: zero values mask delivery errors — see the ErrQueueFull case)
+  delivery/http/        — REST JSON (app.Test on top of testutil/env)
+  delivery/ws/          — WS join lifecycle (real listener + fasthttp/websocket)
+  integration/          — end-to-end scenarios: room lifecycle create→issue→2×WS join→disconnect→leave;
+                          reconnect (P20): WS disconnect → 0x80 → resume → 0x81 + resync;
+                          ENet (tag enet): basic reconnect, grace-expiry 0x74 (P24),
                           strict host binding 0x77;
-                          e2e live match (-short skip): общий драйвер + клиенты WS и ENet —
-                          WS (~60s): 4 клиента, host dropout → idle evict → 2 миграции master;
-                          ENet (~115s, tag enet): то же, dropout = молчание libenet → peer timeout;
-                          mixed (~115s, tag enet): host на ENet, slaves WS+ENet, кросс-транспорт
+                          e2e live match (-short skip): shared driver + WS and ENet clients —
+                          WS (~60s): 4 clients, host dropout → idle evict → 2 master migrations;
+                          ENet (~115s, tag enet): same, dropout = libenet silence → peer timeout;
+                          mixed (~115s, tag enet): host on ENet, slaves WS+ENet, cross-transport
 ```
 
-Пакеты — **внешние** (`package *_test`), импорт модуля `github.com/Sorrowful-free/z-core-frontier-rooms/...`.
+Packages are **external** (`package *_test`), importing the module `github.com/Sorrowful-free/z-core-frontier-rooms/...`.
 
-Запуск из корня модуля:
+Run from the module root:
 
 ```bash
 go test ./tests/...
 ```
 
-С race detector (рекомендуется для realtime):
+With race detector (recommended for realtime):
 
 ```bash
 go test -race ./tests/...
 ```
 
-ENet (cgo, tag `enet`) — smoke компиляции `go-enet` пакетов:
+ENet (cgo, tag `enet`) — compile smoke for the `go-enet` packages:
 
 ```bash
-# Linux/macOS / MSYS2: нужны gcc и CGO_ENABLED=1
+# Linux/macOS / MSYS2: gcc and CGO_ENABLED=1 are required
 CGO_ENABLED=1 go test -tags enet ./tests/delivery/enet/...
 ```
 
-Полный прогон тестов с тем же тегом (пересборка зависимостей под `enet`):
+Full test run with the same tag (rebuilds dependencies under `enet`):
 
 ```bash
 CGO_ENABLED=1 go test -tags enet ./tests/...
 ```
 
-Windows (PowerShell, MSYS2 gcc не в PATH сессии):
+Windows (PowerShell, MSYS2 gcc not in the session PATH):
 
 ```powershell
 $env:Path = "C:\msys64\mingw64\bin;" + $env:Path
@@ -74,19 +74,19 @@ go test -tags enet ./tests/delivery/enet/...
 go test -tags enet ./tests/...
 ```
 
-Без `-tags enet` в `tests/delivery/enet` — один skip-тест с подсказкой.
+Without `-tags enet`, `tests/delivery/enet` has a single skip test with a hint.
 
-## Бенчмарки
+## Benchmarks
 
-Файлы `*_bench_test.go` — перформанс-тесты hot path (codec, patch, policy tick, room loop). Production-код не меняется.
+`*_bench_test.go` files — performance tests of hot paths (codec, patch, policy tick, room loop). Production code is not changed.
 
-Запуск всех бенчмарков:
+Run all benchmarks:
 
 ```bash
 go test -bench=Benchmark -benchmem -count=1 ./tests/...
 ```
 
-Выборочно:
+Selectively:
 
 ```bash
 go test -bench=BenchmarkDecodeIncomingFrame -benchmem -count=1 ./tests/domain/...
@@ -97,73 +97,73 @@ go test -bench=BenchmarkRoom_ -benchmem -count=1 ./tests/adapter/realtime/...
 go test -bench=BenchmarkReservation -benchmem -count=1 ./tests/adapter/reservation/...
 ```
 
-Сравнение до/после (локально): `go install golang.org/x/perf/cmd/benchstat@latest`, затем `-count=10` и `benchstat`.
+Before/after comparison (locally): `go install golang.org/x/perf/cmd/benchstat@latest`, then `-count=10` and `benchstat`.
 
 ### Tiers
 
-| Tier | Пакет | Что измеряется |
-|------|-------|----------------|
+| Tier | Package | What is measured |
+|------|---------|------------------|
 | A — CPU | `tests/domain`, `tests/domain/state`, `tests/adapter/realtime/codec` | `DecodeIncomingFrame`, `MakePatch`/`ApplyPatch`/`Clone`, wire encode/decode |
-| B — policy | `tests/adapter/realtime/policy/state` | `OnTickPatchState`, `OnMessage` PatchInput (без сети) |
+| B — policy | `tests/adapter/realtime/policy/state` | `OnTickPatchState`, `OnMessage` PatchInput (no network) |
 | C — room | `tests/adapter/realtime` | `Room.Send` broadcast, `Deliver`, `Join` |
 | D — reservation | `tests/adapter/reservation` | `Reserve` / issue-join path; parallel spread |
 
-Фикстуры комнаты с N peers: [`tests/testutil/bench/room_state.go`](testutil/bench/room_state.go) (`BuildRoomState`).
+Room fixtures with N peers: [`tests/testutil/bench/room_state.go`](testutil/bench/room_state.go) (`BuildRoomState`).
 
-**Не в скоупе:** CI regression (benchstat baseline), нагрузочные soak-тесты, ENet/WS e2e perf.
+**Out of scope:** CI regression (benchstat baseline), load soak tests, ENet/WS e2e perf.
 
-## Фаззинг
+## Fuzzing
 
-`tests/adapter/realtime/codec/fuzz_test.go` — фаззинг всех decoder'ов wire codec. Инварианты: decode не паникует, повторный decode тех же байт детерминирован, `Encode` на декодированном значении не падает (byte-exact roundtrip не проверяется — поля переменной длины).
+`tests/adapter/realtime/codec/fuzz_test.go` — fuzzing of all wire codec decoders. Invariants: decode does not panic, decoding the same bytes again is deterministic, `Encode` on a decoded value does not fail (byte-exact roundtrip is not checked — variable-length fields).
 
-`-fuzz` матчит ровно один `Fuzz*` target за прогон:
+`-fuzz` matches exactly one `Fuzz*` target per run:
 
 ```bash
 go test -fuzz=FuzzRoomStateDecode -fuzztime=30s ./tests/adapter/realtime/codec/
 ```
 
-Цели: `FuzzRoomStateDecode`, `FuzzRoomStateDecodePatch`, `FuzzEntitiesStateDecode`, `FuzzEntitiesStateDecodePatch`, `FuzzInputStateDecode`, `FuzzInputStateDecodePatch`, `FuzzRpcStateDecode`.
+Targets: `FuzzRoomStateDecode`, `FuzzRoomStateDecodePatch`, `FuzzEntitiesStateDecode`, `FuzzEntitiesStateDecodePatch`, `FuzzInputStateDecode`, `FuzzInputStateDecodePatch`, `FuzzRpcStateDecode`.
 
-В CI — job `fuzz` в `.github/workflows/test.yml` (30s на цель); крашеры сохраняются артефактом из `tests/adapter/realtime/codec/testdata/fuzz/`.
+In CI — the `fuzz` job in `.github/workflows/test.yml` (30s per target); crashers are saved as an artifact from `tests/adapter/realtime/codec/testdata/fuzz/`.
 
-## Покрытие по пакетам
+## Per-package coverage
 
-Инвентарь сценариев намеренно не дублируется: он протухает при каждом
-изменении тестов. Что покрывает пакет — смотрите его `*_test.go`; навигация
-— по дереву каталогов выше (зеркалит слои приложения).
+The scenario inventory is deliberately not duplicated: it goes stale with every
+test change. What a package covers — see its `*_test.go`; navigation is via
+the directory tree above (it mirrors the application layers).
 
-После изменения `internal/port/*` интерфейсов:
+After changing `internal/port/*` interfaces:
 
 ```bash
 go generate ./tests/mocks/...
 ```
 
-См. [tests/mocks/README.md](mocks/README.md).
+See [tests/mocks/README.md](mocks/README.md).
 
 ## E2E live match
 
-Общий клиентский слой и сценарный драйвер — `match_e2e_client_test.go` (`matchClientBase` + `matchClient` + `runLiveMatch`); транспорты: `wsClient` (`match_e2e_test.go`) и `enetClient` (`match_e2e_enet_test.go`, tag `enet && cgo`). Все сценарии пропускаются под `-short`.
+Shared client layer and scenario driver — `match_e2e_client_test.go` (`matchClientBase` + `matchClient` + `runLiveMatch`); transports: `wsClient` (`match_e2e_test.go`) and `enetClient` (`match_e2e_enet_test.go`, tag `enet && cgo`). All scenarios are skipped under `-short`.
 
-`TestE2E_LiveMatch_HostMigration` (план `docs/plans/P11-e2e-match.md`) — 4 WS-клиента, ~60s:
+`TestE2E_LiveMatch_HostMigration` (plan `docs/plans/P11-e2e-match.md`) — 4 WS clients, ~60s:
 
 ```bash
 go test -v -race -run '^TestE2E_LiveMatch_HostMigration$' -count=1 -timeout 120s ./tests/integration/
 ```
 
-`TestE2E_LiveMatch_ENet` — 4 ENet-клиента, ~115s: dropout host'а — честное молчание libenet (клиент перестаёт вызывать `host.Service`, UDP-сокет жив) → серверский peer timeout (измерено ~10s на localhost, bound 70s) → `EventDisconnect` → `LeaveRoom` → миграция. `TestE2E_LiveMatch_Mixed` — host на ENet, slaves 1×ENet + 2×WS: кросс-транспорт entities/input/миграции. Локально без libenet-dev — через Docker:
+`TestE2E_LiveMatch_ENet` — 4 ENet clients, ~115s: host dropout — honest libenet silence (the client stops calling `host.Service`, the UDP socket stays alive) → server-side peer timeout (measured ~10s on localhost, bound 70s) → `EventDisconnect` → `LeaveRoom` → migration. `TestE2E_LiveMatch_Mixed` — host on ENet, slaves 1×ENet + 2×WS: cross-transport entities/input/migrations. Locally without libenet-dev — via Docker:
 
 ```bash
-./scripts/enet-verify.sh test   # delivery/enet + tagged e2e в образе zcore-rooms-dev
-# или при установленном libenet-dev:
+./scripts/enet-verify.sh test   # delivery/enet + tagged e2e in the zcore-rooms-dev image
+# or with libenet-dev installed:
 CGO_ENABLED=1 go test -v -race -tags enet -run 'TestE2E' -count=1 -timeout 300s ./tests/integration/
 ```
 
-Каждый клиент (`host`, `s1..s3`/`e1..e3`/`w1..w2`) — goroutine'ы pump + send-loop + stats-loop; логи `t.Logf` с префиксом ника образуют единую хронологическую ленту при `-v` и при падении: `joined as peer N`, `master is now ...`, `became/lost master`, `first entity snapshot from owner ...`, `observed input of ...`, `my input observed`, `in-room error frame`, `disconnected`. Маркеры сценария — `[scenario] ...` (host goes silent, master leaves, шаги `waitFor` — ok).
+Each client (`host`, `s1..s3`/`e1..e3`/`w1..w2`) — pump + send-loop + stats-loop goroutines; `t.Logf` logs with a nickname prefix form a single chronological feed under `-v` and on failure: `joined as peer N`, `master is now ...`, `became/lost master`, `first entity snapshot from owner ...`, `observed input of ...`, `my input observed`, `in-room error frame`, `disconnected`. Scenario markers — `[scenario] ...` (host goes silent, master leaves, `waitFor` steps — ok).
 
-## Следующий приоритет
+## Next priority
 
-Очередь пуста — первый интеграционный сценарий (`tests/integration`, ADR-0002) закрыт.
+Queue is empty — the first integration scenario (`tests/integration`, ADR-0002) is done.
 
-При новой join/reservation-ошибке — кейс в `join_reject_test.go` / `reservation_reject_test.go` (см. [.cursor/rules/join-error-opcodes.mdc](../.cursor/rules/join-error-opcodes.mdc)).
+For a new join/reservation error — add a case in `join_reject_test.go` / `reservation_reject_test.go` (see [.cursor/rules/join-error-opcodes.mdc](../.cursor/rules/join-error-opcodes.mdc)).
 
-Подробнее — индекс [README.md](../README.md), архитектура [docs/architecture.md](../docs/architecture.md), пакеты `internal/**/README.md`.
+Details — index [README.md](../README.md), architecture [docs/architecture.md](../docs/architecture.md), `internal/**/README.md` packages.

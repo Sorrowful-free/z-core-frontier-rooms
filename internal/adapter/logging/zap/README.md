@@ -1,12 +1,12 @@
 # adapter/logging/zap
 
-Адаптер `port/logging.Logger` поверх `go.uber.org/zap` + конфиг корневого логгера.
+Adapter of `port/logging.Logger` on top of `go.uber.org/zap` + root logger config.
 
 ## RootConfig
 
 - `LOG_MODE=prod` (default) → `zap.NewProduction()`
 - `LOG_MODE=dev` → `zap.NewDevelopment()`
 
-`NewFrom(*zap.Logger, tag)` — именованные дочерние логгеры для модулей.
+`NewFrom(*zap.Logger, tag)` — named child loggers for modules.
 
-Env-индекс: [adapter/config/README.md](../../config/README.md).
+Env index: [adapter/config/README.md](../../config/README.md).

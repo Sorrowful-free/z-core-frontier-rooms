@@ -1,41 +1,41 @@
 # adapter/realtime/policy/state
 
-`StateRoomPolicy` - authoritative state комнаты. Режим master-миграции —
-глобальный флаг деплоя `StatePolicyConfig.AllowMasterMigration` (env
-`STATE_POLICY_ALLOW_MASTER_MIGRATION`, P33): `false` — уход master'а
-отвечает `domain.ErrRoomShouldClose` на входе `OnLeave` (до master-машины и
-staged-мутаций; комната умирает, teardown — в usecase), уход non-master —
-обычный путь. `StateRoomPolicyFactory` принимает конфиг конструктором и
-вливает флаг полем (прецедент `p.master.metrics`).
+`StateRoomPolicy` — the room's authoritative state. Master-migration mode is
+a global deploy flag `StatePolicyConfig.AllowMasterMigration` (env
+`STATE_POLICY_ALLOW_MASTER_MIGRATION`, P33): `false` — a master leave answers
+`domain.ErrRoomShouldClose` at the `OnLeave` entry (before the master machine
+and staged mutations; the room dies, teardown in the usecase), a non-master
+leave takes the normal path. `StateRoomPolicyFactory` accepts the config in
+its constructor and injects the flag as a field (precedent `p.master.metrics`).
 
-## Интерфейс RoomPolicy
+## RoomPolicy interface
 
 - `OnStart` / `OnStop`
 - `OnJoin` / `OnLeave`
-- `OnMessage` - opcodes entities/input/RPC (см. `client_state_room_policy.go`)
+- `OnMessage` — entities/input/RPC opcodes (see `client_state_room_policy.go`)
 - `TickIntervals`, `OnTickFullState`, `OnTickPatchState`
 
-## Поведение
+## Behavior
 
-- **Master-машина:** состояния `masterSet`/`masterless` (+ дедуп-флаг эпизода) в `master_machine.go`; триггеры (join/leave/tick-prune/RPC→master) эмитят `masterEvent`, `dispatch` решает переход - election, `IsMaster`-флаги и лог эпизода в одном месте
-- **Master:** первый peer; failover - min `Ping()` ≥ 0, tie-break min `PeerID`; пустая комната → `master = nil`; `master == nil` при живых peers → переизбрание на ближайшем patch-тике или лениво при RPC→master
-- **Election:** stale-кандидаты (`GetPeer` → `ErrPeerNotFound` - есть в state, нет в room) пропускаются, выборы идут среди живых; все stale → пустые выборы (`master = nil`, не ошибка); прочие ошибки `GetPeer` фейлят выборы. `assign` validate-first: `GetPeer(masterID)` до записи `IsMaster`-флагов - state не рекламирует master, которого нет у policy (ADR 0005)
-- **Masterless-эпизод:** `Error` при падении re-elect логируется один раз на эпизод (не на каждый тик), `Info` - при восстановлении master (tick re-elect, lazy RPC re-elect, join)
-- **Метрики (P19/P19b):** `rooms_master_elections_total` считает любое назначение master - и `assign` при перевыборах, и первый элекшн на join (`onPeerJoined`, эмит staged как и у `assign`: откат транзакции даёт редкий пересчёт); `StateRoomPolicyFactory` принимает `port/metrics.Metrics` (nil-safe) и вливает его в `masterMachine` полем
-- **Эмиссия state (P34, tick-coalesced):** единственный регулярный эмиттер `OpCodePatchState` — `OnTickPatchState`. `OnMessage`-обработчики и join/leave мутируют `p.state` точечно (COW-записи, без clone/diff/send), дельта доезжает ближайшим тиком универсальным broadcast всем без исключений — publisher получает эхо своих дельт (client-side apply идемпотентен, `ApplyMapStatePatch` мягкий). Immediate одно: full state новоприбывшему peer на join. `prevState` — shallow `Snapshot()` (COW-инвариант `RoomState`), коммитится только после успешного send — сорванная рассылка не теряет дельту
-- **Join:** full state новому peer напрямую (peer ещё вне `r.peers`); запись в `p.state` коммитится после успешной доставки из encode-only shallow-view — при ошибке send `p.state`/`p.master` не мутируются (фантомного peer нет); join-дельта остальным — patch-тиком
-- **Ticks:** full state 4s, patch 50ms (дефолты); `0` в конструкторе → подстановка дефолтов. Сплит бывшего `refreshPeerPings` (P34): ping пишется в state на **full-тике** до `sendFullState` (каденция ping = fullStateInterval, patch-diff его не видит), stale-scan + `evTickPrune` — на **patch-тике** (`pruneStalePeers`, masterless recovery держит 50мс)
-- **Master-only:** `FullEntities`, `PatchEntities`; input opcodes и RPC routing принимаются от всех peers (проверка членства в room state)
-- **Patch apply (сервер):** двухфазный — staged-результаты по ключам патча (clone только затронутых), запись разом; `Updated` на отсутствующем ключе — `ErrInRoomInvalidPayload`
-- **Ошибки:** sentinel `domain` → in-room OpCode отправителю
+- **Master machine:** states `masterSet`/`masterless` (+ an episode dedup flag) in `master_machine.go`; triggers (join/leave/tick-prune/RPC→master) emit `masterEvent`, `dispatch` resolves the transition — election, `IsMaster` flags and the episode log in one place
+- **Master:** the first peer; failover — min `Ping()` ≥ 0, tie-break min `PeerID`; empty room → `master = nil`; `master == nil` with live peers → re-election on the nearest patch tick or lazily on RPC→master
+- **Election:** stale candidates (`GetPeer` → `ErrPeerNotFound` — present in state, absent from the room) are skipped, the election runs among live peers; all stale → empty election (`master = nil`, not an error); other `GetPeer` errors fail the election. `assign` is validate-first: `GetPeer(masterID)` before writing `IsMaster` flags — state never advertises a master the policy does not have (ADR 0005)
+- **Masterless episode:** an `Error` on re-elect failure is logged once per episode (not on every tick), `Info` — when the master is restored (tick re-elect, lazy RPC re-elect, join)
+- **Metrics (P19/P19b):** `rooms_master_elections_total` counts every master assignment — both `assign` during re-elections and the first election on join (`onPeerJoined`, emitted staged like `assign`: a transaction rollback causes a rare overcount); `StateRoomPolicyFactory` accepts `port/metrics.Metrics` (nil-safe) and injects it into `masterMachine` as a field
+- **State emission (P34, tick-coalesced):** the only regular emitter of `OpCodePatchState` is `OnTickPatchState`. `OnMessage` handlers and join/leave mutate `p.state` pointwise (COW writes, no clone/diff/send); the delta arrives on the nearest tick via an unconditional broadcast to everyone — the publisher receives an echo of its own deltas (client-side apply is idempotent, `ApplyMapStatePatch` is lenient). The only immediate send: full state to the newly arrived peer on join. `prevState` is a shallow `Snapshot()` (the `RoomState` COW invariant), committed only after a successful send — a failed broadcast does not lose the delta
+- **Join:** full state to the new peer directly (the peer is not yet in `r.peers`); the `p.state` write is committed after successful delivery from an encode-only shallow view — on a send error `p.state`/`p.master` are not mutated (no phantom peer); the join delta to the others goes out on the patch tick
+- **Ticks:** full state 4s, patch 50ms (defaults); `0` in the constructor → defaults substituted. Split of the former `refreshPeerPings` (P34): the ping is written to state on the **full tick** before `sendFullState` (ping cadence = fullStateInterval, the patch diff does not see it); stale scan + `evTickPrune` — on the **patch tick** (`pruneStalePeers`, masterless recovery keeps 50ms)
+- **Master-only:** `FullEntities`, `PatchEntities`; input opcodes and RPC routing are accepted from all peers (membership in room state is checked)
+- **Patch apply (server):** two-phase — staged results per patch key (clone only the touched ones), written in one go; `Updated` on a missing key — `ErrInRoomInvalidPayload`
+- **Errors:** `domain` sentinels → in-room OpCode to the sender
 
-## Файлы
+## Files
 
-| Файл | Роль |
+| File | Role |
 |------|------|
-| `state_room_policy.go` | lifecycle, routing opcodes |
+| `state_room_policy.go` | lifecycle, opcode routing |
 | `server_state_room_policy.go` | join, broadcast, pings |
 | `client_state_room_policy.go` | master messages |
-| `master_machine.go` | машина master-эпизодов: события триггеров, переходы, election |
+| `master_machine.go` | master-episode machine: trigger events, transitions, election |
 | `state_room_policy_factory.go` | DI defaults |
 | `state_policy_config.go` | `StatePolicyConfig` + `Validate()` (P33) |

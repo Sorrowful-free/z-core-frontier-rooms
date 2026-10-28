@@ -1,35 +1,35 @@
 # adapter/httplimits
 
-Лимиты control plane: rate limit (per IP) и ёмкость инстанса.
+Control plane limits: rate limit (per IP) and instance capacity.
 
-Порт: `port/httplimits.Limits`. Реализация: `New(HTTPLimitsConfig)`.
+Port: `port/httplimits.Limits`. Implementation: `New(HTTPLimitsConfig)`.
 
 ## HTTPLimitsConfig
 
-| Поле | Env | Default | `0` |
-|------|-----|---------|-----|
-| `MaxRooms` | `MAX_ROOMS` | `500` | без лимита |
-| `CreateRoomsPerMinute` | `HTTP_CREATE_RATE_PER_MIN` | `30` | без лимита |
-| `IssueTicketsPerMinute` | `HTTP_ISSUE_RATE_PER_MIN` | `60` | без лимита |
-| `DeleteRoomsPerMinute` | `HTTP_DELETE_RATE_PER_MIN` | `30` | без лимита |
-| `ListRoomsPerMinute` | `HTTP_LIST_RATE_PER_MIN` | `60` | без лимита |
+| Field | Env | Default | `0` |
+|-------|-----|---------|-----|
+| `MaxRooms` | `MAX_ROOMS` | `500` | no limit |
+| `CreateRoomsPerMinute` | `HTTP_CREATE_RATE_PER_MIN` | `30` | no limit |
+| `IssueTicketsPerMinute` | `HTTP_ISSUE_RATE_PER_MIN` | `60` | no limit |
+| `DeleteRoomsPerMinute` | `HTTP_DELETE_RATE_PER_MIN` | `30` | no limit |
+| `ListRoomsPerMinute` | `HTTP_LIST_RATE_PER_MIN` | `60` | no limit |
 
 ## Limits (port)
 
-| Метод | Где |
-|-------|-----|
+| Method | Where |
+|--------|-------|
 | `AllowCreateRoom(count)` | `usecase/room.Create` |
-| `AllowHTTPCreate(ip)` | middleware `POST /rooms` |
-| `AllowHTTPIssueTicket(ip)` | middleware `POST /rooms/:id/tickets` |
-| `AllowHTTPDelete(ip)` | middleware `DELETE /rooms/:id` |
-| `AllowHTTPList(ip)` | middleware `GET /rooms` |
+| `AllowHTTPCreate(ip)` | `POST /rooms` middleware |
+| `AllowHTTPIssueTicket(ip)` | `POST /rooms/:id/tickets` middleware |
+| `AllowHTTPDelete(ip)` | `DELETE /rooms/:id` middleware |
+| `AllowHTTPList(ip)` | `GET /rooms` middleware |
 
 ## Rate limiter
 
-Fixed window 1 мин на ключ (`<scope>:<ip>`): счётчик до limit, окно сбрасывается по `resetAt`.
-На границе окон возможен burst до 2×limit — известное свойство fixed window.
+Fixed window of 1 min per key (`<scope>:<ip>`): counter up to limit, the window resets at `resetAt`.
+A burst of up to 2×limit is possible at a window boundary — a known property of fixed window.
 
-- Ключ — `c.IP()` клиента: за reverse-proxy это IP прокси, если Fiber не настроен с `ProxyHeader`/`TrustedProxies` — тогда лимит общий на прокси.
-- Просроченные окна вычищаются lazy: внутри `allow` не чаще `rateLimitSweepInterval`, без отдельной горутины — рост `windows` при IP-ротации ограничен.
+- The key is the client's `c.IP()`: behind a reverse proxy this is the proxy IP unless Fiber is configured with `ProxyHeader`/`TrustedProxies` — then the limit is shared across the proxy.
+- Expired windows are cleaned up lazily: inside `allow`, no more often than `rateLimitSweepInterval`, without a separate goroutine — `windows` growth under IP rotation is bounded.
 
 Env — [adapter/config/README.md](../config/README.md).

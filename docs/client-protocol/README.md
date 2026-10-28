@@ -1,22 +1,22 @@
 # Client protocol (Godot)
 
-Спецификация клиентского протокола для **Godot** к сервису `z-core-frontier-rooms`.  
-Цель: реализовать клиент (или сгенерировать его ИИ) **без чтения всего репозитория**.
+Client protocol specification for **Godot** against the `z-core-frontier-rooms` service.  
+Goal: implement a client (or have an AI generate one) **without reading the whole repository**.
 
-**Основной data plane — ENet UDP.** WebSocket — только для быстрой проверки без ENet.
+**Primary data plane — ENet UDP.** WebSocket is only for quick checks without ENet.
 
-## Секции
+## Sections
 
-| Документ | Содержание |
-|----------|------------|
+| Document | Contents |
+|----------|----------|
 | [http.md](http.md) | Control plane: REST JSON, ticket, auth |
-| **[enet.md](enet.md)** | **Data plane: ENet UDP (основной)** |
-| [realtime.md](realtime.md) | Общий кадр; WebSocket для отладки |
-| [state-sync.md](state-sync.md) | Master, ticks, кто что шлёт, reconnect/Replace |
-| [errors.md](errors.md) | Wire OpCode ошибок и реакция клиента |
-| [../wire-state-codec.md](../wire-state-codec.md) | Бинарный layout payload (BE, maps) |
+| **[enet.md](enet.md)** | **Data plane: ENet UDP (primary)** |
+| [realtime.md](realtime.md) | Shared frame format; WebSocket for debugging |
+| [state-sync.md](state-sync.md) | Master, ticks, who sends what, reconnect/Replace |
+| [errors.md](errors.md) | Wire OpCodes for errors and client reaction |
+| [../wire-state-codec.md](../wire-state-codec.md) | Binary payload layout (BE, maps) |
 
-## E2e-поток (ENet)
+## E2E flow (ENet)
 
 ```mermaid
 sequenceDiagram
@@ -43,32 +43,32 @@ sequenceDiagram
   end
 ```
 
-## Чеклист реализации (Godot, ENet)
+## Implementation checklist (Godot, ENet)
 
-1. **HTTP** — create room с `nick_name` (хост получает ticket), issue ticket для joiners ([http.md](http.md)); API key в заголовке.
-2. **Decode token** — base64url → `ticket_bytes` (`ticket_bytes[0] == 2`).
-3. **ENet client** — connect `host:7777`; см. [enet.md](enet.md).
-4. **Admit** — первый пакет ch0 reliable = сырые `ticket_bytes`.
+1. **HTTP** — create a room with `nick_name` (host gets a ticket), issue tickets for joiners ([http.md](http.md)); API key in the header.
+2. **Decode token** — base64url → `ticket_bytes` (`ticket_bytes[0] == 1` — the join-ticket kind byte).
+3. **ENet client** — connect to `host:7777`; see [enet.md](enet.md).
+4. **Admit** — first packet on channel 0, reliable = raw `ticket_bytes`.
 5. **Frame parser** — `opcode = data[0]`, `payload = data[1:]`.
 6. **Wire codec** — `0x01`/`0x02` full/patch ([wire-state-codec.md](../wire-state-codec.md)).
-7. **Input** — `0x05`/`0x06`; patch можно unreliable.
-8. **Master gate** — `0x03`/`0x04` только при `is_master`.
-9. **Errors** — join `0x40+`/`0x70+` disconnect; in-room `0x60+` stay connected ([errors.md](errors.md)).
-10. **(Опционально) WS smoke-test** — [realtime.md#websocket-отладка](realtime.md#websocket-отладка).
+7. **Input** — `0x05`/`0x06`; patches may be sent unreliable.
+8. **Master gate** — `0x03`/`0x04` only while `is_master`.
+9. **Errors** — join `0x40+`/`0x70+` → disconnect; in-room `0x60+` → stay connected; room notifications `0x80+` ([errors.md](errors.md)).
+10. **(Optional) WS smoke test** — [realtime.md](realtime.md#websocket-debug).
 
-## Источник истины в коде (сервер)
+## Source of truth (server code)
 
-| Тема | Файлы / тесты |
-|------|----------------|
+| Topic | Files / tests |
+|-------|---------------|
 | ENet host / admit | `internal/delivery/enet/` |
-| Игровые OpCode | `internal/domain/state/opcodes.go` |
+| Game OpCodes | `internal/domain/state/opcodes.go` |
 | Payload codec | `internal/adapter/realtime/codec/` |
-| Round-trip тесты | `tests/adapter/realtime/codec/` |
-| Ошибки wire | `internal/delivery/errors/` |
+| Round-trip tests | `tests/adapter/realtime/codec/` |
+| Wire errors | `internal/delivery/errors/` |
 | Policy (master, ticks) | `internal/adapter/realtime/policy/state/` |
 
-При расхождении документа и кода — **код и тесты codec** приоритетнее.
+When a document and the code disagree — **the codec code and tests win**.
 
-## Opaque ID
+## Opaque IDs
 
-`ValueId`, `ComponentID`, `EntityID` (u16, ключ map), `EntityTypeID` (`entity_type_id` u8 на wire), `RpcID` — opaque на wire. Семантику задаёт игра на клиенте.
+`ValueId`, `ComponentID`, `EntityID` (u16, map key), `EntityTypeID` (`entity_type_id` u8 on wire), `RpcID` are opaque on the wire. The game assigns their meaning on the client.

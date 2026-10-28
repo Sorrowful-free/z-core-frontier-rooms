@@ -1,63 +1,63 @@
 # delivery/enet
 
-UDP host (отдельный порт от Fiber). Build tag `enet` + CGO.
+UDP host (separate port from Fiber). Build tag `enet` + CGO.
 
-**Клиентская спека (Godot, основной транспорт):** [docs/client-protocol/enet.md](../../../docs/client-protocol/enet.md).
+**Client spec (Godot, primary transport):** [docs/client-protocol/enet.md](../../../docs/client-protocol/enet.md).
 
-## По умолчанию (`DefaultEnetConfig`)
+## Defaults (`DefaultEnetConfig`)
 
-Тип конфига — `transport/enet.EnetConfig` (`internal/adapter/transport/enet/enet_config.go`, без build-тегов); handler принимает его в `NewRoomsHandler`.
+The config type is `transport/enet.EnetConfig` (`internal/adapter/transport/enet/enet_config.go`, no build tags); the handler takes it in `NewRoomsHandler`.
 
-| Параметр | Значение | Env |
-|----------|----------|-----|
-| Порты | `[7777]` (CSV - N host'ов/shard'ов) | `ENET_LISTEN_PORTS` |
-| Peer limit | `64` **на host** | `ENET_PEER_LIMIT` |
+| Parameter | Value | Env |
+|-----------|-------|-----|
+| Ports | `[7777]` (CSV - N hosts/shards) | `ENET_LISTEN_PORTS` |
+| Peer limit | `64` **per host** | `ENET_PEER_LIMIT` |
 | Channel limit | `2` | — |
 | Service timeout | `10ms` | — |
 | Admit deadline (EventConnect → ticket) | `10s` | `ENET_ADMIT_TIMEOUT` |
-| Первый пакет | сырой ticket (`admit`), max `TRANSPORT_MAX_INCOMING_FRAME_BYTES` | — |
-| После admit | channel `0`, `[OpCode u8][payload]`; server send reliable | — |
-| Inbound delivery | `PacketFlagReliable` → `DeliveryReliable`; без флага → `DeliveryUnreliable` (`flags_cgo.go`) | — |
-| Oversized packet/frame | graceful disconnect (+ `DisconnectPeer` если уже admitted) | — |
-| Ошибка admit | OpCode `0x40`–`0x5F` и `0x70`–`0x7F` (1 байт) → **доставляется**, затем disconnect | — |
-| Admit timeout | peer не прислал ticket за `AdmitTimeout` → disconnect без wire-кадра | — |
+| First packet | raw ticket (`admit`), max `TRANSPORT_MAX_INCOMING_FRAME_BYTES` | — |
+| After admit | channel `0`, `[OpCode u8][payload]`; server send reliable | — |
+| Inbound delivery | `PacketFlagReliable` → `DeliveryReliable`; without flag → `DeliveryUnreliable` (`flags_cgo.go`) | — |
+| Oversized packet/frame | graceful disconnect (+ `DisconnectPeer` if already admitted) | — |
+| Admit error | OpCode `0x40`–`0x5F` and `0x70`–`0x7F` (1 byte) → **delivered**, then disconnect | — |
+| Admit timeout | peer did not send ticket within `AdmitTimeout` → disconnect without a wire frame | — |
 
-`EnetConfig.Validate()` - порты (1–65535, без дублей, ≥1)/лимиты/очереди/`AdmitTimeout`; env `ENET_*` - `adapter/config.LoadFromEnv()` → `cfg.Enet` (`MaxIncomingFrameBytes`/`EnetIncomingQueueSize` cmd/rooms копирует из `cfg.Transport`).
+`EnetConfig.Validate()` - ports (1–65535, no duplicates, ≥1)/limits/queues/`AdmitTimeout`; env `ENET_*` - `adapter/config.LoadFromEnv()` → `cfg.Enet` (`MaxIncomingFrameBytes`/`EnetIncomingQueueSize` are copied by cmd/rooms from `cfg.Transport`).
 
 ## Host sharding (P18)
 
-На каждый порт из `cfg.ListenPorts` - отдельный `enetHost` (`id` = `domain.HostID` = индекс+1) со своим `HostLoop` и run-горутиной. Комната транспорт-агностична: её peer'ы могут сидеть на разных host'ах.
+Each port in `cfg.ListenPorts` gets its own `enetHost` (`id` = `domain.HostID` = index+1) with its own `HostLoop` and run goroutine. A room is transport-agnostic: its peers may sit on different hosts.
 
-- **Балансировка:** `RoomsHandler` реализует `port/transport/enet.HostRegistry` - `AssignHost` выбирает least-loaded host по живым peer'ам (`enetHost.peers` инкрементится на `EventConnect`, декрементится в `sess.close`), round-robin tie-break. `IssueTicketUseCase` кладёт `HostID` в claims и `enet_port` в HTTP-ответ.
-- **Strict binding:** admit-фасад (`AdmitPeerUseCase`) сравнивает `claims.HostID` с `host.id` до траты слота - на чужом host'е join-reject `ErrWrongHost` → `OpWrongHost` (`0x77`) + disconnect; `HostIDUnbound` (ticket без привязки — выписан без `HostRegistry`, WS-only) на ENet-admit отклоняется тем же `OpWrongHost`. Reconnect-токен (kind `2`) наследует привязку исходного тикета (P20).
-- **Peer→host привязка:** у каждого host'а своя `EnetConnectionFactory` (`WithLoop` на его `HostLoop` - `EnetConnection.Ping`/операции peer'а диспатчатся в правильный executor).
-- **Fail-fast:** первый упавший run (bind failure) отменяет общий ctx mux'а; `Err()` = первая ошибка.
+- **Balancing:** `RoomsHandler` implements `port/transport/enet.HostRegistry` - `AssignHost` picks the least-loaded host by live peers (`enetHost.peers` is incremented on `EventConnect`, decremented in `sess.close`), round-robin tie-break. `IssueTicketUseCase` puts `HostID` into claims and `enet_port` into the HTTP response.
+- **Strict binding:** the admit facade (`AdmitPeerUseCase`) compares `claims.HostID` with `host.id` before consuming a slot - on a foreign host join-reject `ErrWrongHost` → `OpWrongHost` (`0x77`) + disconnect; `HostIDUnbound` (a ticket without binding — issued without `HostRegistry`, WS-only) is rejected on ENet admit with the same `OpWrongHost`. A reconnect token (kind `2`) inherits the original ticket's binding (P20).
+- **Peer→host binding:** each host has its own `EnetConnectionFactory` (`WithLoop` bound to its `HostLoop` - `EnetConnection.Ping`/peer operations are dispatched to the correct executor).
+- **Fail-fast:** the first failed run (bind failure) cancels the mux's shared ctx; `Err()` = the first error.
 
-## Жизненный цикл listener'а
+## Listener lifecycle
 
-`RoomsHandler.Listen() *ListenHandle`: `Done()` - выход **всех** host loop'ов, `Err()` - терминальная ошибка (bind failure), `Stop()` - отмена ctx + ожидание реального выхода каждого loop'а. `main.go` фейлит процесс при ошибке bind.
+`RoomsHandler.Listen() *ListenHandle`: `Done()` - exit of **all** host loops, `Err()` - terminal error (bind failure), `Stop()` - ctx cancel + waiting for each loop's real exit. `main.go` fails the process on a bind error.
 
-Graceful shutdown: по ctx/Stop host loop закрывает все сессии (`conn.Close` → `peer.DisconnectLater` → `closed` chan будит Receive-горутины peer'ов), делает drain service-итерациями и `host.Destroy()`.
+Graceful shutdown: on ctx/Stop the host loop closes all sessions (`conn.Close` → `peer.DisconnectLater` → `closed` chan wakes peers' Receive goroutines), drains via service iterations, and calls `host.Destroy()`.
 
-## Метрики (P19/P19b)
+## Metrics (P19/P19b)
 
-`NewRoomsHandler` принимает `port/metrics.Metrics` (nil-safe): reject-кадры admit считаются в `rooms_join_rejects_total{opcode}` только при успешном send (включая `OpWrongHost` `0x77`; ошибка send - Warn-лог), drop переполненной очереди ENet-сессии — `rooms_queue_drops_total{queue="enet_incoming"}`, живые сессии на host'е — `rooms_enet_host_peers{host}` (то же число, что least-loaded счётчик), ожидание команд в очереди `HostLoop` (enqueue → exec) — `rooms_enet_host_loop_queue_latency_seconds` (агрегировано по host'ам). `NewHostLoop` принимает `Metrics` последним параметром (nil-safe).
+`NewRoomsHandler` takes `port/metrics.Metrics` (nil-safe): admit reject frames are counted in `rooms_join_rejects_total{opcode}` only on a successful send (including `OpWrongHost` `0x77`; a send error is Warn-logged), a drop from a full ENet session queue — `rooms_queue_drops_total{queue="enet_incoming"}`, live sessions per host — `rooms_enet_host_peers{host}` (the same number as the least-loaded counter), command wait time in the `HostLoop` queue (enqueue → exec) — `rooms_enet_host_loop_queue_latency_seconds` (aggregated across hosts). `NewHostLoop` takes `Metrics` as its last parameter (nil-safe).
 
-Disconnect везде graceful (`DisconnectLater` в `EnetConnection.Close`): queued reliable-пакеты — включая join reject — уходят до разрыва. `DisconnectNow` не используется. Тот же механизм гарантирует доставку `OpRoomClosed` (`0x82`) при смерти комнаты в no-migration деплое (P33): кадр и disconnect в одной FIFO host loop'а.
+Disconnect is graceful everywhere (`DisconnectLater` in `EnetConnection.Close`): queued reliable packets — including join reject — go out before the teardown. `DisconnectNow` is not used. The same mechanism guarantees delivery of `OpRoomClosed` (`0x82`) on room death in a no-migration deployment (P33): the frame and the disconnect ride the same host loop FIFO.
 
-## Сериализация libenet
+## libenet serialization
 
-C API libenet не thread-safe: весь C API host'а сериализует его `HostLoop` (`adapter/transport/enet`, P15). `host.Service` идёт blocking-командой `Call` в loop, peer/packet-операции dispatch'а (`session_cgo`/`frame_cgo`) - `Call`/`Do` в тот же loop. Сам dispatch исполняется на run-горутине, не на loop-горутине: admit/teardown путь (`AdmitPeerUseCase`/`DisconnectPeerUseCase` → `dispatchLifecycle`) синхронно ждёт room-горутину, а та в `OnJoin`/`OnLeave` зовёт `EnetConnection.Ping` - blocking-вызов в тот же loop; dispatch на executor'е замкнул бы cross-deadlock executor↔room. `conn.Send`/`Close` - async enqueue в очередь loop'а (FIFO, wire-порядок сохраняется). `Event`-аксессоры (`GetType`/`GetPeer`/`GetPacket`/`GetData`) работают с Go-копией и диспатча не требуют. `sessions`-map трогает только run-горутина - синхронизации нет. Shutdown: `Stop` → `closeSessions` (graceful `DisconnectLater` в очередь) → `drainHost` (2 service-итерации через `Call`) → `loop.Stop()` → drain → `host.Destroy`.
+The libenet C API is not thread-safe: the host's entire C API is serialized by its `HostLoop` (`adapter/transport/enet`, P15). `host.Service` runs as a blocking `Call` command into the loop; peer/packet dispatch operations (`session_cgo`/`frame_cgo`) — `Call`/`Do` into the same loop. Dispatch itself executes on the run goroutine, not the loop goroutine: the admit/teardown path (`AdmitPeerUseCase`/`DisconnectPeerUseCase` → `dispatchLifecycle`) synchronously waits on the room goroutine, which in `OnJoin`/`OnLeave` calls `EnetConnection.Ping` — a blocking call into the same loop; running dispatch on the executor would close a cross-deadlock executor↔room. `conn.Send`/`Close` — async enqueue into the loop's queue (FIFO, wire order preserved). `Event` accessors (`GetType`/`GetPeer`/`GetPacket`/`GetData`) work on the Go copy and need no dispatch. Only the run goroutine touches the `sessions` map — no synchronization. Shutdown: `Stop` → `closeSessions` (graceful `DisconnectLater` enqueued) → `drainHost` (2 service iterations via `Call`) → `loop.Stop()` → drain → `host.Destroy`.
 
-Без `enet`/cgo: `Listen()` — stub run (warn + чистый выход, `Err() == nil`).
+Without `enet`/cgo: `Listen()` — stub run (warn + clean exit, `Err() == nil`).
 
 ## Connection factory — tagged alias `Peer`
 
-`EnetConnectionFactory` (`port/transport/enet`, адаптер `adapter/transport/enet`) — транспортная деталь delivery: настоящий seam с сервисом — `realtime.PeerFactory`, принимающий готовый `transport.Connection`. Интерфейс фабрики один на все build-теги — `CreateConnection(peer Peer, incoming chan domain.Frame)`, где `Peer` — tagged type alias: под `enet && cgo` это `libenet.Peer` (вызов `CreateConnection(peer, incoming)` из `session_cgo.go` типобезопасен и не менялся), в stub-сборке — `any`.
+`EnetConnectionFactory` (`port/transport/enet`, adapter `adapter/transport/enet`) — a delivery transport detail: the real seam with the service is `realtime.PeerFactory`, which accepts a ready-made `transport.Connection`. The factory interface is the same across all build tags — `CreateConnection(peer Peer, incoming chan domain.Frame)`, where `Peer` is a tagged type alias: under `enet && cgo` it is `libenet.Peer` (the `CreateConnection(peer, incoming)` call in `session_cgo.go` is type-safe and unchanged), in the stub build — `any`.
 
 ```bash
 CGO_ENABLED=1 go build -tags enet -o bin/rooms-enet ./cmd/rooms
 CGO_ENABLED=1 go test -tags enet ./tests/delivery/enet/...
 ```
 
-Поток admit/teardown — те же `AdmitPeerUseCase` / `DisconnectPeerUseCase`, что WS (P20): teardown идёт с `PeerSession` из admit (identity-check — stale EventDisconnect после resume не выкидывает нового peer'а, `ErrPeerStale` → no-op).
+The admit/teardown flow uses the same `AdmitPeerUseCase` / `DisconnectPeerUseCase` as WS (P20): teardown runs with the `PeerSession` from admit (identity check — a stale EventDisconnect after resume does not evict the new peer, `ErrPeerStale` → no-op).

@@ -1,68 +1,68 @@
 # adapter/realtime
 
-Runtime комнаты: `Room`, `Peer`, фабрики.
+Room runtime: `Room`, `Peer`, factories.
 
-Фабрики (`NewRoomFactory`, `NewPeerFactory`) принимают `port/metrics.Metrics` (nil-safe) и вливают его полем в создаваемые `Room`/`Peer` — сигнатуры `NewRoom`/`NewPeer` остаются стабильными для white-box тестов (умолчание `Noop`). Эмит: joins/leaves + gauge `active_peers` на lifecycle-переходах (**по факту мутации `peers` map** - повторный join/leave того же peer'а не даёт дрейф, P19b) и `-len(peers)` в `Room.Stop` (P31: kill-пути комнаты — `closeRoom`, DELETE, empty-death, shutdown — убивают peers мимо `Leave`, а `registry.DeleteRoom` всегда идёт через `room.Stop`, поэтому одна строка покрывает все death-пути без двойного вычета ушедших), drops переполненных `incoming`/`outbound`, gauge-сэмплы глубины обеих очередей (`len(chan)` на enqueue/dequeue, приближение), duration тиков `rooms_room_tick_seconds{kind}`, ошибки send на живом соединении `rooms_peer_send_errors_total` (ожидаемый teardown `!IsAlive` не считается).
+The factories (`NewRoomFactory`, `NewPeerFactory`) accept `port/metrics.Metrics` (nil-safe) and inject it as a field into the created `Room`/`Peer` — the `NewRoom`/`NewPeer` signatures remain stable for white-box tests (default `Noop`). Emits: joins/leaves + gauge `active_peers` on lifecycle transitions (**on actual mutation of the `peers` map** — a repeated join/leave of the same peer causes no drift, P19b) and `-len(peers)` in `Room.Stop` (P31: room kill paths — `closeRoom`, DELETE, empty-death, shutdown — kill peers bypassing `Leave`, and `registry.DeleteRoom` always goes through `room.Stop`, so a single line covers all death paths without double-counting peers that already left), drops of full `incoming`/`outbound`, gauge samples of both queue depths (`len(chan)` on enqueue/dequeue, an approximation), tick durations `rooms_room_tick_seconds{kind}`, send errors on a live connection `rooms_peer_send_errors_total` (expected teardown `!IsAlive` is not counted).
 
 ## Room
 
-Один goroutine event loop (`processRoomEvents`):
+A single goroutine event loop (`processRoomEvents`):
 
-- `incoming` — буфер `RoomIncomingQueueSize` (default 128); полный → drop (`domain.ErrQueueFull`); кадры → `OnMessage`
-- `lifecycle` — Join / Leave / Replace (сериализация с OnMessage)
-- tickers — `OnTickFullState` / `OnTickPatchState` из `policy.TickIntervals()`
+- `incoming` — buffer `RoomIncomingQueueSize` (default 128); full → drop (`domain.ErrQueueFull`); frames → `OnMessage`
+- `lifecycle` — Join / Leave / Replace (serialized with OnMessage)
+- tickers — `OnTickFullState` / `OnTickPatchState` from `policy.TickIntervals()`
 
-Публичные операции:
+Public operations:
 
-- `Join` — capacity-check + вставка в peers map + `OnJoin` выполняются **атомарно на room-loop'е** (P13): peer виден в `r.peers` до того, как policy вставляет его в state — tick'и (`pruneStalePeers`) не могут принять новоприсоединившегося за stale. При ошибке `OnJoin` peers-вставка откатывается. Pre-check capacity на caller'е — ранний ответ, авторитетная проверка в loop'е. Занятый peerID отклоняется `ErrPeerAlreadyInRoom` (P20, гонка double-resume: молчаливый overwrite сиротил бы проигравший peer-объект) — resume-поток дожимает отказ через `Replace`.
-- `Leave` — удаление из peers map + `OnLeave` атомарно на room-loop'е: peer вне реестра **до** отработки политики; ошибка `OnLeave` возвращается, state-запись при откате вычищается следующим prune-тиком (`GetPeer` → `ErrPeerNotFound` → stale). Identity-check (P20): из map удаляется только если `peers[id]` — тот же peer-объект, иначе `domain.ErrPeerStale` (stale teardown старого conn после `Replace` не выкидывает нового peer'а). Дедуп двойного teardown (P23) авторитетен на уровне реестра: повторный leave уже-изъятого peer'а (оба caller'а прошли pre-check до сериализации на loop'е) отклоняется `domain.ErrPeerNotFound` — тем же sentinel, что pre-check — до вызова `OnLeave` и метрик, одиночный broadcast не зависит от поведения policy.
-- `Replace` — `lifecycleLeave(old)` → `lifecycleJoin(new)`; при ошибке join — rollback `lifecycleJoin(old)`
-- `Start`/`Stop` — `sync.Once`-guards; повторные вызовы идемпотентны
-- `Send` / `Deliver` — исходящие `PeerEvent` / входящие `RoomEvent`
+- `Join` — capacity check + insertion into the peers map + `OnJoin` run **atomically on the room loop** (P13): the peer is visible in `r.peers` before the policy inserts it into state — ticks (`pruneStalePeers`) cannot mistake the newly joined peer for stale. On `OnJoin` error the peers insertion is rolled back. Capacity pre-check on the caller — early answer, authoritative check in the loop. An occupied peerID is rejected with `ErrPeerAlreadyInRoom` (P20, double-resume race: a silent overwrite would orphan the losing peer object) — the resume flow forces the refusal through `Replace`.
+- `Leave` — removal from the peers map + `OnLeave` atomically on the room loop: the peer is out of the registry **before** the policy runs; an `OnLeave` error is returned, and on rollback the state record is cleaned up by the next prune tick (`GetPeer` → `ErrPeerNotFound` → stale). Identity check (P20): the entry is removed from the map only if `peers[id]` is the same peer object, otherwise `domain.ErrPeerStale` (a stale teardown of the old conn after `Replace` does not evict the new peer). Double-teardown dedup (P23) is authoritative at the registry level: a repeated leave of an already-removed peer (both callers passed the pre-check before serialization on the loop) is rejected with `domain.ErrPeerNotFound` — the same sentinel as the pre-check — before `OnLeave` and metrics run, so a single broadcast does not depend on policy behavior.
+- `Replace` — `lifecycleLeave(old)` → `lifecycleJoin(new)`; on join error — rollback via `lifecycleJoin(old)`
+- `Start`/`Stop` — `sync.Once` guards; repeated calls are idempotent
+- `Send` / `Deliver` — outbound `PeerEvent` / inbound `RoomEvent`
 
-### Контракт `Deliver`
+### `Deliver` contract
 
-| Исход | `Room.Deliver` / `Peer.Deliver` | Поведение вызывающего |
-|-------|----------------------------------|------------------------|
-| Успех | `nil` | — |
-| Очередь полна | `domain.ErrQueueFull` | логировать; **не** рвать соединение (`processIncomingEvents` продолжает чтение) |
-| Остановлен | ошибка `room stopped` / `peer stopped` | фатально для peer loop (кроме уже остановленного) |
-| Прочая ошибка | иная ошибка `Deliver` | `processIncomingEvents` логирует, закрывает `connection` и выходит — ускоренный cleanup полумёртвого peer'а |
+| Outcome | `Room.Deliver` / `Peer.Deliver` | Caller behavior |
+|---------|---------------------------------|-----------------|
+| Success | `nil` | — |
+| Queue full | `domain.ErrQueueFull` | log; do **not** drop the connection (`processIncomingEvents` keeps reading) |
+| Stopped | `room stopped` / `peer stopped` error | fatal for the peer loop (except an already-stopped one) |
+| Other error | other `Deliver` error | `processIncomingEvents` logs, closes the `connection` and exits — accelerated cleanup of a half-dead peer |
 
-`Room.Send`: `ErrQueueFull` у отдельного peer — `Warn` и broadcast продолжается остальным (full-state/patch не падают целиком из-за одного переполненного outbound). Любая другая ошибка `Deliver` (в т.ч. `peer stopped`) **обрывает рассылку** и возвращается вызывающему — до части peers кадр может не дойти.
+`Room.Send`: `ErrQueueFull` on an individual peer — `Warn` and the broadcast continues to the rest (full-state/patch do not fail wholesale because of one full outbound). Any other `Deliver` error (incl. `peer stopped`) **aborts the broadcast** and is returned to the caller — the frame may not reach some peers.
 
 ## Shutdown
 
-`Room.Stop()` завершает event loop через отмену контекста комнаты (`cancel`); `processRoomEvents` выходит по `<-ctx.Done()`.
+`Room.Stop()` terminates the event loop by cancelling the room context (`cancel`); `processRoomEvents` exits on `<-ctx.Done()`.
 
-Каналы `incoming` и `lifecycle` **намеренно не закрываются**: в них пишут внешние горутины (peers, use cases), не входящие в `Room.wg`. Закрытие после `wg.Wait()` приводило к панике `send on closed channel`.
+The `incoming` and `lifecycle` channels are **intentionally never closed**: external goroutines (peers, use cases) that are not part of `Room.wg` write to them. Closing them after `wg.Wait()` caused `send on closed channel` panics.
 
-После cancel продюсеры (`Deliver`, `dispatchLifecycle`) возвращают ошибку «room stopped» через `ctx.Err()`, не блокируясь и не паникуя.
+After cancel, producers (`Deliver`, `dispatchLifecycle`) return a "room stopped" error via `ctx.Err()`, without blocking or panicking.
 
-Тот же контракт у `peer.outbound`: канал никогда не закрывается, consumer выходит по `ctx.Done()` — конвенция [ADR 0003](../../../docs/adr/0003-channel-ownership.md).
+The same contract applies to `peer.outbound`: the channel is never closed, the consumer exits on `ctx.Done()` — convention [ADR 0003](../../../docs/adr/0003-channel-ownership.md).
 
-Тесты: `tests/adapter/realtime/room_stop_test.go`, `tests/adapter/registry/room_registry_stop_test.go` (concurrent `Deliver`/`Join`/`Leave` + `Stop`).
+Tests: `tests/adapter/realtime/room_stop_test.go`, `tests/adapter/registry/room_registry_stop_test.go` (concurrent `Deliver`/`Join`/`Leave` + `Stop`).
 
 ## Peer
 
-- `NickName` задаётся в `NewPeer` из ticket (`JoinRoom` → `claims.NickName`)
-- Комнату peer **не хранит** (P26): входная точка mailbox'а `incoming` — узкий порт `port/realtime.EventSink` (`Deliver(RoomEvent)`), передаётся параметром в `Start(sink)` и живёт только в замыкании read-горутины. Контракт Start-after-join (`Start` только после успешного `Join`/`Replace`) — caller-side инвариант, зафиксирован в порту.
-- ctx жизни peer'а — отдельный аргумент `NewPeer`/`CreatePeer` (caller передаёт `room.Context()`); конструкции peer'а комната не нужна.
-- I/O через `transport.Connection`
-- `outbound` — буфер `PeerOutboundQueueSize` (default 128); полный → `domain.ErrQueueFull` (room loop не стопорится)
-- `Ping()` для refresh в policy patch tick
-- `IsAlive()` — делегирует в `transport.Connection`; `false` → peer подлежит idle eviction ([ADR 0001](../../../docs/adr/0001-idle-peer-eviction.md))
+- `NickName` is set in `NewPeer` from the ticket (`JoinRoom` → `claims.NickName`)
+- The peer does **not** store its room (P26): the entry point of the `incoming` mailbox is the narrow port `port/realtime.EventSink` (`Deliver(RoomEvent)`), passed as a parameter to `Start(sink)` and living only in the read goroutine's closure. The start-after-join contract (`Start` only after a successful `Join`/`Replace`) is a caller-side invariant, fixed in the port.
+- The peer's lifetime ctx is a separate `NewPeer`/`CreatePeer` argument (the caller passes `room.Context()`); the room is not needed to construct a peer.
+- I/O via `transport.Connection`
+- `outbound` — buffer `PeerOutboundQueueSize` (default 128); full → `domain.ErrQueueFull` (the room loop is not stalled)
+- `Ping()` for refresh in the policy patch tick
+- `IsAlive()` — delegates to `transport.Connection`; `false` → the peer is subject to idle eviction ([ADR 0001](../../../docs/adr/0001-idle-peer-eviction.md))
 
 ### Peer Stop / drain (P30)
 
-`Peer.Stop()` — не fire-and-forget: `cancel` → **drain** `outbound` → `conn.Close` → `wg.Wait`. По отмене ctx write-loop переходит в drain-фазу: дочитывает `outbound` до пустоты (`select`+`default`), вызывая `Send` для каждого остатка, и замыкает `writeDone`. `Stop` ждёт `writeDone` не дольше `drainTimeout`, по дедлайну идёт на force `conn.Close` (прерывает и заблокированный `Send` — read-loop висеть до close нельзя, поэтому ждать весь `wg` до `conn.Close` было бы deadlock'ом). `drainTimeout = 0` — drain выключен.
+`Peer.Stop()` is not fire-and-forget: `cancel` → **drain** `outbound` → `conn.Close` → `wg.Wait`. On ctx cancellation the write loop enters the drain phase: it reads `outbound` to empty (`select`+`default`), calling `Send` for each leftover, and closes `writeDone`. `Stop` waits for `writeDone` no longer than `drainTimeout`; on deadline it goes for a force `conn.Close` (which also interrupts a blocked `Send` — the read loop must not hang until close, so waiting for the whole `wg` before `conn.Close` would deadlock). `drainTimeout = 0` — drain disabled.
 
-Контракт: кадры, чей `Deliver` закоммитил **до** начала `Stop`, получают попытку `Send` до `Close`; `Deliver`, гонящийся со `Stop` (прошёл ctx-проверку, но enqueue после наблюдения пустой очереди write-loop'ом), — **unspecified**. Гарантия — «`Send` вызван до `Close`», не «клиент получил»: после нормального close() ядро досылает буфер, на ENet `SendBytes` оказывается в FIFO host loop'а до `DisconnectLater` — порядок строгий де-юре. Значение приходит от `PeerFactory` (`TransportConfig.PeerCloseDrainTimeout`); у `NewPeer` — пакетный дефолт 1s (сигнатура стабильна для white-box тестов, тот же паттерн, что `metrics`).
+Contract: frames whose `Deliver` committed **before** `Stop` began get a `Send` attempt before `Close`; a `Deliver` racing `Stop` (passed the ctx check but enqueued after the write loop observed an empty queue) is **unspecified**. The guarantee is "`Send` was called before `Close`", not "the client received it": after a normal close() the kernel flushes the buffer; on ENet `SendBytes` lands in the host loop's FIFO before `DisconnectLater` — the ordering is strict de jure. The value comes from `PeerFactory` (`TransportConfig.PeerCloseDrainTimeout`); `NewPeer` uses a package default of 1s (signature stable for white-box tests, same pattern as `metrics`).
 
 ## Policy
 
-Контракт: `port/realtime/policy.RoomPolicy`.  
-Реализация: [policy/state/README.md](policy/state/README.md).
+Contract: `port/realtime/policy.RoomPolicy`.  
+Implementation: [policy/state/README.md](policy/state/README.md).
 
 ## Codec
 
@@ -70,4 +70,4 @@ Wire encode/decode: [codec/README.md](codec/README.md).
 
 ## In-room errors
 
-`room_in_room_error.go` — при ошибке `OnMessage` отправителю кадр OpCode (`domain.InRoomErrorOpCode`).
+`room_in_room_error.go` — on an `OnMessage` error, an OpCode frame to the sender (`domain.InRoomErrorOpCode`).

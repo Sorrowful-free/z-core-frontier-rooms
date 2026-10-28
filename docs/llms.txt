@@ -1,17 +1,17 @@
 # z-core-frontier-rooms
 
-> Игровой сервис комнат: HTTP control plane (Fiber), **data plane ENet UDP** (основной), WebSocket для отладки. Authoritative room state, ticket admission, binary wire codec для Godot-клиента.
+> Game room service: HTTP control plane (Fiber), **ENet UDP data plane** (primary), WebSocket for debugging. Authoritative room state, ticket admission, binary wire codec for a Godot client.
 
-Документация для реализации **клиента** (Godot / ИИ-агент):
+Documentation for implementing a **client** (Godot / AI agent):
 
-- [Client protocol index](client-protocol/README.md) — e2e-поток, чеклист Godot
+- [Client protocol index](client-protocol/README.md) — e2e flow, Godot checklist
 - [HTTP control plane](client-protocol/http.md) — REST JSON, ticket, auth
-- **[ENet data plane](client-protocol/enet.md)** — **основной транспорт** (UDP :7777, admit, reliable)
-- [Realtime overview](client-protocol/realtime.md) — общий кадр; WebSocket smoke-test
+- **[ENet data plane](client-protocol/enet.md)** — **primary transport** (UDP :7777, admit, reliable)
+- [Realtime overview](client-protocol/realtime.md) — shared frame format; WebSocket smoke test
 - [State sync](client-protocol/state-sync.md) — master, ticks, input/entities/RPC
-- [Wire errors](client-protocol/errors.md) — OpCode 0x40+, 0x60+, 0x70+, notifications 0x80+
-- [Wire state codec](wire-state-codec.md) — бинарный layout payload (BE, maps)
+- [Wire errors](client-protocol/errors.md) — OpCodes 0x40+, 0x60+, 0x70+, notifications 0x80+
+- [Wire state codec](wire-state-codec.md) — binary payload layout (BE, maps)
 
-Источник истины при расхождениях: Go codec `internal/adapter/realtime/codec/` и тесты `tests/adapter/realtime/codec/`. ENet: `internal/delivery/enet/`.
+Source of truth on divergence: the Go codec `internal/adapter/realtime/codec/` and tests `tests/adapter/realtime/codec/`. ENet: `internal/delivery/enet/`.
 
-Серверная архитектура: [architecture.md](architecture.md). Пакетные README — [../README.md](../README.md).
+Server architecture: [architecture.md](architecture.md). Package READMEs — [../README.md](../README.md).

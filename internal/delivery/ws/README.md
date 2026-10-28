@@ -1,26 +1,26 @@
 # delivery/ws
 
-WebSocket data plane на том же `*fiber.App`, что HTTP.
+WebSocket data plane on the same `*fiber.App` as HTTP.
 
 ## Endpoint
 
 `GET /ws?token=<base64url>`
 
-Ticket по-прежнему в query (контракт клиента). Строка **base64url** из `POST /rooms/:id/tickets` (без padding), URL-encoded в query — join-тикет или `reconnect_token` (kind `2`, P20) для resume под тем же peerID. Сервер декодирует в сырые байты перед `AdmitPeerUseCase`. Access-лог Fiber (`fibzap`) пишет `path` без query, чтобы token не попадал в логи.
+The ticket is still in the query (client contract). A **base64url** string from `POST /rooms/:id/tickets` (no padding), URL-encoded in the query — a join ticket or a `reconnect_token` (kind `2`, P20) for resuming under the same peerID. The server decodes it into raw bytes before `AdmitPeerUseCase`. The Fiber access log (`fibzap`) writes `path` without the query so the token does not end up in logs.
 
-Клиентская спека: [docs/client-protocol/realtime.md](../../../docs/client-protocol/realtime.md) (обзор), [docs/client-protocol/enet.md](../../../docs/client-protocol/enet.md) (основной транспорт).
+Client spec: [docs/client-protocol/realtime.md](../../../docs/client-protocol/realtime.md) (overview), [docs/client-protocol/enet.md](../../../docs/client-protocol/enet.md) (primary transport).
 
-1. Декодировать base64url из query → сырые байты credential'а (join-ticket / reconnect-токен)
-2. `AdmitPeerUseCase.Admit(..., HostIDUnbound)` — фасад валидирует token один раз и разводит join/resume по `claims.Kind` (P20)
-3. Цикл `connection.Receive` → `room.Deliver`
-4. При disconnect → `DisconnectPeer` с `PeerSession` из admit (P20: `MarkDisconnected` → `Leave` → `Stop` → `OpPeerDisconnected`; grace-окно `RESERVATION_RECONNECT_TTL`; в no-migration деплое разрыв хоста → `ErrRoomShouldClose` → teardown: выжившим `0x82 OpRoomClosed` + close, P33)
+1. Decode base64url from the query → raw credential bytes (join ticket / reconnect token)
+2. `AdmitPeerUseCase.Admit(..., HostIDUnbound)` — the facade validates the token once and routes join/resume by `claims.Kind` (P20)
+3. `connection.Receive` loop → `room.Deliver`
+4. On disconnect → `DisconnectPeer` with the `PeerSession` from admit (P20: `MarkDisconnected` → `Leave` → `Stop` → `OpPeerDisconnected`; grace window `RESERVATION_RECONNECT_TTL`; in a no-migration deployment host disconnect → `ErrRoomShouldClose` → teardown: survivors get `0x82 OpRoomClosed` + close, P33)
 
-Ошибка join: один кадр OpCode (`delivery/errors.SendJoinReject`) → close WS.
+Join error: one OpCode frame (`delivery/errors.SendJoinReject`) → close WS.
 
-Нет `token` в query — reject-кадр `OpEmptyToken` (`0x40`) → close; битый base64url — `OpInvalidToken` (`0x41`); token длиннее `MaxIncomingFrameBytes` — close **без** кадра (паритет с oversize-пакетом ENet).
+No `token` in the query — reject frame `OpEmptyToken` (`0x40`) → close; broken base64url — `OpInvalidToken` (`0x41`); token longer than `MaxIncomingFrameBytes` — close **without** a frame (parity with the ENet oversize packet).
 
-Каждый **успешно отправленный** reject-кадр считается метрикой `rooms_join_rejects_total{opcode}` (P19b: `SendJoinReject` возвращает ошибку send; `sendJoinReject` эмитит `JoinRejected(op)` только при nil, ошибка - Warn-лог).
+Every **successfully sent** reject frame is counted by the `rooms_join_rejects_total{opcode}` metric (P19b: `SendJoinReject` returns the send error; `sendJoinReject` emits `JoinRejected(op)` only on nil, an error is Warn-logged).
 
-Idle peer'ы выводятся sweep'ом (`EvictIdlePeersUseCase`), когда соединение перестаёт подтверждать живость: входящие кадры и pong двигают `lastSeen`, `Send` — нет; мёртвый транспорт → `IsAlive() = false` → `DisconnectPeer` (ADR 0001; P20 — zombie получает то же grace-окно, что и чистый разрыв).
+Idle peers are evicted by a sweep (`EvictIdlePeersUseCase`) when the connection stops proving liveness: incoming frames and pongs advance `lastSeen`, `Send` does not; a dead transport → `IsAlive() = false` → `DisconnectPeer` (ADR 0001; P20 — a zombie gets the same grace window as a clean disconnect).
 
-Импорт ошибок: `deliveryerrors ".../delivery/errors"`.
+Error import: `deliveryerrors ".../delivery/errors"`.

@@ -1,20 +1,20 @@
 # adapter/metrics
 
-Prometheus-реализация [`port/metrics`](../../port/metrics/README.md) (P19).
+Prometheus implementation of [`port/metrics`](../../port/metrics/README.md) (P19).
 
 ## API
 
-- `New(cfg MetricsConfig) (*Metrics, error)` — собирает собственный `prometheus.Registry` (не default: без чужих коллекторов), регистрирует сигналы + стандартные `go_*`/`process_*` коллекторы.
-- `Gatherer()` — registry для exposition; `delivery/admin` отдаёт его по `GET /metrics`.
+- `New(cfg MetricsConfig) (*Metrics, error)` — builds its own `prometheus.Registry` (not the default: no foreign collectors), registers the signals + standard `go_*`/`process_*` collectors.
+- `Gatherer()` — registry for exposition; `delivery/admin` serves it at `GET /metrics`.
 
 ## MetricsConfig
 
-- `AdminListenAddr` — адрес отдельного admin Fiber listener'а (env `ADMIN_LISTEN_ADDR`). **Пустой = endpoint выключен** (дефолт; scrape надо включать явно). Валидация — `net.ResolveTCPAddr`.
+- `AdminListenAddr` — address of a separate admin Fiber listener (env `ADMIN_LISTEN_ADDR`). **Empty = endpoint off** (default; scraping must be enabled explicitly). Validation — `net.ResolveTCPAddr`.
 
-## Сигналы (namespace `rooms`)
+## Signals (namespace `rooms`)
 
-| Метрика | Тип | Label |
-|---------|-----|-------|
+| Metric | Type | Label |
+|--------|------|-------|
 | `rooms_active_rooms` | gauge | — |
 | `rooms_active_peers` | gauge | — |
 | `rooms_peer_joins_total` / `rooms_peer_leaves_total` | counter | — |
@@ -27,14 +27,14 @@ Prometheus-реализация [`port/metrics`](../../port/metrics/README.md) (
 | `rooms_room_incoming_depth` / `rooms_peer_outbound_depth` | gauge | — |
 | `rooms_room_tick_seconds` | summary | `kind` = `full` / `patch` |
 | `rooms_peer_send_errors_total` | counter | — |
-| `rooms_enet_host_peers` | gauge | `host` (HostID, bounded числом `ENET_LISTEN_PORTS`) |
+| `rooms_enet_host_peers` | gauge | `host` (HostID, bounded by the `ENET_LISTEN_PORTS` count) |
 | `rooms_enet_host_loop_queue_latency_seconds` | summary | — |
 | `rooms_reservation_active_slots` | gauge | — |
 | `rooms_sweep_runs_total` | counter | `sweep` = `orphan_admitted` / `idle_peers` / `empty_rooms` |
-| `rooms_http_request_duration_seconds` | histogram | `route` (шаблон), `method`, `status` |
+| `rooms_http_request_duration_seconds` | histogram | `route` (template), `method`, `status` |
 
-Per-room/per-peer label'ы намеренно отсутствуют — кардинальность (P19). `peer_joins/peer_leaves` считают lifecycle-переходы: `Replace` даёт пару leave+join.
+Per-room/per-peer labels are intentionally absent — cardinality (P19). `peer_joins/peer_leaves` count lifecycle transitions: `Replace` produces a leave+join pair.
 
-P19b-нюансы: `join_rejects` - только успешно отправленные reject-кадры; `master_elections` - первый элекшн и перевыборы (emits staged внутри транзакций policy, откат даёт редкий пересчёт); `reservation_ops{revoke}` - любое реальное удаление слота (Revoke, expired в Admit, lazy sweep); `*_depth` gauges - сэмплы `len(chan)` на enqueue/dequeue (last-write-wins приближение, не сумма по инстансам); `host_loop_queue_latency` агрегирован по host'ам (без label - очередь одного loop'а от остальных не отделить на одной метрике); `http_request_duration` - upgrade-запросы `/ws` пропускаются (время жизни соединения, а не запроса).
+P19b nuances: `join_rejects` — only successfully sent reject frames; `master_elections` — the first election and re-elections (emits staged inside policy transactions, a rollback gives a rare over-count); `reservation_ops{revoke}` — any real slot removal (Revoke, expired in Admit, lazy sweep); `*_depth` gauges — `len(chan)` samples on enqueue/dequeue (last-write-wins approximation, not a sum across instances); `host_loop_queue_latency` aggregated across hosts (without a label, a single loop's queue cannot be told apart from the others on one metric); `http_request_duration` — `/ws` upgrade requests are skipped (connection lifetime, not request time).
 
-Env-индекс: [adapter/config/README.md](../config/README.md).
+Env index: [adapter/config/README.md](../config/README.md).
