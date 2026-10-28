@@ -6,40 +6,40 @@ alwaysApply: false
 
 # Wire OpCode (data plane, `delivery/errors`)
 
-Импорт с алиасом: `deliveryerrors ".../internal/delivery/errors"` (имя пакета `errors`).
+Import with alias: `deliveryerrors ".../internal/delivery/errors"` (package name `errors`).
 
-## Файлы `internal/delivery/errors`
+## `internal/delivery/errors` files
 
-| Файл | Диапазон | API |
+| File | Range | API |
 |------|----------|-----|
 | `join_reject.go` | `0x40–0x5F` (+ reservation via join) | `JoinRejectOpCode`, `SendJoinReject` |
 | `reservation_reject.go` | `0x70–0x7F` | `ReservationRejectOpCode`, `SendReservationReject` |
-| `join_reject.go` (in-room) | `0x60–0x6F` | обёртка `InRoomErrorOpCode`, `SendInRoomError` |
+| `join_reject.go` (in-room) | `0x60–0x6F` | `InRoomErrorOpCode` wrapper, `SendInRoomError` |
 | `join_reject.go` / `reservation_reject.go` | — | `IsJoinRejectOpCode`, `IsInRoomErrorOpCode` / `IsReservationRejectOpCode` |
-| `domain/opcodes.go` + `NewPeerNotificationFrame` | `0x80+` | Room notifications — рассылает **usecase** через `room.Send` (не delivery/errors): `OpPeerDisconnected`/`OpPeerReconnected`, payload `peerID u64 BE` (P20); `OpRoomClosed` `0x82` (P29) — комната закрыта сервером (no-migration деплой, P33: ушёл хост), payload пустой, за кадром disconnect; шлётся `peer.Deliver` из usecase teardown |
+| `domain/opcodes.go` + `NewPeerNotificationFrame` | `0x80+` | Room notifications — sent by **usecase** via `room.Send` (not delivery/errors): `OpPeerDisconnected`/`OpPeerReconnected`, payload `peerID u64 BE` (P20); `OpRoomClosed` `0x82` (P29) — room closed by the server (no-migration deploy, P33: host left), empty payload, disconnect follows the frame; sent via `peer.Deliver` from usecase teardown |
 
-Домен: `opcodes.go`, `join_errors.go`, `reservation_error.go`, `room_errors.go` (`InRoomErrorOpCode`).
+Domain: `opcodes.go`, `join_errors.go`, `reservation_error.go`, `room_errors.go` (`InRoomErrorOpCode`).
 
-`ErrPeerStale` — internal-only sentinel (identity-scoped lifecycle реестра, P20): wire-opcode нет и не добавляется — до reject-кадра недостижим (мапился бы в `OpInternal`).
+`ErrPeerStale` — internal-only sentinel (identity-scoped registry lifecycle, P20): no wire opcode and none is added — unreachable before the reject frame (would map to `OpInternal`).
 
-## Чеклист join (`0x40–0x5F`)
+## Join checklist (`0x40–0x5F`)
 
 - [x] `join_errors.go` + `opcodes.go`
 - [x] `join_reject.go` + `tests/delivery/errors/join_reject_test.go`
-- [x] `ErrRoomFull` → `OpReservationFull` (`0x71`); case выше `ErrJoinDenied` (может прийти обёрнутым в него из policy `OnJoin`)
-- [x] [internal/delivery/errors/README.md](../../internal/delivery/errors/README.md) (join + делегирование reservation)
+- [x] `ErrRoomFull` → `OpReservationFull` (`0x71`); case above `ErrJoinDenied` (may arrive wrapped in it from policy `OnJoin`)
+- [x] [internal/delivery/errors/README.md](../../internal/delivery/errors/README.md) (join + reservation delegation)
 
-## Чеклист reservation (`0x70–0x7F`)
+## Reservation checklist (`0x70–0x7F`)
 
 - [x] `reservation_error.go` + `opcodes.go`
 - [x] `reservation_reject.go` + `tests/delivery/errors/reservation_reject_test.go`
 - [x] [internal/delivery/errors/README.md](../../internal/delivery/errors/README.md) + [internal/adapter/reservation/README.md](../../internal/adapter/reservation/README.md)
-- [x] `OpWrongHost` (`0x77`) - `ErrWrongHost`, strict binding admit (P18): claims.hostID ticket'а != host'а admit'а; reject до `JoinRoom` (слот не тратится)
+- [x] `OpWrongHost` (`0x77`) - `ErrWrongHost`, strict binding admit (P18): ticket's claims.hostID != admit's host; reject before `JoinRoom` (slot not consumed)
 
-## Чеклист in-room (`0x60–0x6F`)
+## In-room checklist (`0x60–0x6F`)
 
 - [x] `room_errors.go` (`InRoomErrorOpCode`) + `opcodes.go`
-- [x] `join_reject.go` (обёртка + `SendInRoomError`) + `tests/delivery/errors/in_room_test.go`
+- [x] `join_reject.go` (wrapper + `SendInRoomError`) + `tests/delivery/errors/in_room_test.go`
 - [x] [internal/delivery/errors/README.md](../../internal/delivery/errors/README.md) (`0x60–0x66`)
 
-HTTP — `delivery/http`, не этот пакет.
+HTTP — `delivery/http`, not this package.

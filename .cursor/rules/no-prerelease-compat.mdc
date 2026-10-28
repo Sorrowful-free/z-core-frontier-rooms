@@ -1,25 +1,25 @@
 ---
-description: Pre-release — обратную совместимость не додумывать и не поддерживать молча; только по явному запросу
+description: Pre-release — don't invent or silently maintain backwards compatibility; only on explicit request
 alwaysApply: true
 ---
 
-# Обратная совместимость — только явно
+# Backwards compatibility — only explicitly
 
-Проект pre-release: опубликованных версий и внешних клиентов нет. Ломающие
-изменения делаются чисто — без shim'ов и fallback'ов.
+The project is pre-release: there are no published versions and no external
+clients. Breaking changes are made cleanly — without shims and fallbacks.
 
-## Правила
+## Rules
 
-- **Не додумывать compat.** Version-ветки в парсерах, env-alias'ы,
-  dual-format accept, «старый путь на всякий случай» — вводить только по
-  явному запросу пользователя.
-- **Ломать чисто.** Меняется формат / API / env — старое удаляется в той же
-  задаче, а не живёт параллельно «для совместимости».
-- **Кажется, что compat нужен** (rolling update, внешний клиент, данные в
-  проде) — сначала спросить явно, не встраивать молча.
+- **Don't invent compat.** Version branches in parsers, env aliases,
+  dual-format accept, "the old path just in case" — introduce only on the
+  user's explicit request.
+- **Break cleanly.** If a format / API / env changes — the old one is removed
+  in the same task, not kept alive in parallel "for compatibility".
+- **If compat seems needed** (rolling update, an external client, data in
+  prod) — ask explicitly first, don't build it in silently.
 
-## Прецедент
+## Precedent
 
-Ticket v2/v3 + alias `ENET_LISTEN_PORT` + migration-ноты накапливались
-молча и зачищены в `docs/plans/P28-drop-prerelease-compat.md`; политика
-зафиксирована в `docs/adr/0010-drop-prerelease-compat.md`.
+Ticket v2/v3 + `ENET_LISTEN_PORT` alias + migration notes accumulated
+silently and were cleaned up in `docs/plans/P28-drop-prerelease-compat.md`;
+the policy is recorded in `docs/adr/0010-drop-prerelease-compat.md`.

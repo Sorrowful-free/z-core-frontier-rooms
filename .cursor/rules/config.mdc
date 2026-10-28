@@ -1,38 +1,38 @@
 ---
-description: Конфигурация приложения — типы в adapter-модулях, загрузка в adapter/config
+description: Application configuration — types in adapter modules, loading in adapter/config
 alwaysApply: true
 ---
 
-# Конфигурация
+# Configuration
 
-## Роли слоёв
+## Layer roles
 
-| Слой | Роль |
+| Layer | Role |
 |------|------|
-| `port/*` | Интерфейсы **поведения** для DI (`Admission`, `Reservation`, …). **Не** объявлять config/settings в port. |
-| `adapter/<module>/` | `ModuleConfig` struct (например `admission.AdmissionConfig`, `state.StatePolicyConfig`) + `Validate()` рядом с модулем |
-| `adapter/config/` | Корневая `Config` с полями типов из adapter-модулей; `LoadFromEnv()` |
-| `cmd/rooms` | Composition root: `LoadFromEnv` → передать `cfg.<Module>` в конструкторы |
+| `port/*` | **Behavior** interfaces for DI (`Admission`, `Reservation`, …). Do **not** declare config/settings in port. |
+| `adapter/<module>/` | `ModuleConfig` struct (e.g. `admission.AdmissionConfig`, `state.StatePolicyConfig`) + `Validate()` next to the module |
+| `adapter/config/` | Root `Config` with fields of types from adapter modules; `LoadFromEnv()` |
+| `cmd/rooms` | Composition root: `LoadFromEnv` → pass `cfg.<Module>` to constructors |
 
-## Правила
+## Rules
 
-1. **Тип конфига модуля** — в пакете adapter этого модуля (`admission_config.go`, тип `AdmissionConfig`).
-2. **Валидация** — метод `Validate()` на struct модуля; `adapter/config` только парсит env и вызывает `Validate()`.
-3. **Глобальный loader** — один `adapter/config.LoadFromEnv()`; env-переменные парсятся в `load.go` / `load_<module>.go`.
-4. **Импорты:** `adapter/config` → `adapter/<module>`; **запрещено** `adapter/<module>` → `adapter/config`.
-5. **Конструкторы adapter** принимают свой `ModuleConfig` (или поля из него), не весь `config.Config`.
-6. **Секреты** — не логировать; не коммитить в репозиторий; при добавлении модуля — документировать env в `adapter/config/README.md` и README модуля.
-7. **Тесты модулей** — литералы `ModuleConfig` без env; тесты loader — `tests/adapter/config/` с `t.Setenv`.
+1. **Module config type** — in the module's adapter package (`admission_config.go`, type `AdmissionConfig`).
+2. **Validation** — `Validate()` method on the module struct; `adapter/config` only parses env and calls `Validate()`.
+3. **Global loader** — a single `adapter/config.LoadFromEnv()`; env variables are parsed in `load.go` / `load_<module>.go`.
+4. **Imports:** `adapter/config` → `adapter/<module>`; `adapter/<module>` → `adapter/config` is **forbidden**.
+5. **Adapter constructors** take their own `ModuleConfig` (or fields from it), not the whole `config.Config`.
+6. **Secrets** — do not log; do not commit to the repository; when adding a module — document env vars in `adapter/config/README.md` and the module README.
+7. **Module tests** — `ModuleConfig` literals without env; loader tests — `tests/adapter/config/` with `t.Setenv`.
 
-## Добавление нового модуля
+## Adding a new module
 
 1. `internal/adapter/<module>/<module>_config.go` — struct + `Validate()`.
-2. Поле в `adapter/config.Config`.
-3. `load<Module>FromEnv()` в `adapter/config`.
-4. Wire в `cmd/rooms/main.go`.
-5. Обновить `adapter/config/README.md` и README модуля.
+2. Field in `adapter/config.Config`.
+3. `load<Module>FromEnv()` in `adapter/config`.
+4. Wire in `cmd/rooms/main.go`.
+5. Update `adapter/config/README.md` and the module README.
 
-## Документация
+## Documentation
 
-- Индекс env: [internal/adapter/config/README.md](../../internal/adapter/config/README.md)
-- Пакетная документация: [.cursor/rules/package-docs.mdc](package-docs.mdc)
+- Env index: [internal/adapter/config/README.md](../../internal/adapter/config/README.md)
+- Package documentation: [.cursor/rules/package-docs.mdc](package-docs.mdc)

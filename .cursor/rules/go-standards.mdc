@@ -1,59 +1,59 @@
 ---
-description: Go best practices, Fiber для HTTP, тесты в tests/
+description: Go best practices, Fiber for HTTP, tests in tests/
 alwaysApply: true
 ---
 
-# Go — стандарты проекта
+# Go — project standards
 
-## Документация пакетов
+## Package documentation
 
-См. [.cursor/rules/package-docs.mdc](package-docs.mdc): у каждого значимого пакета — `README.md` рядом с кодом; корневой [README.md](../../README.md) — только индекс и quick start. Кто правит код/docs и в каком порядке — [.cursor/rules/ai-companion.mdc](ai-companion.mdc).
+See [.cursor/rules/package-docs.mdc](package-docs.mdc): every significant package has a `README.md` next to the code; the root [README.md](../../README.md) is only an index and quick start. Who edits code/docs and in what order — [.cursor/rules/ai-companion.mdc](ai-companion.mdc).
 
 ## Best practices
 
-- Следовать [Effective Go](https://go.dev/doc/effective_go), [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments) и официальным гайдам по модулям/пакетам.
-- Пакеты — по ответственности и фиче; публичный API — минимальный, остальное неэкспортируемо.
-- Ошибки: оборачивать контекстом (`fmt.Errorf("...: %w", err)`), не глотать; доменные ошибки — в `domain`, маппинг в HTTP — в `delivery/http`, join/admit на wire — в `delivery/errors` (см. [.cursor/rules/join-error-opcodes.mdc](join-error-opcodes.mdc)). Перед новым `fmt.Errorf("X not found")` — проверить, нет ли уже sentinel `ErrXxx` в `domain`.
-- `context.Context` — первым аргументом в I/O и долгих операциях; отмена и дедлайны — через `ctx`, не через глобалы.
-- Интерфейсы — на стороне потребителя (`port`), маленькие; не создавать «на будущее». Конфигурация — не в `port`; см. [.cursor/rules/config.mdc](config.mdc).
-- Именование: короткие имена в узкой области; без префиксов `I` у интерфейсов; `ErrXxx` для sentinel-ошибок; идентификаторы — только ASCII.
-- Конкурентность: явная передача ownership; `sync`/`errgroup` по необходимости; без утечек горутин при shutdown. Каналы, в которые пишут продюсеры вне WaitGroup потребителя, **не закрываются** — consumer выходит по `ctx.Done`/done-каналу, иначе send-on-closed panic.
-- Graceful shutdown — обязателен для любого компонента с горутинами/ресурсами: `Stop`/`Shutdown` отменяет ctx → прекращает приём новой работы → `wg.Wait()` всех запущенных горутин → только потом возвращает/освобождает ресурсы. Не fire-and-forget: вызвавший `Stop` должен увидеть реальное завершение, а не только сигнал о нём.
-- Lifecycle-инварианты реестров (P20): (1) teardown/замена в реестре (`r.peers`, слоты) — **identity-scoped** по объекту, не по голому ключу — запись удаляется/мутирует только если `map[key] == переданный объект`, иначе sentinel (паттерн `ErrPeerStale`); старый teardown после replace не должен убивать нового объекта под тем же ключом. (2) Объект, **необратимо вытесненный** из реестра, обязан быть остановлен на всех ветках выхода (успех, фейл мутации, фейл rollback'а) — иначе goroutine'ы/conn живут вне реестра: утечка + ghost input. (3) Сайд-эффекты (метрики, метки, broadcast) — **после** авторитетного результата lifecycle, не до: mark/metric по живому объекту от stale-операции — ложная запись; пре-чек идентичности до сайд-эффекта сужает гонку, авторитетная проверка — в точке сериализации.
-- Encapsulation / ownership объектов чужих библиотек: не удерживать ссылку на объект, чей lifetime принадлежит чужому скоупу (request-scoped обёртки, `sync.Pool`, handler-callback), за пределы этого скоупа. Для session-scoped работы брать внутренний объект или копию на входе (пример: `WsConnection` хранит `*fasthttp/websocket.Conn`, а не пулинговый contrib `*websocket.Conn`, который `releaseConn` ресетит после return handler'а).
-- Бинарный/буферный I/O: чтение ровно N байт — `io.ReadFull`; `buf.Read` может вернуть короче без ошибки → тихая коррупция.
-- Зависимости: только нужные; версии — через `go.mod` / `go get`, без копирования в `vendor/` без причины.
-- Линтеры и формат: `go fmt`, `go vet`; при наличии в репо — `staticcheck` / `golangci-lint`. Форматировать только затронутые файлы — репо-wide `goimports`/`gofmt -l` sweep (перегруппировка импортов в чужих файлах) отдельным коммитом по запросу, не частью задачи.
+- Follow [Effective Go](https://go.dev/doc/effective_go), [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments) and the official guides on modules/packages.
+- Packages — by responsibility and feature; public API — minimal, everything else unexported.
+- Errors: wrap with context (`fmt.Errorf("...: %w", err)`), don't swallow; domain errors — in `domain`, mapping to HTTP — in `delivery/http`, join/admit on wire — in `delivery/errors` (see [.cursor/rules/join-error-opcodes.mdc](join-error-opcodes.mdc)). Before a new `fmt.Errorf("X not found")` — check whether an `ErrXxx` sentinel already exists in `domain`.
+- `context.Context` — first argument in I/O and long-running operations; cancellation and deadlines — via `ctx`, not globals.
+- Interfaces — on the consumer side (`port`), small; do not create "just in case". Configuration — not in `port`; see [.cursor/rules/config.mdc](config.mdc).
+- Naming: short names in narrow scope; no `I` prefixes on interfaces; `ErrXxx` for sentinel errors; identifiers — ASCII only.
+- Concurrency: explicit ownership transfer; `sync`/`errgroup` as needed; no goroutine leaks on shutdown. Channels written by producers outside the consumer's WaitGroup are **not closed** — the consumer exits on `ctx.Done`/done-channel, otherwise send-on-closed panic.
+- Graceful shutdown is mandatory for any component with goroutines/resources: `Stop`/`Shutdown` cancels ctx → stops accepting new work → `wg.Wait()` for all spawned goroutines → only then returns/releases resources. Not fire-and-forget: whoever called `Stop` must see actual completion, not just a signal of it.
+- Registry lifecycle invariants (P20): (1) teardown/replacement in the registry (`r.peers`, slots) — **identity-scoped** by object, not by bare key — an entry is deleted/mutated only if `map[key] == passed object`, otherwise sentinel (`ErrPeerStale` pattern); an old teardown after replace must not kill the new object under the same key. (2) An object **irreversibly evicted** from the registry must be stopped on all exit branches (success, mutation failure, rollback failure) — otherwise goroutines/conn live outside the registry: leak + ghost input. (3) Side effects (metrics, marks, broadcast) — **after** the authoritative lifecycle result, not before: a mark/metric on a live object from a stale operation is a false record; a pre-check of identity before the side effect narrows the race, the authoritative check is at the serialization point.
+- Encapsulation / ownership of third-party library objects: do not hold a reference to an object whose lifetime belongs to someone else's scope (request-scoped wrappers, `sync.Pool`, handler-callback) beyond that scope. For session-scoped work take the inner object or a copy at entry (example: `WsConnection` holds `*fasthttp/websocket.Conn`, not the pooled contrib `*websocket.Conn`, which `releaseConn` resets after the handler returns).
+- Binary/buffered I/O: reading exactly N bytes — `io.ReadFull`; `buf.Read` may return fewer without error → silent corruption.
+- Dependencies: only needed ones; versions — via `go.mod` / `go get`, no copying into `vendor/` without reason.
+- Linters and format: `go fmt`, `go vet`; if present in the repo — `staticcheck` / `golangci-lint`. Format only touched files — a repo-wide `goimports`/`gofmt -l` sweep (import regrouping in other people's files) is a separate commit on request, not part of the task.
 
 ## HTTP — Fiber
 
-- Для HTTP **только** [Fiber](https://gofiber.io/) (`github.com/gofiber/fiber/v3`).
-- Запрещены: `net/http` handlers, Echo, Gin, Chi, mux и другие HTTP-фреймворки.
-- Fiber — в `internal/delivery/http/` (router, handlers, middleware).
-- Handlers тонкие: парсинг запроса → use case → маппинг ответа/ошибки. Без бизнес-логики в handlers и middleware.
-- HTTP-тесты — в `tests/delivery/http/` через `fiber.App` и `app.Test` (или httptest поверх Fiber).
+- For HTTP **only** [Fiber](https://gofiber.io/) (`github.com/gofiber/fiber/v3`).
+- Forbidden: `net/http` handlers, Echo, Gin, Chi, mux and other HTTP frameworks.
+- Fiber — in `internal/delivery/http/` (router, handlers, middleware).
+- Handlers are thin: request parsing → use case → response/error mapping. No business logic in handlers and middleware.
+- HTTP tests — in `tests/delivery/http/` via `fiber.App` and `app.Test` (or httptest over Fiber).
 
-## Тесты — только в `tests/`
+## Tests — only in `tests/`
 
-- **Не** класть `*_test.go` рядом с production-кодом в `cmd/`, `internal/`, `pkg/`.
-- Все тесты — под каталогом **`tests/`**, зеркаля структуру кода:
+- Do **not** put `*_test.go` next to production code in `cmd/`, `internal/`, `pkg/`.
+- All tests — under the **`tests/`** directory, mirroring the code structure:
 
 ```text
 tests/
-  domain/...          # unit домена
-  usecase/...         # unit сценариев (моки port)
-  adapter/...         # интеграция адаптеров
-  delivery/...        # HTTP / transport (Fiber app.Test и т.п.)
-  integration/...     # сквозные сценарии
+  domain/...          # domain unit tests
+  usecase/...         # scenario unit tests (port mocks)
+  adapter/...         # adapter integration
+  delivery/...        # HTTP / transport (Fiber app.Test etc.)
+  integration/...     # end-to-end scenarios
 ```
 
-- Пакет теста — **внешний**: `package room_test`, импорт `github.com/Sorrowful-free/z-core-frontier-rooms/...`.
-- Table-driven tests, `t.Parallel()` где безопасно; хелперы — `t.Helper()`.
-- Запуск: `go test ./tests/...` (из корня модуля). CI-эквивалент: `go test -race -shuffle=on -count=1 ./tests/...` — прогонять при подозрении на флаки/гонки и перед пушем. Логи упавшего CI: `gh run list` → `gh run view <id> --log-failed`.
-- Моки портов: **mockgen** (`go.uber.org/mock`), генерация в `tests/mocks/` — `go generate ./tests/mocks/...`; в тестах `gomock.Controller`, не дублировать ручные стабы интерфейсов из `port/`.
-- После завершения функционала — спросить: **«Нужно ли написать тесты для этого функционала?»** Не писать тесты молча.
+- Test package — **external**: `package room_test`, import `github.com/Sorrowful-free/z-core-frontier-rooms/...`.
+- Table-driven tests, `t.Parallel()` where safe; helpers — `t.Helper()`.
+- Run: `go test ./tests/...` (from module root). CI equivalent: `go test -race -shuffle=on -count=1 ./tests/...` — run when flakes/races are suspected and before pushing. Failed CI logs: `gh run list` → `gh run view <id> --log-failed`.
+- Port mocks: **mockgen** (`go.uber.org/mock`), generation into `tests/mocks/` — `go generate ./tests/mocks/...`; in tests `gomock.Controller`, do not duplicate hand-written stubs of `port/` interfaces.
+- After finishing a feature — ask: **"Should tests be written for this feature?"** Do not write tests silently.
 
-## Пример
+## Example
 
 ```go
 // tests/usecase/room/create_test.go

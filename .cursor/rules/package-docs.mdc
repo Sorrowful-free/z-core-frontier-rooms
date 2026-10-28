@@ -1,45 +1,54 @@
 ---
-description: Пакетная документация — README рядом с кодом; обновлять при изменении пакета
+description: Package documentation — README next to the code; update when the package changes
 alwaysApply: true
 ---
 
-# Пакетная документация
+# Package documentation
 
-## Где лежит
+## Documentation language
 
-- Индекс: [README.md](../../README.md) (корень) — только обзор, сборка, ссылки.
-- Архитектура слоёв: [docs/architecture.md](../../docs/architecture.md).
-- **Клиент (Godot):** [docs/client-protocol/README.md](../../docs/client-protocol/README.md), индекс для LLM: [docs/llms.txt](../../docs/llms.txt).
-- **Пакет:** `README.md` в каталоге пакета, например `internal/usecase/room/README.md`.
-- Wire layout state: [docs/wire-state-codec.md](../../docs/wire-state-codec.md) (codec).
+All project documentation — `docs/**`, package `README.md` files, root `README.md`, `GLOSSARY.md`, `AGENTS.md`, `.cursor/rules/*.mdc` — is written in **English**.
 
-## Правило для агентов и разработчиков
+- New documents: English only.
+- When editing an existing document written in another language, translate the **whole file** to English in the same change — no half-translated files.
+- Historical records (`docs/plans/*`, `docs/adr/*`) stay as written unless edited.
+- Code comments are not documentation — this rule does not apply to them.
 
-При изменении **поведения, контракта или публичного API** пакета — в **том же PR/задаче** обновить `README.md` этого пакета (и при необходимости связанный wire-doc).
+## Where it lives
 
-Кто и когда пишет: см. [.cursor/rules/ai-companion.mdc](ai-companion.mdc) (зоны доверия). Это правило задаёт **что** обновить; компаньон — **можно ли править сейчас**. Если зонирование мешает (код в красной, codec ещё без «да») — попросить разрешение или дождаться фикса кода, затем дописать docs **по факту**. Перед большой пачкой docs спросить, что именно фиксируем — без оверинженеринга «на будущее». Wire/client-protocol после подтверждённых правок codec — ИИ пишет сам.
+- Index: [README.md](../../README.md) (root) — overview, build, links only.
+- Layer architecture: [docs/architecture.md](../../docs/architecture.md).
+- **Client (Godot):** [docs/client-protocol/README.md](../../docs/client-protocol/README.md), LLM index: [docs/llms.txt](../../docs/llms.txt).
+- **Package:** `README.md` in the package directory, e.g. `internal/usecase/room/README.md`.
+- Wire state layout: [docs/wire-state-codec.md](../../docs/wire-state-codec.md) (codec).
 
-Не дублировать длинные таблицы в корневом README — только ссылка на пакет.
+## Rule for agents and developers
 
-## Что обновлять
+When a package's **behavior, contract, or public API** changes — update that package's `README.md` in the **same PR/task** (plus the related wire-doc when applicable).
 
-| Изменили | Обновить |
-|----------|----------|
-| Binary codec полей | `docs/wire-state-codec.md`, `docs/client-protocol/`, `internal/adapter/realtime/codec/README.md` |
-| HTTP routes, DTO (клиент) | `docs/client-protocol/http.md`, `internal/delivery/http/README.md` |
-| Join/admit/in-room OpCode (клиент) | `docs/client-protocol/errors.md`, `internal/delivery/errors/README.md`, [join-error-opcodes.mdc](join-error-opcodes.mdc) |
-| WS/ENet transport (клиент) | `docs/client-protocol/enet.md` (основной), `docs/client-protocol/realtime.md`, `internal/delivery/ws/README.md`, `internal/delivery/enet/README.md` |
-| Env, `LoadFromEnv`, новый `*Config` модуля | `internal/adapter/config/README.md`, README модуля, [.cursor/rules/config.mdc](config.mdc) |
+Who writes and when: see [.cursor/rules/ai-companion.mdc](ai-companion.mdc) (trust zones). This rule defines **what** to update; the companion defines **whether it may be edited now**. If zoning blocks the edit (code still red-zone, codec changes not yet approved) — ask for permission or wait for the user's code fix, then write the docs **as-built**. Before a large batch of docs, ask what exactly to document — no over-engineering for hypothetical futures. Wire/client-protocol docs after confirmed codec changes — the agent writes them itself.
+
+Do not duplicate long tables in the root README — link to the package instead.
+
+## What to update
+
+| Changed | Update |
+|---------|--------|
+| Binary codec fields | `docs/wire-state-codec.md`, `docs/client-protocol/`, `internal/adapter/realtime/codec/README.md` |
+| HTTP routes, DTO (client) | `docs/client-protocol/http.md`, `internal/delivery/http/README.md` |
+| Join/admit/in-room OpCode (client) | `docs/client-protocol/errors.md`, `internal/delivery/errors/README.md`, [join-error-opcodes.mdc](join-error-opcodes.mdc) |
+| WS/ENet transport (client) | `docs/client-protocol/enet.md` (primary), `docs/client-protocol/realtime.md`, `internal/delivery/ws/README.md`, `internal/delivery/enet/README.md` |
+| Env, `LoadFromEnv`, new module `*Config` | `internal/adapter/config/README.md`, module README, [.cursor/rules/config.mdc](config.mdc) |
 | HTTP API key, `HTTPAuthConfig` | `internal/adapter/httpauth/README.md`, `internal/delivery/http/README.md` |
 | HTTP limits, `HTTPLimitsConfig`, `port/httplimits.Limits` | `internal/adapter/httplimits/README.md`, `internal/port/httplimits`, `internal/delivery/http/README.md` |
 | `ErrRoomsLimitReached` | `internal/domain/README.md`, `internal/delivery/http/README.md` |
-| Ticket layout (kind/поля), Claims, ValidateNickName, `AdmissionConfig` | `internal/adapter/admission/README.md`, `internal/domain/README.md`, `docs/client-protocol/{realtime,enet,http,errors,state-sync}.md`, `docs/architecture.md`, `GLOSSARY.md` |
-| Reservation слоты | `internal/adapter/reservation/README.md` |
+| Ticket layout (kind/fields), Claims, ValidateNickName, `AdmissionConfig` | `internal/adapter/admission/README.md`, `internal/domain/README.md`, `docs/client-protocol/{realtime,enet,http,errors,state-sync}.md`, `docs/architecture.md`, `GLOSSARY.md` |
+| Reservation slots | `internal/adapter/reservation/README.md` |
 | Room, Peer, lifecycle, Replace | `internal/adapter/realtime/README.md` |
 | StateRoomPolicy, master, ticks | `internal/adapter/realtime/policy/state/README.md`, `docs/client-protocol/state-sync.md` |
-| Use case потоки | `internal/usecase/room/README.md` |
-| Новый sentinel в domain | `internal/domain/README.md` + маппер в delivery/errors |
+| Use case flows | `internal/usecase/room/README.md` |
+| New sentinel in domain | `internal/domain/README.md` + mapper in delivery/errors |
 
-## Объём
+## Size
 
-Пакетный README — **краткий** (цель пакета, ключевые типы, потоки, ошибки, ссылки). Детали реализации — в коде и тестах `tests/…`.
+A package README is **concise** (package purpose, key types, flows, errors, links). Implementation details live in the code and in `tests/…`.

@@ -3,10 +3,10 @@ description: Conventional commit subject style, no attribution trailers, ask bef
 alwaysApply: true
 ---
 
-# Git — конвенции
+# Git — conventions
 
-- Commit message — на **английском**, subject в стиле лога: `- <plan|что>: <почему>` (см. `git log` — одна строка, без лишних секций).
-- **Текст коммита согласовывать с пользователем до `git commit`** — предложить subject, дождаться ок.
-- Без attribution-трейлеров (`Generated with`, `Co-Authored-By` и т.п.) — авторство из git config.
-- Раздельные коммиты по планам: P-изменения прод-кода и тестовой гигиены не смешиваются в одном коммите. Исключение — ремедиация (review-fix план), правящая те же файлы, что вводит родительская фича в том же незакоммиченном пакете: fold в коммит фичи (промежуточное состояние, которое никогда не компилировалось, не фабриковать); раздельными остаются план-доки.
-- Не пушить без явной просьбы; не править git config.
+- Commit message — in **English**, subject in the log style: `- <plan|what>: <why>` (see `git log` — one line, no extra sections).
+- **Agree on the commit text with the user before `git commit`** — propose a subject, wait for ok.
+- No attribution trailers (`Generated with`, `Co-Authored-By`, etc.) — authorship comes from git config.
+- Separate commits per plan: P-changes to prod code and to test hygiene are not mixed in one commit. Exception — remediation (a review-fix plan) editing the same files the parent feature introduces in the same uncommitted package: fold into the feature commit (don't fabricate an intermediate state that never compiled); plan docs remain separate.
+- Don't push without an explicit request; don't edit git config.
