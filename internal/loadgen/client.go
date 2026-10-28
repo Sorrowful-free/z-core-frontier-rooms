@@ -11,15 +11,15 @@ import (
 	fwebsocket "github.com/fasthttp/websocket"
 )
 
-// ErrEnetUnsupported — ENet-клиент в этой сборке отсутствует (inc 1: cgo +
-// libenet только под `-tags enet`, реализация — inc 3, `client_enet.go`).
-// Доля enet-клиентов из TRANSPORT_MIX падает на dial и считается в
-// dial_errors{transport=enet}.
-var ErrEnetUnsupported = errors.New("enet client not supported in this build (inc1: ws only)")
+// ErrEnetUnsupported — ENet-клиент в этой сборке отсутствует (cgo + libenet
+// только под `-tags enet`; stub — client_enet_stub.go, реализация —
+// client_enet.go). Доля enet-клиентов из TRANSPORT_MIX в такой сборке падает
+// на dial и считается в dial_errors{transport=enet}.
+var ErrEnetUnsupported = errors.New("enet client not supported in this build (ws only)")
 
 // DataConn — транспорт-агностичное соединение data plane: кадр = OpCode +
 // payload (см. domain.DecodeIncomingFrame / state opcodes). Реализации: WS
-// (wsDataConn) и ENet (inc 3) — peer/fleet от транспорта не зависят.
+// (wsDataConn) и ENet (enetDataConn) — peer/fleet от транспорта не зависят.
 type DataConn interface {
 	// Send пишет один кадр [op|payload].
 	Send(op domain.OpCode, payload []byte) error
@@ -29,25 +29,28 @@ type DataConn interface {
 	Close() error
 }
 
-// DialParams — всё, что нужно транспорту для подключения. ENet (inc 3)
-// потребуется EnetAddr:EnetPort + сырой токен первым пакетом; WS — только
-// WSAddr + token в query.
+// DialParams — всё, что нужно транспорту для подключения. ENet требует
+// EnetAddr:EnetPort + сырой токен первым пакетом; WS — только WSAddr +
+// token в query.
 type DialParams struct {
 	WSAddr   string // host:port WS endpoint'а (/ws)
-	EnetAddr string // host (без порта) ENet host'ов — inc 3
+	EnetAddr string // host (без порта) ENet host'ов
 	EnetPort uint16 // назначенный порт из ticket-ответа (0 — нет привязки)
 	Token    string // join-ticket или reconnect-токен (base64url, как в ответе)
 	// Mark — SO_MARK для tc netem-шардинга (inc2); 0 — без маркировки.
+	// ENet игнорирует: go-enet host владеет UDP-сокетом, fd не отдаёт —
+	// enet-трафик уходит немаркированным (clean-band).
 	Mark uint32
 }
 
-// dialDataConn — точка выбора транспорта (inc 3 добавит case "enet").
+// dialDataConn — точка выбора транспорта; dialEnet живёт per-tag в
+// client_enet.go / client_enet_stub.go.
 func dialDataConn(ctx context.Context, transport string, p DialParams) (DataConn, error) {
 	switch transport {
 	case "ws":
 		return dialWS(ctx, p.WSAddr, p.Token, p.Mark)
 	case "enet":
-		return nil, fmt.Errorf("transport enet: %w", ErrEnetUnsupported)
+		return dialEnet(ctx, p)
 	default:
 		return nil, fmt.Errorf("transport %s: unknown", transport)
 	}

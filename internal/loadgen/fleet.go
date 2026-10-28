@@ -178,7 +178,7 @@ func (f *Fleet) spawnRoom(ctx context.Context, plan roomPlan) {
 		transport:      pickWeighted(f.rnd, f.cfg.TransportMix),
 		joinToken:      hostTicket.Token,
 		reconnectToken: hostTicket.ReconnectToken,
-		enetAddr:       enetHost(f.cfg.WSAddr),
+		enetAddr:       f.cfg.EnetAddr,
 		enetPort:       hostTicket.EnetPort,
 		host:           true,
 	}, plan)
@@ -197,7 +197,7 @@ func (f *Fleet) spawnRoom(ctx context.Context, plan roomPlan) {
 			transport:      pickWeighted(f.rnd, f.cfg.TransportMix),
 			joinToken:      ticket.Token,
 			reconnectToken: ticket.ReconnectToken,
-			enetAddr:       enetHost(f.cfg.WSAddr),
+			enetAddr:       f.cfg.EnetAddr,
 			enetPort:       ticket.EnetPort,
 		}, plan)
 	}
@@ -254,8 +254,8 @@ func (f *Fleet) peersSnapshot() []*peer {
 	return append([]*peer(nil), f.peers...)
 }
 
-// enetHost — host-часть WS-адреса для будущего ENet-dial (inc 3: ENet живёт
-// на том же хосте, что и HTTP/WS).
+// enetHost — дефолт LOADGEN_ENET_ADDR: host-часть WS-адреса (ENet живёт на
+// том же хосте, что и HTTP/WS).
 func enetHost(wsAddr string) string {
 	host, _, ok := strings.Cut(wsAddr, ":")
 	if !ok || host == "" {

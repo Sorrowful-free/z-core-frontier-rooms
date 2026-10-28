@@ -1,6 +1,6 @@
 # internal/loadgen
 
-Нагрузочный клиент флота комнат (план [P27](../../docs/plans/P27-loadgen.md), inc 1+2: host/WS + Docker/netem). Бинарь — `cmd/loadgen`, оркестратор — `scripts/loadtest-run.sh` (поднимает `cmd/rooms` с пресетом [.env.loadtest](../../.env.loadtest), снимает `GET /metrics` до/после в `report.server_metrics`).
+Нагрузочный клиент флота комнат (план [P27](../../docs/plans/P27-loadgen.md), inc 1–3: host/WS + Docker/netem + ENet-клиент). Бинарь — `cmd/loadgen`, оркестратор — `scripts/loadtest-run.sh` (поднимает `cmd/rooms` с пресетом [.env.loadtest](../../.env.loadtest), снимает `GET /metrics` до/после в `report.server_metrics`).
 
 ## Поток
 
@@ -8,7 +8,7 @@
 
 ## Peer
 
-`DataConn` (`Send`/`Recv`/`Close`) — транспорт-агностичный кадр OpCode+payload; WS-реализация на `fasthttp/websocket` (`DialParams` уже несёт `EnetAddr`/`EnetPort` для inc 3). Обязательный read-loop: сервер отвечает ping только при читающем клиенте — мёртвый reader = idle-eviction. Join = первый кадр `0x01`; до него однобайтовый `0x40–0x7F` — reject. Клиент держит реплику `RoomState` (codec) — peerID по nick'у, `is_master` → send entities. mode=state: `PatchInput` всем (`INPUT_HZ`), `PatchEntities` master'у (`ENTITIES_HZ`); occupancy — только жить. Resume: `?token=<reconnect_token>` после abrupt close (клиенты из `RECONNECT_RATE`, период `RECONNECT_EVERY`).
+`DataConn` (`Send`/`Recv`/`Close`) — транспорт-агностичный кадр OpCode+payload; реализации — WS (`fasthttp/websocket`) и ENet (`client_enet.go`, `-tags enet`). Обязательный read-loop: сервер отвечает ping только при читающем клиенте — мёртвый reader = idle-eviction. Join = первый кадр `0x01`; до него однобайтовый `0x40–0x7F` — reject. Клиент держит реплику `RoomState` (codec) — peerID по nick'у, `is_master` → send entities. mode=state: `PatchInput` всем (`INPUT_HZ`), `PatchEntities` master'у (`ENTITIES_HZ`); occupancy — только жить. Resume: `?token=<reconnect_token>` после abrupt close (клиенты из `RECONNECT_RATE`, период `RECONNECT_EVERY`).
 
 Auth-комнаты (`POLICY_MIX=auth`): host-клиент делает одноразовый abrupt disconnect в случайной точке sustain без reconnect — комната умирает (`auth_rooms_died`); остальные считают полученные `0x82` (`room_closed_received`, доставка до P30 — baseline, не pass/fail).
 
@@ -18,10 +18,11 @@ Auth-комнаты (`POLICY_MIX=auth`): host-клиент делает одно
 |------------|---------|----------|
 | `LOADGEN_HTTP_ADDR` | `127.0.0.1:3000` | REST сервера (host:port, без схемы) |
 | `LOADGEN_WS_ADDR` | `=HTTP_ADDR` | WS endpoint (`/ws?token=`) |
+| `LOADGEN_ENET_ADDR` | host `WS_ADDR` | host ENet listeners (без порта — порт из ticket `enet_port`) |
 | `LOADGEN_ADMIN_ADDR` | `127.0.0.1:9091` | admin listener `GET /metrics` — drain-poll |
 | `LOADGEN_ROOMS` | `1000` | Целевое число комнат |
 | `LOADGEN_ROOM_MIX` | `4/4:70,8/6:20,16/4:10` | `capacity/occupancy:вес`, occupancy ≤ capacity ≤ 127 |
-| `LOADGEN_TRANSPORT_MIX` | `ws:100` | Доли транспортов; `enet` на inc1 → `dial_errors{transport=enet}` |
+| `LOADGEN_TRANSPORT_MIX` | `ws:100` | Доли транспортов `ws`/`enet`; `enet` требует сборку с `-tags enet` (иначе → `dial_errors{transport=enet}`) |
 | `LOADGEN_POLICY_MIX` | `state:100` | `state` / `auth` (= `authoritative-host`), веса |
 | `LOADGEN_MODE` | `state` | `state` — шлём state-кадры; `occupancy` — только жить |
 | `LOADGEN_INPUT_HZ` | `20` | PatchInput на клиента, Гц |
@@ -64,6 +65,19 @@ LOADGEN_TRANSPORT_MIX="ws:100" LOADGEN_DURATION=30s LOADGEN_RECONNECT_RATE=0.2 \
 ./scripts/loadtest-run.sh
 ```
 
-## Inc 3 (план)
+## ENet (inc 3, `-tags enet`)
 
-ENet-клиент (`client_enet.go` под `-tags enet`, dial по `enet_port` из ticket, распределение по `ENET_LISTEN_PORTS` round-robin) — следующий инкремент P27. Образ `deploy/loadgen` уже собирает бинарь с `-tags enet` — код inc3 подхватится без правок Dockerfile.
+`enetDataConn` (`client_enet.go`, `//go:build enet && cgo`) — клиентский libenet host под `adapterenet.HostLoop` (все libenet-вызовы через `Call`/`Do`, как у серверной стороны); без тега — `client_enet_stub.go` отдаёт `ErrEnetUnsupported` на dial. Dial: `Connect(LOADGEN_ENET_ADDR:enet_port)` — порт **строго** из ticket-ответа (`enet_port`, strict binding P18 — распределение по `ENET_LISTEN_PORTS` делает сервер, `enet_port=0` → dial error); pump ждёт `EventConnect` в пределах dial-таймаута peer'а, затем шлёт admit-пакет — **сырой decoded ticket** на channel 0 reliable (WS отдаёт base64url в query, на ENet декодирует клиент). Кадры — `[op|payload]` channel 0 reliable в обе стороны. Resume reconnect-токеном работает тем же путём (dial → admit).
+
+Известное ограничение: **SO_MARK/netem к ENet не применяется** — go-enet host владеет UDP-сокетом и не отдаёт fd; enet-трафик уходит немаркированным → в контейнере попадает в clean-band tc (в `netem_clients` enet-пиры при этом считаются по назначенному профилю).
+
+Docker smoke (образ `zcore-loadgen` собирает `/app/loadgen` с `-tags enet`; сервер в сети по alias `rooms`, порты `ENET_LISTEN_PORTS` из пресета):
+
+```bash
+docker build --network=host -t zcore-loadgen -f deploy/loadgen/Dockerfile .
+LOADTEST_DOCKER=1 LOADGEN_ENET_ADDR=rooms LOADGEN_ROOMS=10 \
+LOADGEN_ROOM_MIX="4/4:100" LOADGEN_POLICY_MIX="state:100" \
+LOADGEN_TRANSPORT_MIX="ws:70,enet:30" LOADGEN_DURATION=15s \
+./scripts/loadtest-run.sh
+# ожидание: join_success ≈ spawned, dial_errors{transport=enet} = 0, drain_complete=true
+```

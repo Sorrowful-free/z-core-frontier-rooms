@@ -35,10 +35,13 @@ type Config struct {
 	HTTPAddr  string // REST control plane
 	WSAddr    string // WS data plane (/ws?token=)
 	AdminAddr string // admin listener (GET /metrics), для drain-поллинга
+	// EnetAddr — host (без порта) ENet listeners; порт — из ticket-ответа
+	// (enet_port, strict binding). Дефолт — host-часть WSAddr.
+	EnetAddr string
 
 	Rooms        int
 	RoomMix      []RoomMixEntry
-	TransportMix []weightedOption // "ws"|"enet" (enet → dial_errors на inc1)
+	TransportMix []weightedOption // "ws"|"enet" (enet — только сборка с -tags enet)
 	PolicyMix    []weightedOption // уже мапнуто в domain.RoomPolicyKind
 	Mode         string
 
@@ -81,6 +84,7 @@ func LoadConfigFromEnv() (*Config, error) {
 		LogEvery:       10 * time.Second,
 	}
 	cfg.WSAddr = envOr("LOADGEN_WS_ADDR", cfg.HTTPAddr)
+	cfg.EnetAddr = envOr("LOADGEN_ENET_ADDR", enetHost(cfg.WSAddr))
 
 	var err error
 	if cfg.Rooms, err = envInt("LOADGEN_ROOMS", cfg.Rooms); err != nil {
