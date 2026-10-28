@@ -22,7 +22,7 @@ DEV="${LOADGEN_NETEM_DEV:-eth0}"
 BAD="${LOADGEN_NETEM_BAD:-loss 5% delay 150ms 50ms}"
 UGLY="${LOADGEN_NETEM_UGLY:-loss 20% delay 300ms 150ms reorder 10%}"
 
-if tc qdisc add dev "$DEV" root handle 1: prio priomap 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1; then
+if tc qdisc add dev "$DEV" root handle 1: prio priomap 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0; then
   # shellcheck disable=SC2086 # пресеты — строки аргументов netem
   tc qdisc add dev "$DEV" parent 1:2 handle 20: netem $BAD
   # shellcheck disable=SC2086
