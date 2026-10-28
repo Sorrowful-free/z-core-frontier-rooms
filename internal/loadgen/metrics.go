@@ -25,7 +25,6 @@ type Metrics struct {
 	PeerDisconnectedRecv  atomic.Int64 // 0x80
 	PeerReconnectedRecv   atomic.Int64 // 0x81
 	RoomClosedRecv        atomic.Int64 // 0x82 (доставка до P30 — baseline)
-	AuthRoomsDied         atomic.Int64 // auth-комнат, где host убит сценарием
 	UnexpectedDisconnects atomic.Int64 // смерть conn без нашего close/0x82/ctx
 
 	ReconnectAttempts atomic.Int64 // запланированные разрывы (RECONNECT_RATE)

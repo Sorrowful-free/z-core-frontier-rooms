@@ -8,7 +8,7 @@
 
 ## Структура
 
-`Config` содержит поля типов из adapter-пакетов модулей (`Logging`, `Server`, `Admission`, `HTTPAuth`, `HTTPLimits`, `Reservation`, `Transport`, `Enet`, `Metrics`).
+`Config` содержит поля типов из adapter-пакетов модулей (`Logging`, `Server`, `Admission`, `HTTPAuth`, `HTTPLimits`, `Reservation`, `StatePolicy`, `Transport`, `Enet`, `Metrics`).
 
 ## Env (process)
 
@@ -63,6 +63,14 @@
 | `RESERVATION_ORPHAN_SWEEP_INTERVAL` | нет | `10s` | Период фоновых sweep'ей — orphan admitted **и** empty rooms (P31); `0` — отключить оба |
 
 Валидация — `reservation.ReservationConfig.Validate()`.
+
+## Env (state room policy)
+
+| Переменная | Обязательна | Default | Описание |
+|------------|-------------|---------|----------|
+| `STATE_POLICY_ALLOW_MASTER_MIGRATION` | нет | `true` | Режим master-миграции деплоя (P33): `false` — комната умирает с уходом master'а (`OnLeave` → `ErrRoomShouldClose` → teardown); не-bool значение — ошибка загрузки |
+
+Валидация — `realtime/policy/state.StatePolicyConfig.Validate()` (тривиальная, для единообразия ModuleConfig).
 
 ## Env (enet listener)
 

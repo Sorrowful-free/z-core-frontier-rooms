@@ -98,7 +98,7 @@ VerifyRoomPassword (только Delete) → GetRoom → closeRoom
 (OpRoomClosed 0x82 всем → DeleteRoom → UnregisterRoom → параллельные Stop)
 ```
 
-P31: серийный `LeaveRoom`-цикл заменён общим `closeRoom` — на `authoritative-host` комнате первый master-kick триггерил policy-death и остальные `LeaveRoom` + `DeleteRoom` сыпали `ErrRoomNotFound` в ответ (латентный баг), плюс O(N×drainTimeout). `ErrRoomNotFound` из `DeleteRoom` — tolerated (Warn), гонка с параллельной смертью. `DeleteForShutdown` — без пароля, тот же путь: остановка сервера — тоже «комната закрыта сервером» для клиента.
+P31: серийный `LeaveRoom`-цикл заменён общим `closeRoom` — на no-migration комнате первый master-kick триггерил policy-death и остальные `LeaveRoom` + `DeleteRoom` сыпали `ErrRoomNotFound` в ответ (латентный баг), плюс O(N×drainTimeout). `ErrRoomNotFound` из `DeleteRoom` — tolerated (Warn), гонка с параллельной смертью. `DeleteForShutdown` — без пароля, тот же путь: остановка сервера — тоже «комната закрыта сервером» для клиента.
 
 ## Смерть комнаты (P31)
 
@@ -106,7 +106,7 @@ P31: серийный `LeaveRoom`-цикл заменён общим `closeRoom`
 
 | Поток | Триггер | Broadcast `0x82` |
 |-------|---------|------------------|
-| Policy-death (`closeRoom`, P29) | `ErrRoomShouldClose` от policy в `LeaveRoom`/`DisconnectPeer` (ушёл master `authoritative-host`) | Да — оставшимся |
+| Policy-death (`closeRoom`, P29) | `ErrRoomShouldClose` от policy в `LeaveRoom`/`DisconnectPeer` (ушёл master при `allowMasterMigration=false`) | Да — оставшимся |
 | Emptied-death (`closeRoomIfEmpty`) | После реального изъятия peer'а: `LeaveRoom`, `DisconnectPeer`, `EvictIdlePeers` (post-batch), revoke grace-слота в `SweepOrphanAdmitted` | Нет — peers нет |
 | Never-joined sweep (`SweepEmptyRoomsUseCase`) | Периодический проход: `peers==0` ∧ ни admitted, ни unexpired reserve | Нет — peers никогда не было |
 | DELETE / shutdown (`Delete`/`DeleteForShutdown`) | Админ / остановка процесса | Да — всем |

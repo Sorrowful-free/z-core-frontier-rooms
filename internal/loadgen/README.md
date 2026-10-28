@@ -4,13 +4,11 @@
 
 ## Поток
 
-`fleet.Run(ctx)`: ramp (`POST /rooms` с `policy` → `POST /rooms/:id/tickets` × occupancy-1 → dial всех клиентов) → sustain до `LOADGEN_DURATION` → drain (abrupt close всех conn → poll `rooms_active_rooms` + `rooms_reservation_active_slots` до нуля с дедлайном) → `report.json`. Комнаты не удаляются — drain и есть проверка «сервер не оставляет пустых комнат». SIGINT → partial-отчёт (`interrupted: true`).
+`fleet.Run(ctx)`: ramp (`POST /rooms` → `POST /rooms/:id/tickets` × occupancy-1 → dial всех клиентов) → sustain до `LOADGEN_DURATION` → drain (abrupt close всех conn → poll `rooms_active_rooms` + `rooms_reservation_active_slots` до нуля с дедлайном) → `report.json`. Комнаты не удаляются — drain и есть проверка «сервер не оставляет пустых комнат». SIGINT → partial-отчёт (`interrupted: true`).
 
 ## Peer
 
 `DataConn` (`Send`/`Recv`/`Close`) — транспорт-агностичный кадр OpCode+payload; реализации — WS (`fasthttp/websocket`) и ENet (`client_enet.go`, `-tags enet`). Обязательный read-loop: сервер отвечает ping только при читающем клиенте — мёртвый reader = idle-eviction. Join = первый кадр `0x01`; до него однобайтовый `0x40–0x7F` — reject. Клиент держит реплику `RoomState` (codec) — peerID по nick'у, `is_master` → send entities. mode=state: `PatchInput` всем (`INPUT_HZ`), `PatchEntities` master'у (`ENTITIES_HZ`); occupancy — только жить. Resume: `?token=<reconnect_token>` после abrupt close (клиенты из `RECONNECT_RATE`, период `RECONNECT_EVERY`).
-
-Auth-комнаты (`POLICY_MIX=auth`): host-клиент делает одноразовый abrupt disconnect в случайной точке sustain без reconnect — комната умирает (`auth_rooms_died`); остальные считают полученные `0x82` (`room_closed_received`, доставка до P30 — baseline, не pass/fail).
 
 ## Env (LOADGEN_*)
 
@@ -23,7 +21,6 @@ Auth-комнаты (`POLICY_MIX=auth`): host-клиент делает одно
 | `LOADGEN_ROOMS` | `1000` | Целевое число комнат |
 | `LOADGEN_ROOM_MIX` | `4/4:70,8/6:20,16/4:10` | `capacity/occupancy:вес`, occupancy ≤ capacity ≤ 127 |
 | `LOADGEN_TRANSPORT_MIX` | `ws:100` | Доли транспортов `ws`/`enet`; `enet` требует сборку с `-tags enet` (иначе → `dial_errors{transport=enet}`) |
-| `LOADGEN_POLICY_MIX` | `state:100` | `state` / `auth` (= `authoritative-host`), веса |
 | `LOADGEN_MODE` | `state` | `state` — шлём state-кадры; `occupancy` — только жить |
 | `LOADGEN_INPUT_HZ` | `20` | PatchInput на клиента, Гц |
 | `LOADGEN_ENTITIES_HZ` | `20` | PatchEntities на master-клиента, Гц |
@@ -60,7 +57,7 @@ LOADGEN_NETEM_SHARE="clean:30,bad:50,ugly:20" LOADGEN_DURATION=30s \
 ## Smoke
 
 ```bash
-LOADGEN_ROOMS=4 LOADGEN_ROOM_MIX="4/4:100" LOADGEN_POLICY_MIX="state:50,auth:50" \
+LOADGEN_ROOMS=4 LOADGEN_ROOM_MIX="4/4:100" \
 LOADGEN_TRANSPORT_MIX="ws:100" LOADGEN_DURATION=30s LOADGEN_RECONNECT_RATE=0.2 \
 ./scripts/loadtest-run.sh
 ```
@@ -76,7 +73,7 @@ Docker smoke (образ `zcore-loadgen` собирает `/app/loadgen` с `-ta
 ```bash
 docker build --network=host -t zcore-loadgen -f deploy/loadgen/Dockerfile .
 LOADTEST_DOCKER=1 LOADGEN_ENET_ADDR=rooms LOADGEN_ROOMS=10 \
-LOADGEN_ROOM_MIX="4/4:100" LOADGEN_POLICY_MIX="state:100" \
+LOADGEN_ROOM_MIX="4/4:100" \
 LOADGEN_TRANSPORT_MIX="ws:70,enet:30" LOADGEN_DURATION=15s \
 ./scripts/loadtest-run.sh
 # ожидание: join_success ≈ spawned, dial_errors{transport=enet} = 0, drain_complete=true

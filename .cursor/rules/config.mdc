@@ -10,7 +10,7 @@ alwaysApply: true
 | Слой | Роль |
 |------|------|
 | `port/*` | Интерфейсы **поведения** для DI (`Admission`, `Reservation`, …). **Не** объявлять config/settings в port. |
-| `adapter/<module>/` | `ModuleConfig` struct (например `admission.AdmissionConfig`) + `Validate()` рядом с модулем |
+| `adapter/<module>/` | `ModuleConfig` struct (например `admission.AdmissionConfig`, `state.StatePolicyConfig`) + `Validate()` рядом с модулем |
 | `adapter/config/` | Корневая `Config` с полями типов из adapter-модулей; `LoadFromEnv()` |
 | `cmd/rooms` | Composition root: `LoadFromEnv` → передать `cfg.<Module>` в конструкторы |
 

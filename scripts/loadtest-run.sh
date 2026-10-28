@@ -8,7 +8,7 @@
 # на выходе.
 #
 # Использование:
-#   LOADGEN_ROOMS=4 LOADGEN_ROOM_MIX="4/4:100" LOADGEN_POLICY_MIX="state:50,auth:50" \
+#   LOADGEN_ROOMS=4 LOADGEN_ROOM_MIX="4/4:100" \
 #   LOADGEN_TRANSPORT_MIX="ws:100" LOADGEN_DURATION=30s LOADGEN_RECONNECT_RATE=0.2 \
 #   ./scripts/loadtest-run.sh
 #

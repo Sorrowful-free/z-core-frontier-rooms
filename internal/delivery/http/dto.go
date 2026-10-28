@@ -7,9 +7,6 @@ type createRoomRequest struct {
 	NickName   string         `json:"nick_name"`
 	Password   string         `json:"password,omitempty"`
 	Attributes map[string]any `json:"attributes,omitempty"`
-	// Policy — room policy (P29): "state" (дефолт, master-миграция) или
-	// "authoritative-host" (уход хоста = смерть комнаты). Пусто → дефолт.
-	Policy string `json:"policy,omitempty"`
 }
 
 type deleteRoomRequest struct {

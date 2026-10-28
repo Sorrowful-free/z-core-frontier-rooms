@@ -476,38 +476,6 @@ func assertErrorCode(t *testing.T, body []byte, want string) {
 	}
 }
 
-// P29: поле "policy" в POST /rooms — "state"/"authoritative-host" валидны,
-// пустое → дефолт (state), неизвестное → 400 invalid_policy.
-func TestHTTP_CreateRoomPolicyAccepted(t *testing.T) {
-	t.Parallel()
-
-	e := env.New(t)
-
-	for _, policy := range []string{"state", "authoritative-host"} {
-		resp, body := e.Do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
-			"policy":    policy,
-			"nick_name": "host-" + policy,
-		}))
-		if resp.StatusCode != http.StatusCreated {
-			t.Fatalf("policy %q: create status = %d, body = %s", policy, resp.StatusCode, body)
-		}
-	}
-}
-
-func TestHTTP_CreateRoomInvalidPolicy(t *testing.T) {
-	t.Parallel()
-
-	e := env.New(t)
-
-	resp, body := e.Do(t, http.MethodPost, "/rooms", createRoomRequest(map[string]any{
-		"policy": "bogus",
-	}))
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400, body = %s", resp.StatusCode, body)
-	}
-	assertErrorCode(t, body, "invalid_policy")
-}
-
 func TestHTTP_LeaveSelf(t *testing.T) {
 	t.Parallel()
 

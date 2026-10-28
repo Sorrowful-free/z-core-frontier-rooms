@@ -17,7 +17,7 @@ type RoomMixEntry struct {
 	Weight    int
 }
 
-// weightedOption — элемент взвешенного mix'а («name:weight»): transport/policy.
+// weightedOption — элемент взвешенного mix'а («name:weight»): transport/netem.
 type weightedOption struct {
 	Value  string
 	Weight int
@@ -42,7 +42,6 @@ type Config struct {
 	Rooms        int
 	RoomMix      []RoomMixEntry
 	TransportMix []weightedOption // "ws"|"enet" (enet — только сборка с -tags enet)
-	PolicyMix    []weightedOption // уже мапнуто в domain.RoomPolicyKind
 	Mode         string
 
 	InputHz    float64 // PatchInput на клиента (mode=state)
@@ -95,9 +94,6 @@ func LoadConfigFromEnv() (*Config, error) {
 	}
 	if cfg.TransportMix, err = parseMix(envOr("LOADGEN_TRANSPORT_MIX", "ws:100"), mapTransport); err != nil {
 		return nil, fmt.Errorf("LOADGEN_TRANSPORT_MIX: %w", err)
-	}
-	if cfg.PolicyMix, err = parseMix(envOr("LOADGEN_POLICY_MIX", "state:100"), mapPolicy); err != nil {
-		return nil, fmt.Errorf("LOADGEN_POLICY_MIX: %w", err)
 	}
 	if cfg.InputHz, err = envFloat("LOADGEN_INPUT_HZ", cfg.InputHz); err != nil {
 		return nil, err
@@ -165,19 +161,6 @@ func mapTransport(name string) (string, error) {
 		return name, nil
 	default:
 		return "", fmt.Errorf("unknown transport %q", name)
-	}
-}
-
-// mapPolicy — короткое имя политики в значение поля "policy" REST (P29):
-// «state» → state (master-миграция), «auth» → authoritative-host.
-func mapPolicy(name string) (string, error) {
-	switch name {
-	case "state":
-		return string(domain.RoomPolicyKindState), nil
-	case "auth":
-		return string(domain.RoomPolicyKindAuthoritativeHost), nil
-	default:
-		return "", fmt.Errorf("unknown policy %q (want state|auth)", name)
 	}
 }
 

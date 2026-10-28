@@ -20,9 +20,9 @@ import (
 func newMetricsRoom(t *testing.T, m *metricsadapter.Metrics) realtime.Room {
 	t.Helper()
 	logger := stdlib.New("test")
-	policyFactory := statepolicy.NewStateRoomPolicyFactory(logger, m)
+	policyFactory := statepolicy.NewStateRoomPolicyFactory(logger, statepolicy.StatePolicyConfig{AllowMasterMigration: true}, m)
 	factory := adapterrealtime.NewRoomFactory(logger, policyFactory, 0, m)
-	room, err := factory.CreateRoom(context.Background(), domain.RoomID(1), 8, nil, domain.RoomPolicyKindState)
+	room, err := factory.CreateRoom(context.Background(), domain.RoomID(1), 8, nil)
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}

@@ -13,6 +13,7 @@ import (
 	httplimitsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httplimits"
 	zaplogadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/zap"
 	metricsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/metrics"
+	statepolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy/state"
 	reservationadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
 	serveradapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/server"
 	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
@@ -37,6 +38,8 @@ const (
 
 	envReservationReconnectTTL        = "RESERVATION_RECONNECT_TTL"
 	envReservationOrphanSweepInterval = "RESERVATION_ORPHAN_SWEEP_INTERVAL"
+
+	envStatePolicyAllowMasterMigration = "STATE_POLICY_ALLOW_MASTER_MIGRATION"
 
 	envTransportMaxIncomingFrameBytes = "TRANSPORT_MAX_INCOMING_FRAME_BYTES"
 	envTransportRoomIncomingQueue     = "TRANSPORT_ROOM_INCOMING_QUEUE"
@@ -81,6 +84,10 @@ func LoadFromEnv() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	statePolicyCfg, err := loadStatePolicyFromEnv()
+	if err != nil {
+		return nil, err
+	}
 	transportCfg, err := loadTransportFromEnv()
 	if err != nil {
 		return nil, err
@@ -100,6 +107,7 @@ func LoadFromEnv() (*Config, error) {
 		HTTPAuth:    httpAuth,
 		HTTPLimits:  httpLimits,
 		Reservation: reservationCfg,
+		StatePolicy: statePolicyCfg,
 		Transport:   transportCfg,
 		Enet:        enetCfg,
 		Metrics:     metricsCfg,
@@ -274,6 +282,25 @@ func loadReservationFromEnv() (reservationadapter.ReservationConfig, error) {
 	}
 	if err := cfg.Validate(); err != nil {
 		return reservationadapter.ReservationConfig{}, err
+	}
+	return cfg, nil
+}
+
+// loadStatePolicyFromEnv собирает state.StatePolicyConfig (P33):
+// STATE_POLICY_ALLOW_MASTER_MIGRATION — глобальный режим master-миграции
+// деплоя; пусто → true (историческое поведение), явное значение — ParseBool,
+// мусор → ошибка.
+func loadStatePolicyFromEnv() (statepolicy.StatePolicyConfig, error) {
+	cfg := statepolicy.StatePolicyConfig{AllowMasterMigration: true}
+	if raw := os.Getenv(envStatePolicyAllowMasterMigration); raw != "" {
+		allow, err := strconv.ParseBool(raw)
+		if err != nil {
+			return statepolicy.StatePolicyConfig{}, fmt.Errorf("%s: %w", envStatePolicyAllowMasterMigration, err)
+		}
+		cfg.AllowMasterMigration = allow
+	}
+	if err := cfg.Validate(); err != nil {
+		return statepolicy.StatePolicyConfig{}, err
 	}
 	return cfg, nil
 }

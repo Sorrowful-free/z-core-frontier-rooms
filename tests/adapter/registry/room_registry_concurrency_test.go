@@ -28,8 +28,8 @@ type gatingRoomFactory struct {
 	created []realtime.Room
 }
 
-func (f *gatingRoomFactory) CreateRoom(ctx context.Context, id domain.RoomID, capacity int, attributes domain.RoomAttributes, policyKind domain.RoomPolicyKind) (realtime.Room, error) {
-	room, err := f.inner.CreateRoom(ctx, id, capacity, attributes, policyKind)
+func (f *gatingRoomFactory) CreateRoom(ctx context.Context, id domain.RoomID, capacity int, attributes domain.RoomAttributes) (realtime.Room, error) {
+	room, err := f.inner.CreateRoom(ctx, id, capacity, attributes)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +45,7 @@ func TestCreateRoom_ConcurrentSameID_SingleWinner(t *testing.T) {
 	t.Parallel()
 
 	logger := stdlib.New("test")
-	inner := adapterrealtime.NewRoomFactory(logger, statepolicy.NewStateRoomPolicyFactory(logger, nil), 0, nil)
+	inner := adapterrealtime.NewRoomFactory(logger, statepolicy.NewStateRoomPolicyFactory(logger, statepolicy.StatePolicyConfig{AllowMasterMigration: true}, nil), 0, nil)
 	factory := &gatingRoomFactory{
 		inner:   inner,
 		arrived: make(chan struct{}, 2),
@@ -62,7 +62,7 @@ func TestCreateRoom_ConcurrentSameID_SingleWinner(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := reg.CreateRoom(context.Background(), id, 4, nil, domain.RoomPolicyKindState)
+			_, err := reg.CreateRoom(context.Background(), id, 4, nil)
 			results <- err
 		}()
 	}
@@ -163,7 +163,7 @@ func TestDeleteRoom_SlowStop_GetListNotBlocked(t *testing.T) {
 	t.Cleanup(func() { _ = reg.Shutdown(context.Background()) })
 
 	const id = domain.RoomID(88)
-	if _, err := reg.CreateRoom(context.Background(), id, 4, nil, domain.RoomPolicyKindState); err != nil {
+	if _, err := reg.CreateRoom(context.Background(), id, 4, nil); err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
 

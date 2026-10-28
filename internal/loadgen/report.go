@@ -51,7 +51,6 @@ type Report struct {
 	PeerDisconnectedRecv  int64 `json:"peer_disconnected_recv"`
 	PeerReconnectedRecv   int64 `json:"peer_reconnected_recv"`
 	RoomClosedRecv        int64 `json:"room_closed_received"`
-	AuthRoomsDied         int64 `json:"auth_rooms_died"`
 	UnexpectedDisconnects int64 `json:"unexpected_disconnects"`
 
 	// NetemClients — фактическое распределение клиентов по профилям
@@ -196,7 +195,6 @@ func (f *Fleet) buildReport(started time.Time, plans []roomPlan, drain drainResu
 		PeerDisconnectedRecv:  m.PeerDisconnectedRecv.Load(),
 		PeerReconnectedRecv:   m.PeerReconnectedRecv.Load(),
 		RoomClosedRecv:        m.RoomClosedRecv.Load(),
-		AuthRoomsDied:         m.AuthRoomsDied.Load(),
 		UnexpectedDisconnects: m.UnexpectedDisconnects.Load(),
 
 		DrainComplete: drain.complete,

@@ -34,7 +34,7 @@ const (
 //	на ping только внутри ReadMessage — мёртвый reader = idle-eviction через
 //	TRANSPORT_PEER_IDLE_TIMEOUT) + send-loop по LOADGEN_MODE →
 //	разрыв → resume reconnect-токеном (если клиент в RECONNECT_RATE) → …
-//	→ closeReq (drain/auth-kill) — без resume.
+//	→ closeReq (drain) — без resume.
 //
 // Join = первый кадр 0x01 FullState; до него однобайтовый OpCode 0x40–0x7F —
 // join/resume reject, дальше сервер закрывает conn.
@@ -47,8 +47,6 @@ type peer struct {
 	enetAddr       string // host для будущего ENet-dial (inc 3)
 	enetPort       uint16 // назначенный enet_port из ticket (0 — нет)
 	netemMark      uint32 // SO_MARK профиля из NETEM_SHARE (0 — без маркировки)
-	host           bool   // host-ticket: в auth-комнате его разрыв = смерть комнаты
-	roomPolicy     string // domain.RoomPolicyKind комнаты (fleet ставит при спавне)
 
 	cfg *Config
 	m   *Metrics
@@ -89,7 +87,6 @@ func newPeer(cfg *Config, m *Metrics, spec peerSpec) *peer {
 		enetAddr:       spec.enetAddr,
 		enetPort:       spec.enetPort,
 		netemMark:      spec.netemMark,
-		host:           spec.host,
 		cfg:            cfg,
 		m:              m,
 		rnd:            rnd,
@@ -112,7 +109,6 @@ type peerSpec struct {
 	enetAddr       string
 	enetPort       uint16
 	netemMark      uint32
-	host           bool
 }
 
 // run — внешний цикл сессий: dial → session → (resume | exit).
@@ -140,7 +136,7 @@ func (p *peer) run(ctx context.Context) {
 		rejected := p.joinRejected
 		p.mu.Unlock()
 		// Reject = слот/комната мертвы — повторные resume бессмысленны и
-		// лишь штормят admit (0x43-шторм после смерти auth-комнаты).
+		// лишь штормят admit (0x43-шторм после смерти комнаты).
 		if rejected || p.closeReq.Load() || ctx.Err() != nil || !p.reconnectEnabled.Load() {
 			return
 		}
@@ -282,8 +278,9 @@ func (p *peer) handleFrame(op domain.OpCode, payload []byte, sessionStart time.T
 	case domain.OpPeerReconnected:
 		p.m.PeerReconnectedRecv.Add(1)
 	case domain.OpRoomClosed:
-		// authoritative-host: мастер ушёл → комната умирает, сервер закроет
-		// conn следом — это ожидаемый teardown, не unexpected disconnect.
+		// Сервер убил комнату (P31/P33): close комнаты, DELETE,
+		// no-migration деплой — сервер закроет conn следом, это ожидаемый
+		// teardown, не unexpected disconnect.
 		p.m.RoomClosedRecv.Add(1)
 		p.mu.Lock()
 		p.sawRoomClosed = true
@@ -301,7 +298,7 @@ func (p *peer) onRecvErr(ctx context.Context, gotFull bool) {
 	p.mu.Unlock()
 	switch {
 	case ctx.Err() != nil, p.closeReq.Load(), p.dropReq.Swap(false), rejected, roomClosed:
-		// Ожидаемые разрывы: shutdown, drain/auth-kill, плановый reconnect-drop,
+		// Ожидаемые разрывы: shutdown, drain, плановый reconnect-drop,
 		// close после reject-кадра, close после 0x82 (комната мертва).
 	default:
 		if gotFull {
@@ -354,8 +351,7 @@ func (p *peer) closeConn() {
 	}
 }
 
-// closeForGood — abrupt-разрыв без resume: drain-фаза флота и убийство
-// host-клиента auth-комнаты.
+// closeForGood — abrupt-разрыв без resume: drain-фаза флота.
 func (p *peer) closeForGood() {
 	p.closeReq.Store(true)
 	p.closeConn()

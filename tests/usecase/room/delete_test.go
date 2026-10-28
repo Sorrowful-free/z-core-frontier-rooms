@@ -124,7 +124,7 @@ func TestDelete_NotFound(t *testing.T) {
 // P31: ErrRoomNotFound из DeleteRoom tolerated — гонка с параллельной
 // смертью комнаты (closeRoom, empty-death, другой DELETE); цель достигнута,
 // ответ не должен быть ошибкой. Фиксит латентный post-P29 баг: на
-// authoritative-host комнате серийный kick триггерил closeRoom и сам
+// no-migration комнате серийный kick триггерил closeRoom и сам
 // DeleteRoom сыпал ErrRoomNotFound в HTTP-ответ.
 func TestDelete_RoomGoneBeforeDelete_Tolerated(t *testing.T) {
 	t.Parallel()

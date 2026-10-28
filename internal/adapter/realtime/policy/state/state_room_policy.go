@@ -27,6 +27,12 @@ type StateRoomPolicy struct {
 	// masterless-лога сведены в один диспетчер переходов (master_machine.go).
 	master masterMachine
 
+	// allowMasterMigration — режим master-миграции деплоя (P33): false —
+	// уход master'а убивает комнату (ErrRoomShouldClose на входе OnLeave).
+	// Умолчание true задаётся в NewStateRoomPolicy; продовое значение
+	// вливает StateRoomPolicyFactory полем из StatePolicyConfig.
+	allowMasterMigration bool
+
 	prevState state.RoomState
 	state     state.RoomState
 
@@ -52,9 +58,12 @@ func NewStateRoomPolicy(logger logging.Logger, stateCodec codec.RoomStateCodec, 
 	return &StateRoomPolicy{
 		// Умолчание Noop: продовый metrics вливает StateRoomPolicyFactory
 		// полем (сигнатура NewStateRoomPolicy стабильна для тестов).
-		master:    masterMachine{logger: logger, metrics: portmetrics.Noop()},
-		prevState: *state.NewRoomState(domain.RoomIDInvalid, 0),
-		state:     *state.NewRoomState(domain.RoomIDInvalid, 0),
+		master: masterMachine{logger: logger, metrics: portmetrics.Noop()},
+		// Умолчание «миграция разрешена» (историческое поведение); фабрика
+		// перезаписывает полем из StatePolicyConfig, как и metrics.
+		allowMasterMigration: true,
+		prevState:            *state.NewRoomState(domain.RoomIDInvalid, 0),
+		state:                *state.NewRoomState(domain.RoomIDInvalid, 0),
 
 		stateCodec:         stateCodec,
 		entitiesCodec:      entitiesCodec,
@@ -93,6 +102,15 @@ func (p *StateRoomPolicy) OnJoin(peer realtime.Peer) error {
 }
 
 func (p *StateRoomPolicy) OnLeave(peer realtime.Peer) error {
+	// No-migration режим (P33): уход master'а убивает комнату — sentinel
+	// уходит наружу до входа в master-машину и staged-мутаций state
+	// («ошибка = нет побочек»). Машина ещё держит уходящего master'а
+	// (m.peer сбрасывается только в dispatch) — проверки по peerID
+	// достаточно. Teardown (OpRoomClosed → unregister → revoke) делает
+	// usecase по ErrRoomShouldClose.
+	if !p.allowMasterMigration && p.master.isMaster(peer.GetID()) {
+		return fmt.Errorf("%w: %d", domain.ErrRoomShouldClose, peer.GetID())
+	}
 	return p.prepareAndSendRoomStatePatch(func(roomState *state.RoomState) error {
 		peerID := peer.GetID()
 		peerState, ok := roomState.Peers[peerID]

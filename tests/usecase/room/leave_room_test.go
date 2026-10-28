@@ -291,7 +291,7 @@ func TestLeaveRoom_StopAndRevokeFail_ErrorsJoined(t *testing.T) {
 	}
 }
 
-// P29: room.Leave отвечает ErrRoomShouldClose (authoritative-host, ушёл
+// P33: room.Leave отвечает ErrRoomShouldClose (no-migration, ушёл
 // master) → teardown: OpRoomClosed оставшимся → stop всех → DeleteRoom →
 // UnregisterRoom. Отдельный Revoke ушедшего не нужен — слоты ревокает
 // teardown.

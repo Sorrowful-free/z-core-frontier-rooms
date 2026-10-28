@@ -17,11 +17,10 @@ var (
 	ErrRoomAlreadyExists     = errors.New("room already exists")
 	ErrRoomsLimitReached     = errors.New("rooms limit reached")
 	ErrInvalidRoomCapacity   = errors.New("invalid room capacity")
-	ErrInvalidPolicy         = errors.New("invalid room policy")
-	// ErrRoomShouldClose — policy просит закрыть комнату (P29, authoritative-
-	// host: ушёл master). Внутренний sentinel: usecase превращает его в
-	// teardown (OpRoomClosed оставшимся → disconnect всех → unregister +
-	// revoke); на wire сам по себе не мапится.
+	// ErrRoomShouldClose — policy просит закрыть комнату (P33: no-migration
+	// режим деплоя, ушёл master при allowMasterMigration=false). Внутренний
+	// sentinel: usecase превращает его в teardown (OpRoomClosed оставшимся →
+	// disconnect всех → unregister + revoke); на wire сам по себе не мапится.
 	ErrRoomShouldClose = errors.New("room should close")
 	ErrQueueFull       = errors.New("queue full")
 )

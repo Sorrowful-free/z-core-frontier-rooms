@@ -73,9 +73,10 @@ type options struct {
 	transport         adaptertransport.TransportConfig
 	idleSweepInterval time.Duration
 	reconnectTTL      time.Duration // reconnect grace admitted-слотов (P20/P24)
-	metrics           bool          // WithMetrics: реальный adapter/metrics + admin app
-	enet              bool          // выставляется tagged-опцией WithEnet (env_enet.go)
-	enetPorts         []uint16      // 0-элемент = auto (свободный порт)
+	statePolicy       statepolicy.StatePolicyConfig
+	metrics           bool     // WithMetrics: реальный adapter/metrics + admin app
+	enet              bool     // выставляется tagged-опцией WithEnet (env_enet.go)
+	enetPorts         []uint16 // 0-элемент = auto (свободный порт)
 }
 
 // Option переопределяет дефолтный конфиг env (auth Disabled, limits zero, transport zero).
@@ -123,6 +124,16 @@ func WithIdleSweep(interval time.Duration) Option {
 	}
 }
 
+// WithStatePolicy задаёт конфиг state room-policy (P33): режим
+// master-миграции процесса — AllowMasterMigration=false означает, что
+// комната умирает с уходом master'а (no-migration, ErrRoomShouldClose).
+// Дефолт — {AllowMasterMigration: true}.
+func WithStatePolicy(cfg statepolicy.StatePolicyConfig) Option {
+	return func(o *options) {
+		o.statePolicy = cfg
+	}
+}
+
 // WithReconnectTTL задаёт reconnect grace admitted-слотов без peer в room
 // (P20/P24): deadline-гейт resume в ReconnectRoomUseCase считает expiry от
 // lastSeen disconnect'а + TTL. Без опции — продовый дефолт
@@ -153,6 +164,7 @@ func New(t *testing.T, opts ...Option) *Env {
 			PeerCloseDrainTimeout: adaptertransport.DefaultPeerCloseDrainTimeout,
 		},
 		reconnectTTL: adapterreservation.DefaultReconnectTTL,
+		statePolicy:  statepolicy.StatePolicyConfig{AllowMasterMigration: true},
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -176,15 +188,11 @@ func New(t *testing.T, opts ...Option) *Env {
 	}
 
 	logger := stdlib.New("test-env")
-	// Продовая фабрика policy (та же сборка, что cmd/rooms): metrics
-	// попадает в master-машину полем внутри фабрики.
-	roomFactory := adapterrealtime.NewKindRoomFactory(
-		adapterrealtime.NewRoomFactory(logger, statepolicy.NewStateRoomPolicyFactory(logger, m), cfg.transport.RoomIncomingQueueSize, m),
-		map[domain.RoomPolicyKind]portrealtime.RoomFactory{
-			domain.RoomPolicyKindAuthoritativeHost: adapterrealtime.NewRoomFactory(
-				logger, statepolicy.NewAuthoritativeHostPolicyFactory(logger, m), cfg.transport.RoomIncomingQueueSize, m),
-		},
-	)
+	// Продовая фабрика policy (та же сборка, что cmd/rooms): metrics и
+	// режим master-миграции попадают в policy полем внутри фабрики.
+	roomFactory := adapterrealtime.NewRoomFactory(logger,
+		statepolicy.NewStateRoomPolicyFactory(logger, cfg.statePolicy, m),
+		cfg.transport.RoomIncomingQueueSize, m)
 	peerFactory := adapterrealtime.NewPeerFactory(logger, cfg.transport.PeerOutboundQueueSize, cfg.transport.PeerCloseDrainTimeout, m)
 
 	registry := adapterregistry.NewRoomRegistry(context.Background(), roomFactory, logger, m)
@@ -451,18 +459,6 @@ func (e *Env) CreateRoomReconnect(t *testing.T, nick string) (roomID domain.Room
 		"nick_name": nick,
 	})
 	return roomID, token, reconnect
-}
-
-// CreateRoomWithPolicy — то же, что CreateRoom, с явным полем "policy"
-// в теле (P29: "state" / "authoritative-host").
-func (e *Env) CreateRoomWithPolicy(t *testing.T, nick, policy string) (domain.RoomID, string) {
-	t.Helper()
-	roomID, token, _, _ := e.createRoomPost(t, map[string]any{
-		"capacity":  4,
-		"nick_name": nick,
-		"policy":    policy,
-	})
-	return roomID, token
 }
 
 func (e *Env) createRoomPost(t *testing.T, payload map[string]any) (domain.RoomID, string, string, uint16) {

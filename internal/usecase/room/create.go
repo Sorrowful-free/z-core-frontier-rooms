@@ -54,7 +54,6 @@ func (uc *CreateUseCase) Create(
 	password string,
 	attributes domain.RoomAttributes,
 	nickName string,
-	policyKind domain.RoomPolicyKind,
 ) (IssueTicketResult, error) {
 	if err := ctx.Err(); err != nil {
 		return IssueTicketResult{}, err
@@ -86,7 +85,7 @@ func (uc *CreateUseCase) Create(
 		return IssueTicketResult{}, err
 	}
 
-	_, err = uc.roomRegistry.CreateRoom(ctx, roomID, capacity, attributes, policyKind)
+	_, err = uc.roomRegistry.CreateRoom(ctx, roomID, capacity, attributes)
 	if err != nil {
 		createErr := err
 		if unregisterErr := uc.reservation.UnregisterRoom(ctx, roomID); unregisterErr != nil {

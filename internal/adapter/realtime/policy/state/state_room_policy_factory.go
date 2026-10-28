@@ -9,12 +9,14 @@ import (
 
 type StateRoomPolicyFactory struct {
 	logger  logging.Logger
+	cfg     StatePolicyConfig
 	metrics portmetrics.Metrics
 }
 
-func NewStateRoomPolicyFactory(logger logging.Logger, m portmetrics.Metrics) *StateRoomPolicyFactory {
+func NewStateRoomPolicyFactory(logger logging.Logger, cfg StatePolicyConfig, m portmetrics.Metrics) *StateRoomPolicyFactory {
 	return &StateRoomPolicyFactory{
 		logger:  logger,
+		cfg:     cfg,
 		metrics: portmetrics.OrNoop(m),
 	}
 }
@@ -32,5 +34,7 @@ func (f *StateRoomPolicyFactory) CreateRoomPolicy() policy.RoomPolicy {
 	// Счётчик master-elections живёт в машине эпизодов; вливается
 	// полем, чтобы сигнатура NewStateRoomPolicy осталась стабильной.
 	p.master.metrics = f.metrics
+	// Режим master-миграции (P33) — тот же полевой влейв из конфига деплоя.
+	p.allowMasterMigration = f.cfg.AllowMasterMigration
 	return p
 }

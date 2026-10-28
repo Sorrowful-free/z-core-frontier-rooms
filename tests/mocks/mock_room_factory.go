@@ -43,18 +43,18 @@ func (m *MockRoomFactory) EXPECT() *MockRoomFactoryMockRecorder {
 }
 
 // CreateRoom mocks base method.
-func (m *MockRoomFactory) CreateRoom(ctx context.Context, id domain.RoomID, capacity int, attributes domain.RoomAttributes, policyKind domain.RoomPolicyKind) (realtime.Room, error) {
+func (m *MockRoomFactory) CreateRoom(ctx context.Context, id domain.RoomID, capacity int, attributes domain.RoomAttributes) (realtime.Room, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateRoom", ctx, id, capacity, attributes, policyKind)
+	ret := m.ctrl.Call(m, "CreateRoom", ctx, id, capacity, attributes)
 	ret0, _ := ret[0].(realtime.Room)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // CreateRoom indicates an expected call of CreateRoom.
-func (mr *MockRoomFactoryMockRecorder) CreateRoom(ctx, id, capacity, attributes, policyKind any) *MockRoomFactoryCreateRoomCall {
+func (mr *MockRoomFactoryMockRecorder) CreateRoom(ctx, id, capacity, attributes any) *MockRoomFactoryCreateRoomCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRoom", reflect.TypeOf((*MockRoomFactory)(nil).CreateRoom), ctx, id, capacity, attributes, policyKind)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRoom", reflect.TypeOf((*MockRoomFactory)(nil).CreateRoom), ctx, id, capacity, attributes)
 	return &MockRoomFactoryCreateRoomCall{Call: call}
 }
 
@@ -70,13 +70,13 @@ func (c *MockRoomFactoryCreateRoomCall) Return(arg0 realtime.Room, arg1 error) *
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockRoomFactoryCreateRoomCall) Do(f func(context.Context, domain.RoomID, int, domain.RoomAttributes, domain.RoomPolicyKind) (realtime.Room, error)) *MockRoomFactoryCreateRoomCall {
+func (c *MockRoomFactoryCreateRoomCall) Do(f func(context.Context, domain.RoomID, int, domain.RoomAttributes) (realtime.Room, error)) *MockRoomFactoryCreateRoomCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockRoomFactoryCreateRoomCall) DoAndReturn(f func(context.Context, domain.RoomID, int, domain.RoomAttributes, domain.RoomPolicyKind) (realtime.Room, error)) *MockRoomFactoryCreateRoomCall {
+func (c *MockRoomFactoryCreateRoomCall) DoAndReturn(f func(context.Context, domain.RoomID, int, domain.RoomAttributes) (realtime.Room, error)) *MockRoomFactoryCreateRoomCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

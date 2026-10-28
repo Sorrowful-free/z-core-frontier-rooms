@@ -53,7 +53,7 @@ func (uc *DeleteUseCase) DeleteForShutdown(ctx context.Context, roomID domain.Ro
 // deleteRoom — тот же teardown, что у policy-death (P29/P31): OpRoomClosed
 // (0x82) всем peer'ам → DeleteRoom → UnregisterRoom → параллельные
 // drain-aware Stop. Заменяет серийный LeaveRoom-цикл: первый же master-kick
-// на authoritative-host комнате триггерил closeRoom и остальные LeaveRoom
+// на no-migration комнате триггерил closeRoom и остальные LeaveRoom
 // сыпали ErrRoomNotFound в ответ (латентный баг), плюс O(N×drainTimeout).
 // ErrRoomNotFound из DeleteRoom внутри closeRoom tolerated (Warn) — гонка
 // с параллельной смертью комнаты.

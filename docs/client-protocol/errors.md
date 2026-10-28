@@ -108,7 +108,7 @@ Resume идёт тем же admit-входом (`?token=` / первый ENet-п
 |--------|-----|-------|------------------|
 | `OpPeerDisconnected` | `0x80` | Peer ушёл в reconnect grace (может вернуться под тем же peerID) | Отметить peer как disconnected; state-запись уже удалена (remove-патч шёл раньше по тому же соединению) |
 | `OpPeerReconnected` | `0x81` | Peer воскрес под тем же peerID | Отметить peer как live; add-патч/full-state уже был |
-| `OpRoomClosed` | `0x82` | Комната закрыта сервером. Источники (P31): комната `authoritative-host` и ушёл хост (P29); `DELETE /rooms/:id`; остановка сервера (shutdown). **Payload пустой**, соединение **закрывается** за кадром | Комнаты больше нет — выход в lobby; reconnect/новый join невозможны (`0x43`) |
+| `OpRoomClosed` | `0x82` | Комната закрыта сервером. Источники (P31): no-migration деплой (`STATE_POLICY_ALLOW_MASTER_MIGRATION=false`, P33) и ушёл хост; `DELETE /rooms/:id`; остановка сервера (shutdown). **Payload пустой**, соединение **закрывается** за кадром | Комнаты больше нет — выход в lobby; reconnect/новый join невозможны (`0x43`) |
 
 Payload `0x80`/`0x81`: **`peerID u64` big-endian** (8 байт). У `0x82` payload пустой и после кадра сервер рвёт соединение — отправка кадра до разрыва **гарантирована** (P30, drain-aware `peer.Stop`: `Send` до `Close` в пределах drain-таймаута; до P30 на WS был best-effort). Обработчик обязателен, иначе закрытие видно просто как обрыв.
 

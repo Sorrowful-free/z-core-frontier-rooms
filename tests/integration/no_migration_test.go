@@ -6,21 +6,23 @@ import (
 	"testing"
 	"time"
 
+	statepolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy/state"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/env"
 )
 
-// TestIntegration_AuthoritativeHost_RoomDiesWithHost — P29: комната
-// "authoritative-host" умирает вместе с хостом: разрыв master'а → выжившему
-// уходит OpRoomClosed (0x82, payload пустой) и сервер закрывает соединение;
-// комната unregister'ится, слоты reservation ревокаются (grace не
-// применяется — resume невозможен).
-func TestIntegration_AuthoritativeHost_RoomDiesWithHost(t *testing.T) {
+// TestIntegration_NoMigration_RoomDiesWithHost — P33: в no-migration
+// деплое (STATE_POLICY_ALLOW_MASTER_MIGRATION=false, здесь —
+// env.WithStatePolicy) комната умирает вместе с хостом: разрыв master'а →
+// выжившему уходит OpRoomClosed (0x82, payload пустой) и сервер закрывает
+// соединение; комната unregister'ится, слоты reservation ревокаются (grace
+// не применяется — resume невозможен).
+func TestIntegration_NoMigration_RoomDiesWithHost(t *testing.T) {
 	t.Parallel()
 
-	e := env.New(t)
+	e := env.New(t, env.WithStatePolicy(statepolicy.StatePolicyConfig{AllowMasterMigration: false}))
 
-	roomID, hostToken := e.CreateRoomWithPolicy(t, "host", "authoritative-host")
+	roomID, hostToken := e.CreateRoom(t, "host")
 	hostConn := e.DialWS(t, "token="+hostToken)
 	e.WaitPeerCount(t, roomID, 1)
 

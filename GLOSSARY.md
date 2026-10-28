@@ -48,12 +48,12 @@ _Avoid_: election gap, missing master
 Отдельный Fiber-инстанс вне публичного API (`ADMIN_LISTEN_ADDR`, пустой дефолт = выключен): служебные endpoint'ы процесса, сейчас `GET /metrics` (prometheus exposition, P19). Не путать с REST control plane на `HTTP_ADDR` — там auth + rate limits, тут голая телеметрия для scrape.
 _Avoid_: metrics port, health server, internal API
 
-**Authoritative host** (room policy `authoritative-host`, P29):
-Политика комнаты при которой master-peer — единственный «хост» матча: его уход (leave И disconnect, grace не применяется) убивает комнату целиком — оставшимся `OpRoomClosed` (`0x82`) + disconnect, слоты ревокаются. Антоним — дефолтный `state` с master-миграцией.
+**Authoritative host** (режим деплоя, P33):
+Режим деплоя `STATE_POLICY_ALLOW_MASTER_MIGRATION=false`, при котором master-peer — единственный «хост» матча: его уход (leave И disconnect, grace не применяется) убивает комнату целиком — оставшимся `OpRoomClosed` (`0x82`) + disconnect, слоты ревокаются. Антоним — дефолтный режим с master-миграцией (`true`). До P33 был per-room полем `policy` в `POST /rooms`.
 _Avoid_: host-pinned, dedicated host, listen server flag
 
 **Host migration** (master migration):
-Перевыборы master'а при его уходе (`electAndAssign`, min ping → min PeerID) — есть только при полиси `state`; в `authoritative-host` миграции нет, комната умирает.
+Перевыборы master'а при его уходе (`electAndAssign`, min ping → min PeerID) — есть только при `STATE_POLICY_ALLOW_MASTER_MIGRATION=true`; в no-migration деплое миграции нет, комната умирает.
 _Avoid_: failover host, master handoff
 
 **Master election semantics**:
@@ -65,5 +65,5 @@ _Avoid_: quorum, leader election
 _Avoid_: graceful disconnect (это про ENet `DisconnectLater`), send flush, linger
 
 **Empty-room death** (смерть пустой комнаты, P31):
-Уничтожение комнаты, в которой не осталось ни живых peers, ни admitted-слотов reservation. Два подкласса: **emptied** — ушёл последний peer (transition-триггер `closeRoomIfEmpty` в `LeaveRoom`/`DisconnectPeer`/`EvictIdlePeers`/orphan-sweep revoke); **never-joined** — комната создана, но никто не вошёл (time-based `SweepEmptyRoomsUseCase`: kill когда все reserve истекли или слотов нет). Broadcast `0x82` не шлётся — слушать некому. Отличие от **authoritative-host death** (P29): та убивает комнату с живыми peers по уходу хоста и рассылает `0x82` оставшимся; общий teardown (`DeleteRoom` → `UnregisterRoom` → Stop), разные триггеры.
+Уничтожение комнаты, в которой не осталось ни живых peers, ни admitted-слотов reservation. Два подкласса: **emptied** — ушёл последний peer (transition-триггер `closeRoomIfEmpty` в `LeaveRoom`/`DisconnectPeer`/`EvictIdlePeers`/orphan-sweep revoke); **never-joined** — комната создана, но никто не вошёл (time-based `SweepEmptyRoomsUseCase`: kill когда все reserve истекли или слотов нет). Broadcast `0x82` не шлётся — слушать некому. Отличие от **authoritative host**-деплое (P33): та убивает комнату с живыми peers по уходу хоста и рассылает `0x82` оставшимся; общий teardown (`DeleteRoom` → `UnregisterRoom` → Stop), разные триггеры.
 _Avoid_: room GC, idle room cleanup, room reaper

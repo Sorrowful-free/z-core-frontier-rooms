@@ -15,13 +15,15 @@ import (
 	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
 )
 
-// newAuthHostHarness — та же сборка, что newHarness, но комната получает
-// AuthoritativeHostPolicy (P29) через продовую фабрику.
-func newAuthHostHarness(t *testing.T, roomID domain.RoomID, capacity int) *harness {
+// newNoMigrationHarness — та же сборка, что newHarness, но комната получает
+// StateRoomPolicy с allowMasterMigration=false (P33)
+// через продовую фабрику с StatePolicyConfig.
+func newNoMigrationHarness(t *testing.T, roomID domain.RoomID, capacity int) *harness {
 	t.Helper()
 
-	logger := stdlib.New("auth-host-policy-test")
-	policy := statepolicy.NewAuthoritativeHostPolicyFactory(logger, nil).CreateRoomPolicy()
+	logger := stdlib.New("no-migration-policy-test")
+	policy := statepolicy.NewStateRoomPolicyFactory(logger,
+		statepolicy.StatePolicyConfig{AllowMasterMigration: false}, nil).CreateRoomPolicy()
 	room := realtime.NewRoom(context.Background(), roomID, policy, capacity, nil, 0, logger)
 	if err := room.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -37,25 +39,27 @@ func newAuthHostHarness(t *testing.T, roomID domain.RoomID, capacity int) *harne
 	}
 }
 
-func TestAuthoritativeHostPolicyFactory_BuildsAuthHostPolicy(t *testing.T) {
+func TestStateRoomPolicyFactory_BuildsStateRoomPolicy(t *testing.T) {
 	t.Parallel()
 
 	logger := stdlib.New("policy-factory-test")
-	got := statepolicy.NewAuthoritativeHostPolicyFactory(logger, nil).CreateRoomPolicy()
-	if _, ok := got.(*statepolicy.AuthoritativeHostPolicy); !ok {
-		t.Fatalf("authoritative-host factory → %T, want *AuthoritativeHostPolicy", got)
-	}
-	if _, ok := statepolicy.NewStateRoomPolicyFactory(logger, nil).CreateRoomPolicy().(*statepolicy.StateRoomPolicy); !ok {
-		t.Fatal("state factory must keep producing plain *StateRoomPolicy")
+	for _, cfg := range []statepolicy.StatePolicyConfig{
+		{AllowMasterMigration: true},
+		{AllowMasterMigration: false},
+	} {
+		got := statepolicy.NewStateRoomPolicyFactory(logger, cfg, nil).CreateRoomPolicy()
+		if _, ok := got.(*statepolicy.StateRoomPolicy); !ok {
+			t.Fatalf("cfg %+v → %T, want *StateRoomPolicy", cfg, got)
+		}
 	}
 }
 
-// P29: уход master'а в authoritative-host комнате убивает её — OnLeave
+// P33: в no-migration деплое уход master'а убивает комнату — OnLeave
 // отвечает ErrRoomShouldClose без перевыборов и remove-патча.
-func TestAuthHostPolicy_MasterLeave_RoomShouldClose(t *testing.T) {
+func TestNoMigrationPolicy_MasterLeave_RoomShouldClose(t *testing.T) {
 	t.Parallel()
 
-	h := newAuthHostHarness(t, domain.RoomID(60), 4)
+	h := newNoMigrationHarness(t, domain.RoomID(60), 4)
 	master := testpeer.New(1, "master")
 	client := testpeer.New(2, "client")
 	mustJoin(t, h.room, master, client)
@@ -75,12 +79,12 @@ func TestAuthHostPolicy_MasterLeave_RoomShouldClose(t *testing.T) {
 	}
 }
 
-// P29: уход master'а из пустеющей комнаты (он был единственным) — тот же
+// P33: уход master'а из пустеющей комнаты (он был единственным) — тот же
 // death-сигнал: комнату закрывает teardown, а не живёт пустой.
-func TestAuthHostPolicy_LastPeerMasterLeave_RoomShouldClose(t *testing.T) {
+func TestNoMigrationPolicy_LastPeerMasterLeave_RoomShouldClose(t *testing.T) {
 	t.Parallel()
 
-	h := newAuthHostHarness(t, domain.RoomID(61), 4)
+	h := newNoMigrationHarness(t, domain.RoomID(61), 4)
 	master := testpeer.New(1, "master")
 	mustJoin(t, h.room, master)
 
@@ -89,12 +93,12 @@ func TestAuthHostPolicy_LastPeerMasterLeave_RoomShouldClose(t *testing.T) {
 	}
 }
 
-// P29: уход non-master — обычный путь StateRoomPolicy: remove-патч master'у,
+// P33: уход non-master — обычный путь StateRoomPolicy: remove-патч master'у,
 // ошибок нет, комната живёт.
-func TestAuthHostPolicy_NonMasterLeave_RegularStateFlow(t *testing.T) {
+func TestNoMigrationPolicy_NonMasterLeave_RegularStateFlow(t *testing.T) {
 	t.Parallel()
 
-	h := newAuthHostHarness(t, domain.RoomID(62), 4)
+	h := newNoMigrationHarness(t, domain.RoomID(62), 4)
 	master := testpeer.New(1, "master")
 	client := testpeer.New(2, "client")
 	mustJoin(t, h.room, master, client)

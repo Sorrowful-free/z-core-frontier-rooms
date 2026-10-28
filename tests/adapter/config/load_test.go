@@ -430,6 +430,60 @@ func TestLoadFromEnv_EnetOverrides(t *testing.T) {
 	}
 }
 
+// P33: STATE_POLICY_ALLOW_MASTER_MIGRATION — пусто → true (дефолт),
+// явные true/false, мусор → ошибка ParseBool.
+func TestLoadFromEnv_StatePolicyDefault(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	t.Setenv("STATE_POLICY_ALLOW_MASTER_MIGRATION", "")
+
+	cfg, err := appconfig.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv: %v", err)
+	}
+	if !cfg.StatePolicy.AllowMasterMigration {
+		t.Fatal("allow master migration: want true (default)")
+	}
+}
+
+func TestLoadFromEnv_StatePolicyExplicit(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		want bool
+	}{
+		{"true", true},
+		{"false", false},
+	} {
+		t.Run(tc.raw, func(t *testing.T) {
+			t.Setenv("ADMISSION_SECRET", validSecret())
+			setHTTPAuthDisabled(t)
+			t.Setenv("STATE_POLICY_ALLOW_MASTER_MIGRATION", tc.raw)
+
+			cfg, err := appconfig.LoadFromEnv()
+			if err != nil {
+				t.Fatalf("LoadFromEnv: %v", err)
+			}
+			if cfg.StatePolicy.AllowMasterMigration != tc.want {
+				t.Fatalf("allow master migration = %v, want %v", cfg.StatePolicy.AllowMasterMigration, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadFromEnv_StatePolicyInvalid(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	t.Setenv("STATE_POLICY_ALLOW_MASTER_MIGRATION", "not-a-bool")
+
+	_, err := appconfig.LoadFromEnv()
+	if err == nil {
+		t.Fatal("expected error for invalid STATE_POLICY_ALLOW_MASTER_MIGRATION")
+	}
+	if !strings.Contains(err.Error(), "STATE_POLICY_ALLOW_MASTER_MIGRATION") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 // P18: ENET_LISTEN_PORTS CSV (несколько host'ов).
 func TestLoadFromEnv_EnetListenPorts(t *testing.T) {
 	t.Setenv("ADMISSION_SECRET", validSecret())

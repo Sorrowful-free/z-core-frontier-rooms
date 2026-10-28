@@ -290,7 +290,7 @@ func TestDisconnectPeer_LeaveFails_StillStopsAndBroadcasts(t *testing.T) {
 	}
 }
 
-// P29: разрыв master'а в authoritative-host комнате — комната умирает сразу:
+// P33: разрыв master'а в no-migration комнате — комната умирает сразу:
 // grace/broadcast OpPeerDisconnected пропускаются, оставшимся — OpRoomClosed
 // и disconnect, комната unregister'ится, слоты ревокаются UnregisterRoom.
 func TestDisconnectPeer_RoomShouldClose_ClosesRoom(t *testing.T) {

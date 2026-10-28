@@ -14,8 +14,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
 
 // Fleet — флот виртуальных клиентов: ramp-создание комнат через REST,
@@ -35,11 +33,10 @@ type Fleet struct {
 	started time.Time // write-once в Run до старта горутин
 }
 
-// roomPlan — расписанная комната: размеры из ROOM_MIX, политика из POLICY_MIX.
+// roomPlan — расписанная комната: размеры из ROOM_MIX.
 type roomPlan struct {
 	capacity  int
 	occupancy int
-	policy    string // domain.RoomPolicyKind; "authoritative-host" → host-kill
 }
 
 // NewFleet собирает флот. log — live-прогресс (stdout из cmd/loadgen).
@@ -123,8 +120,8 @@ func pickRoomMix(rnd *rand.Rand, mix []RoomMixEntry) RoomMixEntry {
 	return mix[len(mix)-1]
 }
 
-// buildPlans — детерминированный план комнат: размер и политика раздаются
-// взвешенно-случайно из mix'ов.
+// buildPlans — детерминированный план комнат: размер раздаётся
+// взвешенно-случайно из ROOM_MIX.
 func (f *Fleet) buildPlans() []roomPlan {
 	plans := make([]roomPlan, 0, f.cfg.Rooms)
 	for i := 0; i < f.cfg.Rooms; i++ {
@@ -132,7 +129,6 @@ func (f *Fleet) buildPlans() []roomPlan {
 		plans = append(plans, roomPlan{
 			capacity:  e.Capacity,
 			occupancy: e.Occupancy,
-			policy:    pickWeighted(f.rnd, f.cfg.PolicyMix),
 		})
 	}
 	return plans
@@ -180,8 +176,7 @@ func (f *Fleet) spawnRoom(ctx context.Context, plan roomPlan) {
 		reconnectToken: hostTicket.ReconnectToken,
 		enetAddr:       f.cfg.EnetAddr,
 		enetPort:       hostTicket.EnetPort,
-		host:           true,
-	}, plan)
+	})
 
 	for i := 1; i < plan.occupancy; i++ {
 		nick := f.nextNick()
@@ -199,7 +194,7 @@ func (f *Fleet) spawnRoom(ctx context.Context, plan roomPlan) {
 			reconnectToken: ticket.ReconnectToken,
 			enetAddr:       f.cfg.EnetAddr,
 			enetPort:       ticket.EnetPort,
-		}, plan)
+		})
 	}
 }
 
@@ -225,7 +220,7 @@ func pickNetemGlobal(opts []weightedOption) string {
 	return opts[len(opts)-1].Value
 }
 
-func (f *Fleet) spawnPeer(ctx context.Context, spec peerSpec, plan roomPlan) {
+func (f *Fleet) spawnPeer(ctx context.Context, spec peerSpec) {
 	profile := pickNetemGlobal(f.cfg.NetemShare)
 	mark, err := netemMarkFor(profile)
 	if err != nil { // имена провалидированы в LoadConfigFromEnv — unreachable
@@ -237,7 +232,6 @@ func (f *Fleet) spawnPeer(ctx context.Context, spec peerSpec, plan roomPlan) {
 		f.m.netemAssign(profile)
 	}
 	p := newPeer(f.cfg, f.m, spec)
-	p.roomPolicy = plan.policy
 	f.peersMu.Lock()
 	f.peers = append(f.peers, p)
 	f.peersMu.Unlock()
@@ -281,9 +275,6 @@ func (f *Fleet) createRoom(ctx context.Context, plan roomPlan, nick string) (*ti
 	body := map[string]any{
 		"capacity":  plan.capacity,
 		"nick_name": nick,
-	}
-	if plan.policy != "" && plan.policy != string(domain.RoomPolicyKindState) {
-		body["policy"] = plan.policy
 	}
 	var out ticketResponse
 	if err := f.postJSON(ctx, "/rooms", body, http.StatusCreated, &out); err != nil {
@@ -353,28 +344,8 @@ func (f *Fleet) postJSON(ctx context.Context, path string, body any, wantStatus 
 
 // --- sustain -----------------------------------------------------------------
 
-// sustain — жизнь флота до DURATION (или ctx). Параллельно расписывает
-// убийства host-клиентов auth-комнат: одноразовый abrupt disconnect в
-// случайной точке окна, без reconnect (комната умирает, слоты ревокаются).
+// sustain — жизнь флота до DURATION (или ctx).
 func (f *Fleet) sustain(ctx context.Context) {
-	var killTimers []*time.Timer
-	for _, p := range f.peersSnapshot() {
-		if !p.host || p.roomPolicy != string(domain.RoomPolicyKindAuthoritativeHost) {
-			continue
-		}
-		delay := time.Duration(f.rnd.Float64() * float64(f.cfg.Duration))
-		pp := p
-		killTimers = append(killTimers, time.AfterFunc(delay, func() {
-			f.m.AuthRoomsDied.Add(1)
-			pp.closeForGood()
-		}))
-	}
-	defer func() {
-		for _, t := range killTimers {
-			t.Stop()
-		}
-	}()
-
 	timer := time.NewTimer(f.cfg.Duration)
 	defer timer.Stop()
 	select {

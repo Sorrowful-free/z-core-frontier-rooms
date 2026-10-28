@@ -15,7 +15,7 @@ import (
 func newTestRegistry(t *testing.T) *adapterregistry.RoomRegistry {
 	t.Helper()
 	logger := stdlib.New("test")
-	roomPolicyFactory := statepolicy.NewStateRoomPolicyFactory(logger, nil)
+	roomPolicyFactory := statepolicy.NewStateRoomPolicyFactory(logger, statepolicy.StatePolicyConfig{AllowMasterMigration: true}, nil)
 	roomFactory := adapterrealtime.NewRoomFactory(logger, roomPolicyFactory, 0, nil)
 	return adapterregistry.NewRoomRegistry(context.Background(), roomFactory, logger, nil)
 }
@@ -40,12 +40,12 @@ func TestCreateRoomDuplicateID(t *testing.T) {
 		capacity = 8
 	)
 
-	if _, err := reg.CreateRoom(context.Background(), id, capacity, nil, domain.RoomPolicyKindState); err != nil {
+	if _, err := reg.CreateRoom(context.Background(), id, capacity, nil); err != nil {
 		t.Fatalf("first CreateRoom: %v", err)
 	}
 	t.Cleanup(func() { _ = reg.DeleteRoom(context.Background(), id) })
 
-	_, err := reg.CreateRoom(context.Background(), id, capacity, nil, domain.RoomPolicyKindState)
+	_, err := reg.CreateRoom(context.Background(), id, capacity, nil)
 	if !errors.Is(err, domain.ErrRoomAlreadyExists) {
 		t.Fatalf("second CreateRoom err = %v, want ErrRoomAlreadyExists", err)
 	}

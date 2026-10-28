@@ -13,8 +13,8 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/reservation"
 )
 
-// closeRoom — teardown комнаты по запросу policy (ErrRoomShouldClose, P29,
-// authoritative-host: ушёл master — комната умирает). Те же шаги, что у
+// closeRoom — teardown комнаты по запросу policy (ErrRoomShouldClose, P33,
+// allowMasterMigration=false: ушёл master — комната умирает). Те же шаги, что у
 // DeleteRoom, плюс терминальный wire-кадр: всем оставшимся peer'ам шлётся
 // OpRoomClosed (0x82, payload пустой), затем unregister из registry, revoke
 // слотов reservation (UnregisterRoom покрывает и слот ушедшего master'а) и
