@@ -52,7 +52,72 @@ func TestOnMessage_GarbagePayload_ReturnsErrInRoomInvalidPayload(t *testing.T) {
 // Wire-конверт InputStatePatch валиден (DecodePatch успешен), но внутренний
 // value-patch противоречит состоянию input'а отправителя — ApplyPatch внутри
 // onClientPatchInput обязан завернуть ошибку в ErrInRoomInvalidPayload.
-func TestOnMessage_PatchInput_BrokenInnerPatch_ReturnsErrInRoomInvalidPayload(t *testing.T) {
+// Мягкий apply (P34): ошибкой остаётся только Updated на отсутствующем
+// ключе — Added на существующем это upsert, Removed на отсутствующем ignore.
+func TestOnMessage_PatchInput_UpdatedMissingKey_ReturnsErrInRoomInvalidPayload(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, domain.RoomID(71), 4)
+	master := testpeer.New(1, "master")
+	member := testpeer.New(2, "member")
+	mustJoin(t, h.room, master, member)
+
+	patch := &state.InputStatePatch{
+		Values: *state.NewMapStatePatch[state.ValueId, state.ValueState, state.ValueState](),
+	}
+	patch.Values.Updated[state.ValueId(7)] = state.ValueState([]byte{0x01})
+	payload, err := h.inputCodec.EncodePatch(patch)
+	if err != nil {
+		t.Fatalf("EncodePatch input: %v", err)
+	}
+	err = h.policy.OnMessage(events.RoomEvent{
+		PeerID: member.GetID(),
+		Frame:  domain.Frame{OpCode: state.OpCodePatchInput, Payload: payload},
+	})
+	if !errors.Is(err, domain.ErrInRoomInvalidPayload) {
+		t.Fatalf("err = %v, want ErrInRoomInvalidPayload", err)
+	}
+	if op := domain.InRoomErrorOpCode(err); op != domain.OpInRoomInvalidPayload {
+		t.Fatalf("InRoomErrorOpCode = %#x, want %#x", op, domain.OpInRoomInvalidPayload)
+	}
+}
+
+// PatchEntities от master'а с Updated на несуществующую entity — та же
+// строгая ветка мягкого apply: ErrInRoomInvalidPayload, state не тронут.
+func TestOnMessage_PatchEntities_UpdatedMissingEntity_ReturnsErrInRoomInvalidPayload(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, domain.RoomID(72), 4)
+	master := testpeer.New(1, "master")
+	member := testpeer.New(2, "member")
+	mustJoin(t, h.room, master, member)
+	shadow := mustJoinShadow(t, h)
+	mustConverge(t, h)
+
+	patch := state.NewMapStatePatch[state.EntityID, state.EntityState, state.EntityStatePatch]()
+	patch.Updated[state.EntityID(99)] = state.EntityStatePatch{}
+	payload, err := h.entitiesCodec.EncodePatch(patch)
+	if err != nil {
+		t.Fatalf("EncodePatch entities: %v", err)
+	}
+	err = h.policy.OnMessage(events.RoomEvent{
+		PeerID: master.GetID(),
+		Frame:  domain.Frame{OpCode: state.OpCodePatchEntities, Payload: payload},
+	})
+	if !errors.Is(err, domain.ErrInRoomInvalidPayload) {
+		t.Fatalf("err = %v, want ErrInRoomInvalidPayload", err)
+	}
+	if op := domain.InRoomErrorOpCode(err); op != domain.OpInRoomInvalidPayload {
+		t.Fatalf("InRoomErrorOpCode = %#x, want %#x", op, domain.OpInRoomInvalidPayload)
+	}
+	assertWeakInvariants(t, shadow.view)
+}
+
+// Мягкий apply (P34): Added на существующем ключе — upsert (значение
+// перезаписывается), Removed на отсутствующем — ignore. Нужно для
+// wire-семантики: реплика может опережать поток дельт (full state
+// джойнеру + эхо патчей отправителю).
+func TestOnMessage_PatchInput_SoftApply_UpsertAndIgnore(t *testing.T) {
 	t.Parallel()
 
 	newPatch := func(mut func(*state.MapStatePatch[state.ValueId, state.ValueState, state.ValueState])) *state.InputStatePatch {
@@ -67,13 +132,8 @@ func TestOnMessage_PatchInput_BrokenInnerPatch_ReturnsErrInRoomInvalidPayload(t 
 		name      string
 		seedInput bool
 		patch     *state.InputStatePatch
+		wantValue state.ValueState // ожидаемое значение Values[1] после apply
 	}{
-		{
-			name: "updated value not in input",
-			patch: newPatch(func(p *state.MapStatePatch[state.ValueId, state.ValueState, state.ValueState]) {
-				p.Updated[state.ValueId(7)] = state.ValueState([]byte{0x01})
-			}),
-		},
 		{
 			name: "removed value not in input",
 			patch: newPatch(func(p *state.MapStatePatch[state.ValueId, state.ValueState, state.ValueState]) {
@@ -86,13 +146,14 @@ func TestOnMessage_PatchInput_BrokenInnerPatch_ReturnsErrInRoomInvalidPayload(t 
 			patch: newPatch(func(p *state.MapStatePatch[state.ValueId, state.ValueState, state.ValueState]) {
 				p.Added[state.ValueId(1)] = state.ValueState([]byte{0xFF})
 			}),
+			wantValue: state.ValueState([]byte{0xFF}),
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			h := newHarness(t, domain.RoomID(71), 4)
+			h := newHarness(t, domain.RoomID(73), 4)
 			master := testpeer.New(1, "master")
 			member := testpeer.New(2, "member")
 			mustJoin(t, h.room, master, member)
@@ -116,15 +177,37 @@ func TestOnMessage_PatchInput_BrokenInnerPatch_ReturnsErrInRoomInvalidPayload(t 
 			if err != nil {
 				t.Fatalf("EncodePatch input: %v", err)
 			}
-			err = h.policy.OnMessage(events.RoomEvent{
+			if err := h.policy.OnMessage(events.RoomEvent{
 				PeerID: member.GetID(),
 				Frame:  domain.Frame{OpCode: state.OpCodePatchInput, Payload: payload},
-			})
-			if !errors.Is(err, domain.ErrInRoomInvalidPayload) {
-				t.Fatalf("err = %v, want ErrInRoomInvalidPayload", err)
+			}); err != nil {
+				t.Fatalf("OnMessage patch input: %v (soft apply не должен фейлить)", err)
 			}
-			if op := domain.InRoomErrorOpCode(err); op != domain.OpInRoomInvalidPayload {
-				t.Fatalf("InRoomErrorOpCode = %#x, want %#x", op, domain.OpInRoomInvalidPayload)
+
+			master.Clear()
+			if err := h.policy.OnTickFullState(); err != nil {
+				t.Fatalf("OnTickFullState: %v", err)
+			}
+			full := master.EventsByOpcode(state.OpCodeFullState)
+			if len(full) != 1 {
+				t.Fatalf("master full states = %d, want 1", len(full))
+			}
+			got, err := h.roomCodec.Decode(full[0].Frame.Payload)
+			if err != nil {
+				t.Fatalf("Decode full state: %v", err)
+			}
+			input, ok := got.Inputs[member.GetID()]
+			if tc.wantValue == nil {
+				if ok && len(input.Values) != 0 {
+					t.Fatalf("member input values = %#v, want empty/absent", input.Values)
+				}
+				return
+			}
+			if !ok {
+				t.Fatal("member input missing after upsert")
+			}
+			if v := input.Values[state.ValueId(1)]; !v.Equals(&tc.wantValue) {
+				t.Fatalf("member input value = %v, want %v (upsert)", []byte(v), []byte(tc.wantValue))
 			}
 		})
 	}

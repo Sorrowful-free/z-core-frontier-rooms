@@ -4,49 +4,104 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/stdlib"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/codec"
+	statepolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy/state"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
+	portrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/mocks"
 	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
+	"go.uber.org/mock/gomock"
 )
 
-// (shadow-наблюдатель не подключается: тест ассертит точный состав
-// state.Peers — «unchanged {1,2}»; лишний peer ломал бы premise.)
-func TestOnLeave_FailedPatchSend_StateAndMasterUntouched(t *testing.T) {
+// Откат OnLeave (P34): staged-мутации нет — записи удаляются из p.state
+// напрямую, а при падении dispatch (election внутри evPeerLeft) Peers и
+// input уходящего восстанавливаются дешёвым ручным restore + master.restore.
+// С реальной Room dispatch не падает (GetPeer отвечает только
+// ErrPeerNotFound → stale-кандидат пропускается, не фейлит выборы) —
+// сценарий строится на mock room.
+func TestOnLeave_FailedElection_StateAndMasterRestored(t *testing.T) {
 	t.Parallel()
 
-	h := newHarness(t, domain.RoomID(50), 4)
+	ctrl := gomock.NewController(t)
+	room := mocks.NewMockRoom(ctrl)
+
+	var sent []events.PeerEvent
+	room.EXPECT().GetID().Return(domain.RoomID(50)).AnyTimes()
+	room.EXPECT().GetCapacity().Return(int8(4)).AnyTimes()
+	room.EXPECT().Send(gomock.Any()).DoAndReturn(func(ev events.PeerEvent) error {
+		sent = append(sent, ev)
+		return nil
+	}).AnyTimes()
+
 	master := testpeer.New(1, "master")
 	member := testpeer.New(2, "member")
-	if err := h.room.Join(master); err != nil {
-		t.Fatalf("Join master: %v", err)
-	}
-	if err := h.room.Join(member); err != nil {
-		t.Fatalf("Join member: %v", err)
-	}
-	master.Clear()
-	member.Clear()
+	room.EXPECT().GetPeer(master.GetID()).Return(master, nil).AnyTimes()
+	// Первый вызов GetPeer(member) — election внутри evPeerLeft — падает,
+	// дальше member снова доступен.
+	memberCalls := 0
+	room.EXPECT().GetPeer(member.GetID()).DoAndReturn(func(domain.PeerID) (portrealtime.Peer, error) {
+		memberCalls++
+		if memberCalls == 1 {
+			return nil, errElectionFailed
+		}
+		return member, nil
+	}).AnyTimes()
 
-	member.SetDeliverErr(errDeliverFailed)
-
-	if err := h.room.Leave(master); err == nil {
-		t.Fatal("Leave: want error from failed leave patch broadcast")
+	policy := statepolicy.NewStateRoomPolicy(
+		stdlib.New("state-policy-test"),
+		codec.NewRoomStateCodec(),
+		codec.NewEntitiesStateCodec(),
+		codec.NewInputStateCodec(),
+		codec.NewRpcStateCodec(),
+		time.Hour,
+		time.Hour,
+	)
+	if err := policy.OnStart(room); err != nil {
+		t.Fatalf("OnStart: %v", err)
 	}
-	if h.room.HasPeer(master.GetID()) {
-		t.Fatal("master must be removed from room peers even when OnLeave fails")
+	if err := policy.OnJoin(master); err != nil {
+		t.Fatalf("OnJoin master: %v", err)
+	}
+	if err := policy.OnJoin(member); err != nil {
+		t.Fatalf("OnJoin member: %v", err)
 	}
 
-	member.SetDeliverErr(nil)
-	if err := h.policy.OnTickFullState(); err != nil {
+	// Input master'а — проверка, что запись Inputs уходящего тоже
+	// восстанавливается при откате.
+	inputPatch := &state.InputStatePatch{
+		Values: *state.NewMapStatePatch[state.ValueId, state.ValueState, state.ValueState](),
+	}
+	inputPatch.Values.Added[state.ValueId(1)] = state.ValueState([]byte{0xCD})
+	payload, err := codec.NewInputStateCodec().EncodePatch(inputPatch)
+	if err != nil {
+		t.Fatalf("EncodePatch input: %v", err)
+	}
+	if err := policy.OnMessage(events.RoomEvent{
+		PeerID: master.GetID(),
+		Frame:  domain.Frame{OpCode: state.OpCodePatchInput, Payload: payload},
+	}); err != nil {
+		t.Fatalf("OnMessage patch input: %v", err)
+	}
+
+	err = policy.OnLeave(master)
+	if !errors.Is(err, errElectionFailed) {
+		t.Fatalf("OnLeave err = %v, want errElectionFailed", err)
+	}
+
+	// Откат: state.Peers и Inputs как до leave, master не сменился.
+	if err := policy.OnTickFullState(); err != nil {
 		t.Fatalf("OnTickFullState: %v", err)
 	}
-
-	full := member.EventsByOpcode(state.OpCodeFullState)
-	if len(full) != 1 {
-		t.Fatalf("member full states = %d, want 1", len(full))
+	fulls := testpeer.FilterByOpcode(sent, state.OpCodeFullState)
+	if len(fulls) == 0 {
+		t.Fatal("want broadcast full state")
 	}
-	got, err := h.roomCodec.Decode(full[0].Frame.Payload)
+	got, err := codec.NewRoomStateCodec().Decode(fulls[len(fulls)-1].Frame.Payload)
 	if err != nil {
 		t.Fatalf("Decode full state: %v", err)
 	}
@@ -55,6 +110,9 @@ func TestOnLeave_FailedPatchSend_StateAndMasterUntouched(t *testing.T) {
 	}
 	if !got.Peers[domain.PeerID(1)].IsMaster {
 		t.Fatal("master flag must stay on peer 1 after failed OnLeave")
+	}
+	if _, ok := got.Inputs[domain.PeerID(1)]; !ok {
+		t.Fatal("master input must be restored after failed OnLeave")
 	}
 }
 

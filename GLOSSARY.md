@@ -64,6 +64,10 @@ _Avoid_: quorum, leader election
 Слив `peer.outbound` при `Peer.Stop` до закрытия соединения: по отмене ctx write-loop дочитывает закоммиченные кадры и вызывает `Send`, `Stop` ждёт слива в пределах `TRANSPORT_PEER_CLOSE_DRAIN_TIMEOUT` (`0` — выключен) и только затем `conn.Close`. Гарантия — «`Send` до `Close`», не «клиент получил». Не путать с **grace window**: grace — уровень reservation (воскрешение peerID после разрыва), drain — транспортный flush последних кадров на прощание.
 _Avoid_: graceful disconnect (это про ENet `DisconnectLater`), send flush, linger
 
+**Tick-coalesced patch** (модель эмиссии state, P34):
+Все дельты `RoomState` копятся в `p.state` и уходят одним `OpCodePatchState` на patch-тике (`patchStateInterval`, default 50ms) — единственный регулярный эмиттер; per-message рассылки нет. Broadcast универсальный (publisher получает эхо своих дельт, apply идемпотентен — мягкий: `Added`→upsert, `Removed`→ignore). Immediate-исключение одно: full state джойнеру на join.
+_Avoid_: per-message replication, delta broadcast, push diff
+
 **Empty-room death** (смерть пустой комнаты, P31):
 Уничтожение комнаты, в которой не осталось ни живых peers, ни admitted-слотов reservation. Два подкласса: **emptied** — ушёл последний peer (transition-триггер `closeRoomIfEmpty` в `LeaveRoom`/`DisconnectPeer`/`EvictIdlePeers`/orphan-sweep revoke); **never-joined** — комната создана, но никто не вошёл (time-based `SweepEmptyRoomsUseCase`: kill когда все reserve истекли или слотов нет). Broadcast `0x82` не шлётся — слушать некому. Отличие от **authoritative host**-деплое (P33): та убивает комнату с живыми peers по уходу хоста и рассылает `0x82` оставшимся; общий teardown (`DeleteRoom` → `UnregisterRoom` → Stop), разные триггеры.
 _Avoid_: room GC, idle room cleanup, room reaper

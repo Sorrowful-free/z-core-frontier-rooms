@@ -1,72 +1,105 @@
 package state_test
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/stdlib"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/codec"
+	statepolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy/state"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/events"
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
+	"github.com/Sorrowful-free/z-core-frontier-rooms/tests/mocks"
 	testpeer "github.com/Sorrowful-free/z-core-frontier-rooms/tests/testutil/peer"
+	"go.uber.org/mock/gomock"
 )
 
-// Два peer выходят из room при сломанной доставке patch survivor'у —
-// их записи остаются в state.Peers (stale). Один patch-тик обязан
-// вычистить оба и переназначить master на оставшийся peer.
+// P34: prune-половина бывшего refreshPeerPings живёт на patch-тике
+// (pruneStalePeers): записи peers, которых уже нет в room (GetPeer →
+// ErrPeerNotFound), вычищаются за один тик, master переизбирается.
+// С реальной Room stale-запись не получить (leave вычищает state
+// атомарно с изъятием из r.peers) — фикстура на mock room.
 func TestOnTickPatchState_PrunesAllStalePeersAndReelectsMaster(t *testing.T) {
 	t.Parallel()
 
-	h := newHarness(t, domain.RoomID(60), 4)
+	ctrl := gomock.NewController(t)
+	room := mocks.NewMockRoom(ctrl)
+
+	var sent []events.PeerEvent
+	room.EXPECT().GetID().Return(domain.RoomID(60)).AnyTimes()
+	room.EXPECT().GetCapacity().Return(int8(4)).AnyTimes()
+	room.EXPECT().Send(gomock.Any()).DoAndReturn(func(ev events.PeerEvent) error {
+		sent = append(sent, ev)
+		return nil
+	}).AnyTimes()
+
 	master := testpeer.New(1, "master")
 	member := testpeer.New(2, "member")
 	survivor := testpeer.New(3, "survivor")
-	mustJoin(t, h.room, master, member)
-	if err := h.room.Join(survivor); err != nil {
-		t.Fatalf("Join survivor: %v", err)
-	}
+	// master и member выпали из room — записи в state остались (stale);
+	// survivor жив — ему достаётся переизбрание.
+	room.EXPECT().GetPeer(master.GetID()).
+		Return(nil, fmt.Errorf("%w: %d", domain.ErrPeerNotFound, master.GetID())).AnyTimes()
+	room.EXPECT().GetPeer(member.GetID()).
+		Return(nil, fmt.Errorf("%w: %d", domain.ErrPeerNotFound, member.GetID())).AnyTimes()
+	room.EXPECT().GetPeer(survivor.GetID()).Return(survivor, nil).AnyTimes()
 
-	survivor.SetDeliverErr(errDeliverFailed)
-
-	if err := h.room.Leave(master); err == nil {
-		t.Fatal("Leave master: want error from failed leave patch broadcast")
+	policy := statepolicy.NewStateRoomPolicy(
+		stdlib.New("state-policy-test"),
+		codec.NewRoomStateCodec(),
+		codec.NewEntitiesStateCodec(),
+		codec.NewInputStateCodec(),
+		codec.NewRpcStateCodec(),
+		time.Hour,
+		time.Hour,
+	)
+	if err := policy.OnStart(room); err != nil {
+		t.Fatalf("OnStart: %v", err)
 	}
-	if err := h.room.Leave(member); err == nil {
-		t.Fatal("Leave member: want error from failed leave patch broadcast")
+	if err := policy.OnJoin(master); err != nil {
+		t.Fatalf("OnJoin master: %v", err)
 	}
-	if h.room.HasPeer(master.GetID()) || h.room.HasPeer(member.GetID()) {
-		t.Fatal("left peers must be removed from room even when OnLeave fails")
+	if err := policy.OnJoin(member); err != nil {
+		t.Fatalf("OnJoin member: %v", err)
 	}
+	if err := policy.OnJoin(survivor); err != nil {
+		t.Fatalf("OnJoin survivor: %v", err)
+	}
+	sent = nil
 
-	survivor.SetDeliverErr(nil)
-	survivor.Clear()
-
-	if err := h.policy.OnTickPatchState(); err != nil {
+	if err := policy.OnTickPatchState(); err != nil {
 		t.Fatalf("OnTickPatchState: %v", err)
 	}
 
-	patches := survivor.EventsByOpcode(state.OpCodePatchState)
+	// Один тик: stale {1,2} вычищены из state, survivor избран — на wire
+	// это Added с is_master (prevState ещё не видел ни одной записи).
+	patches := testpeer.FilterByOpcode(sent, state.OpCodePatchState)
 	if len(patches) != 1 {
-		t.Fatalf("survivor patches = %d, want 1", len(patches))
+		t.Fatalf("patches = %d, want 1", len(patches))
 	}
-	patch, err := h.roomCodec.DecodePatch(patches[0].Frame.Payload)
+	patch, err := codec.NewRoomStateCodec().DecodePatch(patches[0].Frame.Payload)
 	if err != nil {
 		t.Fatalf("DecodePatch: %v", err)
 	}
-	if len(patch.Peers.Removed) != 2 {
-		t.Fatalf("peers.removed = %#v, want both stale peers {1,2} in one tick", patch.Peers.Removed)
+	added, ok := patch.Peers.Added[survivor.GetID()]
+	if !ok || !added.IsMaster {
+		t.Fatalf("peers.added[%d] = %#v ok=%v, want IsMaster=true", survivor.GetID(), added, ok)
 	}
-	updated, ok := patch.Peers.Updated[survivor.GetID()]
-	if !ok || updated.IsMaster == nil || !*updated.IsMaster {
-		t.Fatalf("peers.updated[%d] = %#v ok=%v, want IsMaster=true", survivor.GetID(), updated, ok)
+	if len(patch.Peers.Added) != 1 {
+		t.Fatalf("peers.added = %#v, want only survivor (stale не рекламируются)", patch.Peers.Added)
 	}
 
-	survivor.Clear()
-	if err := h.policy.OnTickFullState(); err != nil {
+	sent = nil
+	if err := policy.OnTickFullState(); err != nil {
 		t.Fatalf("OnTickFullState: %v", err)
 	}
-	full := survivor.EventsByOpcode(state.OpCodeFullState)
-	if len(full) != 1 {
-		t.Fatalf("survivor full states = %d, want 1", len(full))
+	fulls := testpeer.FilterByOpcode(sent, state.OpCodeFullState)
+	if len(fulls) != 1 {
+		t.Fatalf("full states = %d, want 1", len(fulls))
 	}
-	got, err := h.roomCodec.Decode(full[0].Frame.Payload)
+	got, err := codec.NewRoomStateCodec().Decode(fulls[0].Frame.Payload)
 	if err != nil {
 		t.Fatalf("Decode full state: %v", err)
 	}
@@ -75,5 +108,44 @@ func TestOnTickPatchState_PrunesAllStalePeersAndReelectsMaster(t *testing.T) {
 	}
 	if !got.Peers[survivor.GetID()].IsMaster {
 		t.Fatal("survivor must be master after stale master pruned")
+	}
+}
+
+// P34-сплит: ping перечитывается только на full-тике и едет в full-кадре.
+// Patch-тик ping в state не пишет — patch-diff его не видит и не несёт.
+func TestPeerPings_RefreshedOnFullTickOnly(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, domain.RoomID(61), 4)
+	master := testpeer.New(1, "master")
+	member := testpeer.New(2, "member")
+	mustJoin(t, h.room, master, member)
+	mustConverge(t, h)
+	master.Clear()
+	member.Clear()
+
+	member.SetPing(123)
+
+	if err := h.policy.OnTickPatchState(); err != nil {
+		t.Fatalf("OnTickPatchState: %v", err)
+	}
+	if got := master.Snapshot(); len(got) != 0 {
+		t.Fatalf("master events on patch tick = %v, want none (ping не едет в patch)",
+			testpeer.Opcodes(got))
+	}
+
+	if err := h.policy.OnTickFullState(); err != nil {
+		t.Fatalf("OnTickFullState: %v", err)
+	}
+	full := master.EventsByOpcode(state.OpCodeFullState)
+	if len(full) != 1 {
+		t.Fatalf("master full states = %d, want 1", len(full))
+	}
+	got, err := h.roomCodec.Decode(full[0].Frame.Payload)
+	if err != nil {
+		t.Fatalf("Decode full state: %v", err)
+	}
+	if ping := got.Peers[member.GetID()].Ping; ping != 123 {
+		t.Fatalf("member ping in full state = %d, want 123", ping)
 	}
 }

@@ -160,7 +160,7 @@ WS delivery не различает — для отладки всё implicit re
 
 ## RTT (ping)
 
-На ENet сервер берёт `peer.GetRoundTripTime()` (мс) → поле `ping` в peer state room patch.  
+На ENet сервер берёт `peer.GetRoundTripTime()` (мс) → поле `ping` в peer state; обновляется и едет только в `0x01` FullState (~4 s, P34), patch'и ping не несут.  
 Отдельного игрового ping OpCode **нет**.
 
 ---

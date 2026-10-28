@@ -61,17 +61,40 @@ func mustJoinBench(b *testing.B, room *realtime.Room, peers ...*testpeer.Peer) {
 	}
 }
 
-func benchEncodeInputPatch(b *testing.B, inputCodec *codec.InputStateCodec) []byte {
+// benchEncodeInputPatch — Updated-пейлоад: Added-патч по существующему
+// ключу — upsert, а чередование двух значений гарантирует настоящую
+// мутацию на каждой итерации (иначе замер уходит в error/no-op ветку —
+// «Added-ловушка», см. probe_perf_bench_test.go).
+func benchEncodeInputPatch(b *testing.B, inputCodec *codec.InputStateCodec, val byte) []byte {
 	b.Helper()
 	inputPatch := &state.InputStatePatch{
 		Values: *state.NewMapStatePatch[state.ValueId, state.ValueState, state.ValueState](),
 	}
-	inputPatch.Values.Added[state.ValueId(1)] = state.ValueState([]byte{0xAB})
+	inputPatch.Values.Updated[state.ValueId(1)] = state.ValueState([]byte{val})
 	payload, err := inputCodec.EncodePatch(inputPatch)
 	if err != nil {
 		b.Fatalf("EncodePatch input: %v", err)
 	}
 	return payload
+}
+
+// benchSeedInput — кладёт Inputs[peerID] с ключом 1 через FullInput,
+// чтобы Updated-патчи шли по валидному пути.
+func benchSeedInput(b *testing.B, h *benchHarness, peerID domain.PeerID) {
+	b.Helper()
+	full := &state.InputState{Values: state.MapState[state.ValueId, state.ValueState]{
+		state.ValueId(1): state.ValueState([]byte{0}),
+	}}
+	payload, err := h.inputCodec.Encode(full)
+	if err != nil {
+		b.Fatalf("Encode input seed: %v", err)
+	}
+	if err := h.policy.OnMessage(events.RoomEvent{
+		PeerID: peerID,
+		Frame:  domain.Frame{OpCode: state.OpCodeFullInput, Payload: payload},
+	}); err != nil {
+		b.Fatalf("seed full input: %v", err)
+	}
 }
 
 func benchEncodeEntitiesAddPatch(b *testing.B, entitiesCodec *codec.EntitiesStateCodec) []byte {
@@ -96,11 +119,11 @@ func benchEncodeEntitiesAddPatch(b *testing.B, entitiesCodec *codec.EntitiesStat
 	return payload
 }
 
-func benchEncodeEntitiesUpdatePatch(b *testing.B, entitiesCodec *codec.EntitiesStateCodec) []byte {
+func benchEncodeEntitiesUpdatePatch(b *testing.B, entitiesCodec *codec.EntitiesStateCodec, val byte) []byte {
 	b.Helper()
 
 	valuePatch := state.NewMapStatePatch[state.ValueId, state.ValueState, state.ValueState]()
-	valuePatch.Updated[state.ValueId(1)] = state.ValueState([]byte{0xFF})
+	valuePatch.Updated[state.ValueId(1)] = state.ValueState([]byte{val})
 
 	compPatch := state.NewMapStatePatch[state.ComponentID, state.ComponentState, state.ComponentStatePatch]()
 	compPatch.Updated[state.ComponentID(1)] = state.ComponentStatePatch{

@@ -2,6 +2,7 @@ package state
 
 import (
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
@@ -94,7 +95,7 @@ func (p *StateRoomPolicy) TickIntervals() (time.Duration, time.Duration) {
 func (p *StateRoomPolicy) syncRoomStateFromRoom(room realtime.Room) {
 	rs := state.NewRoomState(room.GetID(), room.GetCapacity())
 	p.state = *rs
-	p.prevState = *rs.Clone()
+	p.prevState = *rs.Snapshot()
 }
 
 func (p *StateRoomPolicy) OnJoin(peer realtime.Peer) error {
@@ -111,18 +112,31 @@ func (p *StateRoomPolicy) OnLeave(peer realtime.Peer) error {
 	if !p.allowMasterMigration && p.master.isMaster(peer.GetID()) {
 		return fmt.Errorf("%w: %d", domain.ErrRoomShouldClose, peer.GetID())
 	}
-	return p.prepareAndSendRoomStatePatch(func(roomState *state.RoomState) error {
-		peerID := peer.GetID()
-		peerState, ok := roomState.Peers[peerID]
-		if !ok {
-			return fmt.Errorf("%w: %d", domain.ErrPeerNotFound, peerID)
+	peerID := peer.GetID()
+	peerState, ok := p.state.Peers[peerID]
+	if !ok {
+		return fmt.Errorf("%w: %d", domain.ErrPeerNotFound, peerID)
+	}
+	oldMaster := p.master.current()
+	// Дешёвый откат без deep-clone staging: shallow-снапшот Peers +
+	// запись input уходящего; при ошибке dispatch всё восстанавливается
+	// разом (leave-дельта уходит patch-тиком, send-фейлов на этом пути нет).
+	savedPeers := maps.Clone(p.state.Peers)
+	savedInput, hasInput := p.state.Inputs[peerID]
+	delete(p.state.Peers, peerID)
+	delete(p.state.Inputs, peerID)
+	// Последствия ухода для master решает машина: ушёл не-master -
+	// перехода нет; master в пустой комнате - masterless; иначе перевыборы.
+	if err := p.master.dispatch(masterEvent{kind: evPeerLeft, leftIsMaster: peerState.IsMaster}, p.room, &p.state); err != nil {
+		p.state.Peers = savedPeers
+		if hasInput {
+			p.state.Inputs[peerID] = savedInput
 		}
-		delete(roomState.Peers, peerID)
-		delete(roomState.Inputs, peerID)
-		// Последствия ухода для master решает машина: ушёл не-master -
-		// перехода нет; master в пустой комнате - masterless; иначе перевыборы.
-		return p.master.dispatch(masterEvent{kind: evPeerLeft, leftIsMaster: peerState.IsMaster}, p.room, roomState)
-	})
+		p.master.restore(oldMaster)
+		return err
+	}
+	p.master.assigned()
+	return nil
 }
 
 func (p *StateRoomPolicy) OnMessage(roomEvent events.RoomEvent) error {

@@ -231,9 +231,10 @@ func assertStrongInvariants(t *testing.T, sh *shadowView, room portrealtime.Room
 	}
 }
 
-// settleTick — один patch-тик: refreshPeerPings закрывает prune-окно
-// (stale-записи вычищены, master переизбран) — дальше допустимы сильные
-// проверки. Ошибка broadcast — легальный fault mode: логируем, не падаем.
+// settleTick — один patch-тик: pruneStalePeers закрывает prune-окно
+// (stale-записи вычищены, master переизбран) и выносит накопленную
+// дельту broadcast'ом — дальше допустимы сильные проверки. Ошибка
+// broadcast — легальный fault mode: логируем, не падаем.
 func settleTick(t *testing.T, h *harness, sh *shadowView) *state.RoomState {
 	t.Helper()
 	if err := h.policy.OnTickPatchState(); err != nil {

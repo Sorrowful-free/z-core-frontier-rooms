@@ -21,9 +21,9 @@ import (
 // Триггеры (join/leave/tick/rpc) не знают ритуала выборов: они эмитят
 // masterEvent, а dispatch решает переход - election, IsMaster-флаги
 // roomState и лог masterless-эпизода живут в одном месте. Переходы,
-// исполняемые внутри stage-then-commit (join, prepareAndSendRoomStatePatch),
-// мутируют m.peer до commit-точки; владелец транзакции откатывает его
-// через restore на ветках ошибок.
+// исполняемые внутри stage-then-commit (join-snapshot, ручной откат
+// OnLeave), мутируют m.peer до commit-точки; владелец транзакции
+// откатывает его через restore на ветках ошибок.
 type masterMachine struct {
 	peer             realtime.Peer
 	masterlessLogged bool

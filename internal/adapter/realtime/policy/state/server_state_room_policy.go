@@ -11,15 +11,26 @@ import (
 )
 
 func (p *StateRoomPolicy) OnTickFullState() error {
+	// Ping едет в full-кадре: свежие значения пишутся до encode, а
+	// commitPrevState после send закрывает и их — patch-diff ping
+	// не видит и не несёт.
+	if err := p.refreshPeerPings(); err != nil {
+		return fmt.Errorf("refresh peer pings: %w", err)
+	}
 	if err := p.sendFullState(&p.state); err != nil {
 		return fmt.Errorf("send full state: %w", err)
 	}
 	return nil
 }
 
+// OnTickPatchState — единственный регулярный эмиттер OpCodePatchState
+// (tick-coalesced эмиссия, P34): все дельты, накопленные в p.state с
+// прошлого коммита (join/leave/election/клиентские сообщения), уходят
+// одним broadcast всем без исключений — publisher получает эхо своих
+// дельт, client-side apply идемпотентен.
 func (p *StateRoomPolicy) OnTickPatchState() error {
-	if err := p.refreshPeerPings(); err != nil {
-		return fmt.Errorf("refresh peer pings: %w", err)
+	if err := p.pruneStalePeers(); err != nil {
+		return fmt.Errorf("prune stale peers: %w", err)
 	}
 	patch, err := p.prevState.MakePatch(&p.state)
 	if err != nil {
@@ -31,21 +42,43 @@ func (p *StateRoomPolicy) OnTickPatchState() error {
 	return p.sendPatchState(patch)
 }
 
+// refreshPeerPings переносит живые ping из room в state. Выполняется на
+// full-тике до sendFullState — каденция ping = fullStateInterval, отдельного
+// механизма нет. Stale-записи пропускаются: их зачистка и master-переходы
+// живут в pruneStalePeers на patch-тике.
 func (p *StateRoomPolicy) refreshPeerPings() error {
-	var stale []domain.PeerID
 	for peerID, peerState := range p.state.Peers {
 		peer, err := p.room.GetPeer(peerID)
 		if err != nil {
 			// stale - только когда peer реально отсутствует в room;
 			// прочие ошибки GetPeer не повод выкидывать peer из state.
 			if errors.Is(err, domain.ErrPeerNotFound) {
-				stale = append(stale, peerID)
 				continue
 			}
 			return fmt.Errorf("get peer %d: %w", peerID, err)
 		}
 		peerState.Ping = peer.Ping()
 		p.state.Peers[peerID] = peerState
+	}
+	return nil
+}
+
+// pruneStalePeers вычищает записи peers, которых уже нет в room (stale —
+// только ErrPeerNotFound), и эмитит evTickPrune: машина решает, нужен ли
+// переход master (вычищен или отсутствует при живых peers). Привязан к
+// patch-тику — masterless recovery держит каденцию patchStateInterval,
+// а не fullStateInterval.
+func (p *StateRoomPolicy) pruneStalePeers() error {
+	var stale []domain.PeerID
+	for peerID := range p.state.Peers {
+		_, err := p.room.GetPeer(peerID)
+		if err != nil {
+			if errors.Is(err, domain.ErrPeerNotFound) {
+				stale = append(stale, peerID)
+				continue
+			}
+			return fmt.Errorf("get peer %d: %w", peerID, err)
+		}
 	}
 
 	// Сначала вычищаем все stale-записи, потом один раз перевыборы master -
@@ -66,13 +99,14 @@ func (p *StateRoomPolicy) refreshPeerPings() error {
 
 func (p *StateRoomPolicy) joinPeerAndSyncState(peer realtime.Peer) error {
 	peerID := peer.GetID()
-	newState := p.state.Clone()
+	// Encode-only view: машина пишет запись peer в shallow-снапшот (его
+	// Peers — отдельная мапа), p.state не трогается до commit-точки.
+	view := p.state.Snapshot()
 
 	oldMaster := p.master.current()
 	committed := false
 	// Событие join может перебрать master до commit-точки (первый peer
-	// пустой комнаты) - на всех ветках ошибок откатываем, как в
-	// prepareAndSendRoomStatePatch.
+	// пустой комнаты) - на всех ветках ошибок откатываем.
 	defer func() {
 		if !committed {
 			p.master.restore(oldMaster)
@@ -80,29 +114,20 @@ func (p *StateRoomPolicy) joinPeerAndSyncState(peer realtime.Peer) error {
 	}()
 
 	// Машина пишет запись peer в staged-state и решает его IsMaster-флаг.
-	if err := p.master.dispatch(masterEvent{kind: evPeerJoined, peer: peer}, p.room, newState); err != nil {
+	if err := p.master.dispatch(masterEvent{kind: evPeerJoined, peer: peer}, p.room, view); err != nil {
 		return err
 	}
 
-	if err := p.deliverFullStateToPeer(peer, newState); err != nil {
+	if err := p.deliverFullStateToPeer(peer, view); err != nil {
 		return fmt.Errorf("send full state to peer %d: %w", peerID, err)
 	}
 
-	roomPatch, err := p.state.MakePatch(newState)
-	if err != nil {
-		return fmt.Errorf("make patch on join: %w", err)
-	}
-	if roomPatch != nil {
-		if err := p.sendPatchStateExclude(peerID, roomPatch); err != nil {
-			return fmt.Errorf("send patch state on join: %w", err)
-		}
-	}
-
-	p.state = *newState
+	// Commit — точечная запись в p.state; join-дельта остальным доезжает
+	// ближайшим patch-тиком (prevState здесь не коммитим).
+	p.state.Peers[peerID] = view.Peers[peerID]
 	committed = true
 	// Post-commit: join мог перевести masterless -> masterSet и закрыть эпизод.
 	p.master.assigned()
-	p.commitPrevState()
 	return nil
 }
 
@@ -133,6 +158,7 @@ func (p *StateRoomPolicy) sendFullStateToPeer(peerID domain.PeerID, full *state.
 
 // deliverFullStateToPeer шлёт full state напрямую в peer: на момент OnJoin
 // peer ещё не вставлен в r.peers, поэтому room.Send по peerID не находит его.
+// Единственная immediate-эмиссия вне тиков — джойнеру нельзя ждать full-тик.
 func (p *StateRoomPolicy) deliverFullStateToPeer(peer realtime.Peer, full *state.RoomState) error {
 	payload, err := p.stateCodec.Encode(full)
 	if err != nil {
@@ -147,79 +173,29 @@ func (p *StateRoomPolicy) deliverFullStateToPeer(peer realtime.Peer, full *state
 	})
 }
 
-func (p *StateRoomPolicy) publishRoomStateChange(old *state.RoomState, exclude domain.PeerID) error {
-	roomPatch, err := old.MakePatch(&p.state)
-	if err != nil {
-		return err
-	}
-	if roomPatch == nil {
-		return nil
-	}
-	if err := p.sendPatchStateExclude(exclude, roomPatch); err != nil {
-		return err
-	}
-	p.commitPrevState()
-	return nil
-}
-
+// sendPatchState — broadcast патча всем без исключений (универсальный
+// broadcast, P34). prevState коммитится только после успешного send —
+// сорванная рассылка не теряет дельту, она уйдёт следующим тиком.
 func (p *StateRoomPolicy) sendPatchState(patch *state.RoomStatePatch) error {
-	if err := p.sendPatchStateExclude(domain.PeerIDInvalid, patch); err != nil {
-		return err
-	}
-	p.commitPrevState()
-	return nil
-}
-
-func (p *StateRoomPolicy) sendPatchStateExclude(exclude domain.PeerID, patch *state.RoomStatePatch) error {
 	payload, err := p.stateCodec.EncodePatch(patch)
 	if err != nil {
 		return err
 	}
-	peerEvent := events.PeerEvent{
+	if err := p.room.Send(events.PeerEvent{
 		Frame: domain.Frame{
 			OpCode:  state.OpCodePatchState,
 			Payload: payload,
 		},
-	}
-	if exclude.IsValid() {
-		peerEvent.ExcludePeerID = exclude
-	}
-	return p.room.Send(peerEvent)
-}
-
-func (p *StateRoomPolicy) commitPrevState() {
-	p.prevState = *p.state.Clone()
-}
-
-func (p *StateRoomPolicy) prepareAndSendRoomStatePatch(applyChanges func(roomState *state.RoomState) error) error {
-	oldMaster := p.master.current()
-	committed := false
-	// applyChanges может переназначить master - откатываем на всех ветках ошибок.
-	defer func() {
-		if !committed {
-			p.master.restore(oldMaster)
-		}
-	}()
-
-	newRoomState := p.state.Clone()
-	if err := applyChanges(newRoomState); err != nil {
+	}); err != nil {
 		return err
 	}
-	roomPatch, err := p.state.MakePatch(newRoomState)
-	if err != nil {
-		return err
-	}
-	if roomPatch == nil {
-		return nil
-	}
-	if err := p.sendPatchStateExclude(domain.PeerIDInvalid, roomPatch); err != nil {
-		return err
-	}
-	p.state = *newRoomState
 	p.commitPrevState()
-	committed = true
-	// Post-commit: переходы машины внутри applyChanges могли перебрать master -
-	// masterless-эпизод закрываем только после успешной рассылки патча.
-	p.master.assigned()
 	return nil
+}
+
+// commitPrevState — точки коммита prevState: после успешных sendFullState /
+// sendPatchState. Снапшот shallow (значения разделяются со state) — корректно
+// при COW-инварианте RoomState и не платит deep clone на каждый тик.
+func (p *StateRoomPolicy) commitPrevState() {
+	p.prevState = *p.state.Snapshot()
 }

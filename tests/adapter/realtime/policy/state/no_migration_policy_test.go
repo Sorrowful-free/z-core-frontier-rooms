@@ -102,12 +102,15 @@ func TestNoMigrationPolicy_NonMasterLeave_RegularStateFlow(t *testing.T) {
 	master := testpeer.New(1, "master")
 	client := testpeer.New(2, "client")
 	mustJoin(t, h.room, master, client)
+	mustConverge(t, h)
 	master.Clear()
 	client.Clear()
 
 	if err := h.room.Leave(client); err != nil {
 		t.Fatalf("Leave client: %v", err)
 	}
+	// Remove-патч уходит не с leave, а ближайшим patch-тиком (P34).
+	mustConverge(t, h)
 
 	patches := master.EventsByOpcode(state.OpCodePatchState)
 	if len(patches) != 1 {

@@ -115,6 +115,72 @@ func TestApplyMapStatePatch_roundTrip(t *testing.T) {
 	}
 }
 
+// Мягкий apply (P34): Added на существующем ключе — upsert, не ошибка.
+// Реплика может опережать поток дельт (full state джойнеру + tick-эхо).
+func TestApplyMapStatePatch_addedExistingKey_upserts(t *testing.T) {
+	t.Parallel()
+
+	target := state.NewMapState[int, int]()
+	target[1] = 10
+
+	patch := state.MapStatePatch[int, int, int]{
+		Added: map[int]int{1: 99, 2: 20},
+	}
+	if err := state.ApplyMapStatePatch(target, patch, func(cur, p int) (*int, error) {
+		v := p
+		return &v, nil
+	}); err != nil {
+		t.Fatalf("ApplyMapStatePatch: %v", err)
+	}
+	if target[1] != 99 || target[2] != 20 {
+		t.Fatalf("map = %#v, want upserted 1:99 и added 2:20", target)
+	}
+}
+
+// Removed на отсутствующем ключе — ignore, не ошибка.
+func TestApplyMapStatePatch_removedMissingKey_ignored(t *testing.T) {
+	t.Parallel()
+
+	target := state.NewMapState[int, int]()
+	target[1] = 10
+
+	patch := state.MapStatePatch[int, int, int]{
+		Removed: []int{7},
+	}
+	if err := state.ApplyMapStatePatch(target, patch, func(cur, p int) (*int, error) {
+		v := p
+		return &v, nil
+	}); err != nil {
+		t.Fatalf("ApplyMapStatePatch: %v", err)
+	}
+	if target[1] != 10 || len(target) != 1 {
+		t.Fatalf("map = %#v, want unchanged {1:10}", target)
+	}
+}
+
+// Updated на отсутствующем ключе — по-прежнему ошибка: в корректном
+// потоке ключ обязан быть и в prev, и в new, значит есть у всех реплик;
+// его отсутствие — детектор рассинхрона.
+func TestApplyMapStatePatch_updatedMissingKey_errors(t *testing.T) {
+	t.Parallel()
+
+	target := state.NewMapState[int, int]()
+	target[1] = 10
+
+	patch := state.MapStatePatch[int, int, int]{
+		Updated: map[int]int{7: 77},
+	}
+	if err := state.ApplyMapStatePatch(target, patch, func(cur, p int) (*int, error) {
+		v := p
+		return &v, nil
+	}); err == nil {
+		t.Fatal("expected error for updated on missing key")
+	}
+	if target[1] != 10 || len(target) != 1 {
+		t.Fatalf("map = %#v, want unchanged {1:10}", target)
+	}
+}
+
 func TestApplyMapStatePatchCopy_errorPreservesSource(t *testing.T) {
 	t.Parallel()
 

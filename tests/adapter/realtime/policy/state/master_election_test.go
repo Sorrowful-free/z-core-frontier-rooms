@@ -19,6 +19,9 @@ func TestOnLeave_MasterFailover_PicksLowestInitializedPing(t *testing.T) {
 	best := testpeer.New(3, "best", testpeer.WithPing(20))
 	mustJoin(t, h.room, master, mid, best)
 	shadow := mustJoinShadow(t, h)
+	// Converge до leave: накопленные join-дельты уходят отдельным тиком,
+	// проверяемый перевыборный patch остаётся единственным кадром тика.
+	mustConverge(t, h)
 	mid.Clear()
 	best.Clear()
 
@@ -26,6 +29,7 @@ func TestOnLeave_MasterFailover_PicksLowestInitializedPing(t *testing.T) {
 		t.Fatalf("Leave master: %v", err)
 	}
 	assertWeakInvariants(t, shadow.view)
+	mustConverge(t, h)
 
 	assertPeerIsMasterInPatch(t, h, mid, domain.PeerID(3))
 	assertPeerIsMasterInPatch(t, h, best, domain.PeerID(3))
@@ -44,6 +48,7 @@ func TestOnLeave_MasterFailover_EqualPingPicksMinPeerID(t *testing.T) {
 	peerB := testpeer.New(2, "b", testpeer.WithPing(30))
 	mustJoin(t, h.room, master, peerA, peerB)
 	shadow := mustJoinShadow(t, h)
+	mustConverge(t, h)
 	peerA.Clear()
 	peerB.Clear()
 
@@ -51,6 +56,7 @@ func TestOnLeave_MasterFailover_EqualPingPicksMinPeerID(t *testing.T) {
 		t.Fatalf("Leave master: %v", err)
 	}
 	assertWeakInvariants(t, shadow.view)
+	mustConverge(t, h)
 
 	assertPeerIsMasterInPatch(t, h, peerA, domain.PeerID(2))
 	assertPeerIsMasterInPatch(t, h, peerB, domain.PeerID(2))
@@ -69,6 +75,7 @@ func TestOnLeave_MasterFailover_AllPingsUnknown_FallsBackToMinPeerID(t *testing.
 	peerLow := testpeer.New(2, "low", testpeer.WithPing(pingUnknown))
 	mustJoin(t, h.room, master, peerHigh, peerLow)
 	shadow := mustJoinShadow(t, h)
+	mustConverge(t, h)
 	peerHigh.Clear()
 	peerLow.Clear()
 
@@ -76,6 +83,7 @@ func TestOnLeave_MasterFailover_AllPingsUnknown_FallsBackToMinPeerID(t *testing.
 		t.Fatalf("Leave master: %v", err)
 	}
 	assertWeakInvariants(t, shadow.view)
+	mustConverge(t, h)
 
 	assertPeerIsMasterInPatch(t, h, peerHigh, domain.PeerID(2))
 	assertPeerIsMasterInPatch(t, h, peerLow, domain.PeerID(2))
@@ -94,6 +102,7 @@ func TestOnLeave_MasterFailover_MixedPingsIgnoresUnknown(t *testing.T) {
 	initialized := testpeer.New(3, "init", testpeer.WithPing(100))
 	mustJoin(t, h.room, master, unknown, initialized)
 	shadow := mustJoinShadow(t, h)
+	mustConverge(t, h)
 	unknown.Clear()
 	initialized.Clear()
 
@@ -101,6 +110,7 @@ func TestOnLeave_MasterFailover_MixedPingsIgnoresUnknown(t *testing.T) {
 		t.Fatalf("Leave master: %v", err)
 	}
 	assertWeakInvariants(t, shadow.view)
+	mustConverge(t, h)
 
 	// peer 3 has единственный инициализированный ping, хотя ID больше
 	assertPeerIsMasterInPatch(t, h, unknown, domain.PeerID(3))
@@ -119,6 +129,7 @@ func TestOnLeave_NonMaster_KeepsCurrentMaster(t *testing.T) {
 	client := testpeer.New(2, "client", testpeer.WithPing(5))
 	mustJoin(t, h.room, master, client)
 	shadow := mustJoinShadow(t, h)
+	mustConverge(t, h)
 	master.Clear()
 	client.Clear()
 
@@ -126,6 +137,7 @@ func TestOnLeave_NonMaster_KeepsCurrentMaster(t *testing.T) {
 		t.Fatalf("Leave client: %v", err)
 	}
 	assertWeakInvariants(t, shadow.view)
+	mustConverge(t, h)
 
 	patches := master.EventsByOpcode(state.OpCodePatchState)
 	if len(patches) != 1 {
@@ -157,6 +169,7 @@ func TestOnLeave_RemovesPeerInputFromRoomState(t *testing.T) {
 	client := testpeer.New(2, "client")
 	mustJoin(t, h.room, master, client)
 	shadow := mustJoinShadow(t, h)
+	mustConverge(t, h)
 	master.Clear()
 	client.Clear()
 
@@ -174,11 +187,14 @@ func TestOnLeave_RemovesPeerInputFromRoomState(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("OnMessage patch input: %v", err)
 	}
+	// Input-дельта уходит своим тиком; проверяемый leave-patch — следующим.
+	mustConverge(t, h)
 	master.Clear()
 
 	if err := h.room.Leave(client); err != nil {
 		t.Fatalf("Leave client: %v", err)
 	}
+	mustConverge(t, h)
 
 	patches := master.EventsByOpcode(state.OpCodePatchState)
 	if len(patches) != 1 {

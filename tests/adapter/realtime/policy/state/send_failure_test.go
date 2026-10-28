@@ -63,9 +63,10 @@ func TestOnTickFullState_PeerDeliverFails_PropagatesError(t *testing.T) {
 	assertStrongInvariants(t, shadow.view, h.room)
 }
 
-// Отказ peer.Deliver при broadcast patch после вычистки stale master
-// пробрасывается из OnTickPatchState.
-func TestOnTickPatchState_PrunePatchDeliverFails_PropagatesError(t *testing.T) {
+// Отказ peer.Deliver при tick-broadcast patch пробрасывается из
+// OnTickPatchState; мутация в state уже закоммичена — дельта не теряется
+// (prevState коммитится только после успешного send).
+func TestOnTickPatchState_PatchDeliverFails_PropagatesError(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(82), 4)
@@ -78,13 +79,15 @@ func TestOnTickPatchState_PrunePatchDeliverFails_PropagatesError(t *testing.T) {
 		t.Fatalf("Join member: %v", err)
 	}
 	shadow := mustJoinShadow(t, h)
+	mustConverge(t, h)
+	member.Clear()
 
-	member.SetDeliverErr(errDeliverFailed)
-	if err := h.room.Leave(master); err == nil {
-		t.Fatal("Leave master: want error from failed leave patch broadcast")
+	// Leave сам по себе ничего не шлёт (P34): мутация state + перевыбор
+	// на месте — дельта копится до тика.
+	if err := h.room.Leave(master); err != nil {
+		t.Fatalf("Leave master: %v", err)
 	}
-	// state: {1: master (stale), 2, 900}; room: {2, 900}.
-	assertWeakInvariants(t, shadow.view)
+	member.SetDeliverErr(errDeliverFailed)
 
 	err := h.policy.OnTickPatchState()
 	if !errors.Is(err, errDeliverFailed) {
@@ -98,9 +101,10 @@ func TestOnTickPatchState_PrunePatchDeliverFails_PropagatesError(t *testing.T) {
 	assertStrongInvariants(t, shadow.view, h.room)
 }
 
-// Отказ broadcast patch в publishRoomStateChange (master full-entities)
-// пробрасывается из OnMessage.
-func TestOnMessage_FullEntities_BroadcastDeliverFails_PropagatesError(t *testing.T) {
+// Упавший Deliver другого peer не влияет на OnMessage (P34): обработчик
+// только мутирует state и завершается успехом; send-фейл всплывает на
+// ближайшем patch-тике.
+func TestOnMessage_FullEntities_BystanderDeliverFails_MessageSucceeds(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(83), 4)
@@ -113,6 +117,7 @@ func TestOnMessage_FullEntities_BroadcastDeliverFails_PropagatesError(t *testing
 		t.Fatalf("Join member: %v", err)
 	}
 	shadow := mustJoinShadow(t, h)
+	mustConverge(t, h)
 
 	member.SetDeliverErr(errDeliverFailed)
 
@@ -126,14 +131,18 @@ func TestOnMessage_FullEntities_BroadcastDeliverFails_PropagatesError(t *testing
 		t.Fatalf("Encode entities: %v", err)
 	}
 
-	err = h.policy.OnMessage(events.RoomEvent{
+	if err := h.policy.OnMessage(events.RoomEvent{
 		PeerID: master.GetID(),
 		Frame:  domain.Frame{OpCode: state.OpCodeFullEntities, Payload: payload},
-	})
-	if !errors.Is(err, errDeliverFailed) {
-		t.Fatalf("OnMessage err = %v, want errDeliverFailed", err)
+	}); err != nil {
+		t.Fatalf("OnMessage: %v (send-фейл не должен доходить до OnMessage)", err)
 	}
 	assertWeakInvariants(t, shadow.view)
+
+	err = h.policy.OnTickPatchState()
+	if !errors.Is(err, errDeliverFailed) {
+		t.Fatalf("OnTickPatchState err = %v, want errDeliverFailed", err)
+	}
 
 	member.SetDeliverErr(nil)
 	settleTick(t, h, shadow.view)

@@ -224,10 +224,10 @@ func runInvariantProperty(t *testing.T, seed int64) {
 		return fmt.Sprintf("entities %d err=%v", p.GetID(), err)
 	}
 
-	// Fault: у случайного выжившего падает Deliver во время leave-broadcast —
-	// OnLeave откатывается, запись об ушедшем остаётся stale в state.Peers.
-	// (P13: сам уходящий удалён из r.peers до OnLeave, его Deliver в
-	// leave-broadcast больше не участвует — ломать надо выжившего.)
+	// Fault: у случайного выжившего падает Deliver. P34: leave сам ничего
+	// не шлёт (дельта едет тиком), поэтому инъекция влияет только на
+	// wire-доставку следующих tick-broadcast'ов — легальный fault mode,
+	// shadow залечивается resync'ом.
 	flakyLeaveOp := func() string {
 		p := randomJoined()
 		if p == nil {
@@ -255,8 +255,9 @@ func runInvariantProperty(t *testing.T, seed int64) {
 		return fmt.Sprintf("kill %d (IsAlive=false)", p.GetID())
 	}
 
-	// Sweep-эквивалент EvictIdlePeersUseCase: выводит мёртвых через Leave;
-	// leave-broadcast упирается в мёртвый Deliver → stale-записи.
+	// Sweep-эквивалент EvictIdlePeersUseCase: выводит мёртвых через Leave.
+	// Мёртвый Deliver сам по себе leave не ломает (P34 — leave не шлёт),
+	// но роняет tick-broadcast, пока peer не выведен.
 	evictDeadOp := func() string {
 		var out strings.Builder
 		out.WriteString("evict dead:")

@@ -161,7 +161,7 @@ flags u8
 | `OpCodeFullEntities` | `0x03` | `entities` map (full), как секция entities в room full |
 | `OpCodePatchEntities` | `0x04` | `entities` map patch, как секция entities в room patch |
 
-После приёма сервер рассылает `OpCodePatchState` (`0x02`) остальным peer (master исключается из broadcast entities).
+После приёма сервер мерджит entities в authoritative state; дельта уходит `OpCodePatchState` (`0x02`) на ближайшем patch-тике **всем** peer (tick-coalesced эмиссия, P34 — master получает эхо). Семантика apply и каденция — [client-protocol/state-sync.md](client-protocol/state-sync.md).
 
 ## OpCodes (state traffic)
 

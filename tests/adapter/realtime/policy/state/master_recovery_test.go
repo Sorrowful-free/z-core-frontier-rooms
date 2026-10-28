@@ -22,7 +22,7 @@ var errElectionFailed = errors.New("election failed")
 
 // memberGetPeerFails — сценарий падений GetPeer(member): решает по номеру
 // вызова (1-based), падать ли этому вызову. Порядок вызовов на member внутри
-// одного patch-тика: scan в refreshPeerPings (1), election (2), assign (3);
+// одного patch-тика: scan в pruneStalePeers (1), election (2), assign (3);
 // дальше — recovery-тики / lazy re-elect по RPC.
 type memberGetPeerFails func(call int) bool
 
@@ -58,7 +58,7 @@ type nilMasterFixture struct {
 
 // setupNilMasterRoom вгоняет политику в nil-master состояние: master(1)
 // становится stale (ушёл из room, остался в state), а election на member(2)
-// внутри refreshPeerPings падает по сценарию failMember.
+// внутри pruneStalePeers/dispatch падает по сценарию failMember.
 func setupNilMasterRoom(t *testing.T, failMember memberGetPeerFails) *nilMasterFixture {
 	t.Helper()
 
@@ -232,96 +232,176 @@ func TestOnMessage_RpcTargetMaster_EmptyRoom_ReturnsErrNoMaster(t *testing.T) {
 
 // Election skip-stale: кандидат, которого уже нет в room (GetPeer →
 // ErrPeerNotFound), пропускается — выборы идут среди живых, а не падают.
+// Stale-запись в state (peer в state, но не в room) с реальной Room
+// не получить — leave вычищает state атомарно с изъятием из r.peers;
+// фикстура на mock room.
 func TestOnLeave_ElectionSkipsStaleCandidate_ElectsLivePeer(t *testing.T) {
 	t.Parallel()
 
-	h := newHarness(t, domain.RoomID(92), 4)
+	ctrl := gomock.NewController(t)
+	room := mocks.NewMockRoom(ctrl)
+
+	var sent []events.PeerEvent
+	room.EXPECT().GetID().Return(domain.RoomID(92)).AnyTimes()
+	room.EXPECT().GetCapacity().Return(int8(4)).AnyTimes()
+	room.EXPECT().Send(gomock.Any()).DoAndReturn(func(ev events.PeerEvent) error {
+		sent = append(sent, ev)
+		return nil
+	}).AnyTimes()
+
 	master := testpeer.New(1, "master")
 	stale := testpeer.New(2, "stale")
 	survivor := testpeer.New(3, "survivor")
-	mustJoin(t, h.room, master, survivor)
-	if err := h.room.Join(stale); err != nil {
-		t.Fatalf("Join stale: %v", err)
-	}
-	shadow := mustJoinShadow(t, h)
+	room.EXPECT().GetPeer(master.GetID()).Return(master, nil).AnyTimes()
+	room.EXPECT().GetPeer(stale.GetID()).
+		Return(nil, fmt.Errorf("%w: %d", domain.ErrPeerNotFound, stale.GetID())).AnyTimes()
+	room.EXPECT().GetPeer(survivor.GetID()).Return(survivor, nil).AnyTimes()
 
-	// Stale-запись через откат state: уходящий stale удалён из r.peers до
-	// OnLeave (P13), поэтому broadcast ломаем упавшим Deliver выжившего —
-	// sendPatchStateExclude вернёт ошибку, state откатится, запись о
-	// stale останется в state.Peers, а из room он уже удалён.
-	survivor.SetDeliverErr(errDeliverFailed)
-	if err := h.room.Leave(stale); err == nil {
-		t.Fatal("Leave stale: want error from failed broadcast")
+	policy := newMockRoomPolicy(t, room)
+	if err := policy.OnJoin(master); err != nil {
+		t.Fatalf("OnJoin master: %v", err)
 	}
-	survivor.SetDeliverErr(nil)
-	survivor.Clear()
-	assertWeakInvariants(t, shadow.view)
+	if err := policy.OnJoin(stale); err != nil {
+		t.Fatalf("OnJoin stale: %v", err)
+	}
+	if err := policy.OnJoin(survivor); err != nil {
+		t.Fatalf("OnJoin survivor: %v", err)
+	}
 
 	// Master уходит: election видит кандидатов {2 (stale в state), 3 (живой)} —
 	// stale пропускается, master достаётся survivor.
-	if err := h.room.Leave(master); err != nil {
-		t.Fatalf("Leave master: %v (stale candidate must be skipped, not fail election)", err)
+	if err := policy.OnLeave(master); err != nil {
+		t.Fatalf("OnLeave master: %v (stale candidate must be skipped, not fail election)", err)
 	}
-	assertWeakInvariants(t, shadow.view)
 
-	assertPeerIsMasterInPatch(t, h, survivor, domain.PeerID(3))
-
-	settleTick(t, h, shadow.view)
-	resyncShadow(t, h)
-	assertStrongInvariants(t, shadow.view, h.room)
+	sent = nil
+	if err := policy.OnTickFullState(); err != nil {
+		t.Fatalf("OnTickFullState: %v", err)
+	}
+	got := decodeLastFullState(t, sent)
+	if !got.Peers[survivor.GetID()].IsMaster {
+		t.Fatal("survivor must be elected master (stale candidate skipped)")
+	}
 }
 
 // Все кандидаты election — stale: пустые выборы — не ошибка, master
-// сбрасывается, никакому peer IsMaster-флаг не выставляется.
+// сбрасывается, никакому peer IsMaster-флаг не выставляется. Masterless-
+// эпизод не липкий: следующий join + patch-тик вычищает stale и избирает
+// joiner'а.
 func TestOnLeave_ElectionAllStale_ResetsMasterWithoutFlags(t *testing.T) {
 	t.Parallel()
 
-	h := newHarness(t, domain.RoomID(93), 4)
+	ctrl := gomock.NewController(t)
+	room := mocks.NewMockRoom(ctrl)
+
+	var sent []events.PeerEvent
+	room.EXPECT().GetID().Return(domain.RoomID(93)).AnyTimes()
+	room.EXPECT().GetCapacity().Return(int8(4)).AnyTimes()
+	room.EXPECT().Send(gomock.Any()).DoAndReturn(func(ev events.PeerEvent) error {
+		sent = append(sent, ev)
+		return nil
+	}).AnyTimes()
+
 	master := testpeer.New(1, "master")
 	stale := testpeer.New(2, "stale")
-	mustJoin(t, h.room, master)
-	if err := h.room.Join(stale); err != nil {
-		t.Fatalf("Join stale: %v", err)
-	}
+	joiner := testpeer.New(3, "joiner")
+	room.EXPECT().GetPeer(master.GetID()).Return(master, nil).AnyTimes()
+	room.EXPECT().GetPeer(stale.GetID()).
+		Return(nil, fmt.Errorf("%w: %d", domain.ErrPeerNotFound, stale.GetID())).AnyTimes()
+	room.EXPECT().GetPeer(joiner.GetID()).Return(joiner, nil).AnyTimes()
 
-	// Stale-запись через откат state (P13: уходящий уже вне r.peers на
-	// момент OnLeave) — broadcast ломаем упавшим Deliver master'а.
-	master.SetDeliverErr(errDeliverFailed)
-	if err := h.room.Leave(stale); err == nil {
-		t.Fatal("Leave stale: want error from failed broadcast")
+	policy := newMockRoomPolicy(t, room)
+	if err := policy.OnJoin(master); err != nil {
+		t.Fatalf("OnJoin master: %v", err)
 	}
-	master.SetDeliverErr(nil)
+	if err := policy.OnJoin(stale); err != nil {
+		t.Fatalf("OnJoin stale: %v", err)
+	}
 
 	// Единственный оставшийся кандидат stale → пустые выборы (не ошибка).
-	if err := h.room.Leave(master); err != nil {
-		t.Fatalf("Leave master: %v (all-stale election must be empty, not error)", err)
+	if err := policy.OnLeave(master); err != nil {
+		t.Fatalf("OnLeave master: %v (all-stale election must be empty, not error)", err)
 	}
 
-	// Joiner видит state без рекламируемого master: stale-запись не может
-	// держать IsMaster.
-	joiner := testpeer.New(3, "joiner")
-	if err := h.room.Join(joiner); err != nil {
-		t.Fatalf("Join joiner: %v", err)
+	sent = nil
+	if err := policy.OnTickFullState(); err != nil {
+		t.Fatalf("OnTickFullState: %v", err)
 	}
-	// Shadow подключается внутри masterless-окна (join не переизбирает
-	// master в непустой комнате): его join full-state — masterless вид.
-	shadow := mustJoinShadow(t, h)
-	got := decodeOnlyFullState(t, h, joiner)
+	got := decodeLastFullState(t, sent)
 	for id, ps := range got.Peers {
 		if ps.IsMaster {
 			t.Fatalf("peer %d IsMaster=true after empty election, want no advertised master", id)
 		}
 	}
-	assertWeakInvariants(t, shadow.view)
 
-	// Masterless-эпизод не липкий: следующий тик вычищает stale и избирает joiner.
-	joiner.Clear()
-	if err := h.policy.OnTickPatchState(); err != nil {
+	// Joiner входит в masterless-окно (join не переизбирает master в
+	// непустой комнате): его full-state — masterless вид.
+	if err := policy.OnJoin(joiner); err != nil {
+		t.Fatalf("OnJoin joiner: %v", err)
+	}
+	joinerFull := joiner.EventsByOpcode(state.OpCodeFullState)
+	if len(joinerFull) != 1 {
+		t.Fatalf("joiner full states = %d, want 1", len(joinerFull))
+	}
+	got, err := codec.NewRoomStateCodec().Decode(joinerFull[0].Frame.Payload)
+	if err != nil {
+		t.Fatalf("Decode joiner full state: %v", err)
+	}
+	for id, ps := range got.Peers {
+		if ps.IsMaster {
+			t.Fatalf("peer %d IsMaster=true in masterless window, want none", id)
+		}
+	}
+
+	// Следующий patch-тик вычищает stale и избирает joiner'а.
+	sent = nil
+	if err := policy.OnTickPatchState(); err != nil {
 		t.Fatalf("OnTickPatchState: %v", err)
 	}
-	assertPeerIsMasterInPatch(t, h, joiner, domain.PeerID(3))
-	resyncShadow(t, h)
-	assertStrongInvariants(t, shadow.view, h.room)
+	patches := testpeer.FilterByOpcode(sent, state.OpCodePatchState)
+	if len(patches) != 1 {
+		t.Fatalf("patches = %d, want 1", len(patches))
+	}
+	patch, err := codec.NewRoomStateCodec().DecodePatch(patches[0].Frame.Payload)
+	if err != nil {
+		t.Fatalf("DecodePatch: %v", err)
+	}
+	added, ok := patch.Peers.Added[joiner.GetID()]
+	if !ok || !added.IsMaster {
+		t.Fatalf("peers.added[%d] = %#v ok=%v, want IsMaster=true", joiner.GetID(), added, ok)
+	}
+}
+
+// newMockRoomPolicy — политика поверх mock room для stale/edge-сценариев,
+// недостижимых через реальную Room (leave атомарен с изъятием из r.peers).
+func newMockRoomPolicy(t *testing.T, room *mocks.MockRoom) *statepolicy.StateRoomPolicy {
+	t.Helper()
+	policy := statepolicy.NewStateRoomPolicy(
+		stdlib.New("state-policy-test"),
+		codec.NewRoomStateCodec(),
+		codec.NewEntitiesStateCodec(),
+		codec.NewInputStateCodec(),
+		codec.NewRpcStateCodec(),
+		time.Hour,
+		time.Hour,
+	)
+	if err := policy.OnStart(room); err != nil {
+		t.Fatalf("OnStart: %v", err)
+	}
+	return policy
+}
+
+func decodeLastFullState(t *testing.T, sent []events.PeerEvent) *state.RoomState {
+	t.Helper()
+	fulls := testpeer.FilterByOpcode(sent, state.OpCodeFullState)
+	if len(fulls) == 0 {
+		t.Fatal("want broadcast full state")
+	}
+	got, err := codec.NewRoomStateCodec().Decode(fulls[len(fulls)-1].Frame.Payload)
+	if err != nil {
+		t.Fatalf("Decode full state: %v", err)
+	}
+	return got
 }
 
 // assignMaster validate-first: GetPeer избранного падает уже после победы в

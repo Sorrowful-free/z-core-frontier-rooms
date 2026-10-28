@@ -6,6 +6,13 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
 )
 
+// RoomState — authoritative состояние комнаты.
+//
+// COW-инвариант: записанные в мапы значения (`InputState.Values`,
+// `EntityState.Components`, `ValueState`) после записи не мутируются
+// in-place — любая мутация только clone-then-replace. Это позволяет
+// Snapshot разделять значения со state: shallow-копия остаётся
+// корректной прошлой версией для diff.
 type RoomState struct {
 	ID       domain.RoomID
 	Capacity int8
@@ -107,11 +114,13 @@ func (s *RoomState) ApplyPatch(patch RoomStatePatch) error {
 	}
 
 	err = ApplyMapStatePatch(s.Inputs, patch.Inputs, func(i1 InputState, i2 InputStatePatch) (*InputState, error) {
-		err := i1.ApplyPatch(i2)
-		if err != nil {
+		// i1 шарит Values-мапу с хранимой записью — клонируем до патча,
+		// иначе ApplyPatch мутирует state in-place (COW-инвариант).
+		next := i1.Clone()
+		if err := next.ApplyPatch(i2); err != nil {
 			return nil, err
 		}
-		return &i1, nil
+		return &next, nil
 	})
 	if err != nil {
 		return err
@@ -129,6 +138,20 @@ func (s *RoomState) ApplyPatch(patch RoomStatePatch) error {
 	}
 
 	return nil
+}
+
+// Snapshot — shallow-снапшот для чтения (diff, encode): struct-копия +
+// maps.Clone трёх верхних мап. Значения разделяются со state и остаются
+// корректными благодаря COW-инварианту RoomState. Для мутации копии —
+// Clone.
+func (s *RoomState) Snapshot() *RoomState {
+	return &RoomState{
+		ID:       s.ID,
+		Capacity: s.Capacity,
+		Peers:    maps.Clone(s.Peers),
+		Inputs:   maps.Clone(s.Inputs),
+		Entities: maps.Clone(s.Entities),
+	}
 }
 
 // Clone returns a deep copy safe for snapshot-before-mutate (e.g. MakePatch).

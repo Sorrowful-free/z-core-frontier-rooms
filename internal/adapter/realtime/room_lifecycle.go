@@ -23,8 +23,8 @@ type lifecycleRequest struct {
 // runLifecycle применяет join/leave атомарно относительно тиков комнаты:
 // мутация r.peers и вызов policy происходят в одном goroutine'е room-loop'а.
 // Иначе между OnJoin (peer уже в policy state) и записью в r.peers успевал
-// patch-тик, refreshPeerPings считал нового peer'а stale и выкидывал его
-// из state (см. docs/plans/P13-lifecycle-peers-atomicity.md).
+// patch-тик, чей prune (ныне pruneStalePeers) считал нового peer'а stale и
+// выкидывал его из state (см. docs/plans/P13-lifecycle-peers-atomicity.md).
 func (r *Room) runLifecycle(req lifecycleRequest) {
 	var err error
 	switch req.op {
@@ -94,7 +94,7 @@ func (r *Room) runLeaveLocked(peer realtime.Peer) error {
 	delete(r.peers, peerID)
 	r.mutex.Unlock()
 	// При ошибке OnLeave state-запись peer'а само-вычищается следующим
-	// prune-тиком refreshPeerPings (GetPeer → ErrPeerNotFound → stale).
+	// prune-тиком patch-тика (pruneStalePeers: GetPeer → ErrPeerNotFound → stale).
 	err := r.policy.OnLeave(peer)
 	// Peer уже изъят из r.peers - leave считается и при ошибке policy;
 	// метрики по факту изъятия (сюда доходим только при present).

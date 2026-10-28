@@ -46,7 +46,10 @@ func TestOnJoin_FailedFullStateSend_LeavesNoPhantomPeer(t *testing.T) {
 	}
 }
 
-func TestOnJoin_FailedJoinBroadcast_LeavesNoPhantomPeer(t *testing.T) {
+// P34: join больше не шлёт patch остальным — упавший Deliver выжившего
+// не может сорвать чужой join. Единственный send на этом пути — full
+// state самому джойнеру; ошибка broadcast всплывёт на patch-тике.
+func TestOnJoin_BystanderDeliverFails_JoinStillSucceeds(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(31), 4)
@@ -61,47 +64,41 @@ func TestOnJoin_FailedJoinBroadcast_LeavesNoPhantomPeer(t *testing.T) {
 
 	flaky.SetDeliverErr(errDeliverFailed)
 	joiner := testpeer.New(3, "joiner")
-	err := h.room.Join(joiner)
-	if !errors.Is(err, domain.ErrJoinDenied) {
-		t.Fatalf("Join err = %v, want ErrJoinDenied", err)
-	}
-	if h.room.HasPeer(joiner.GetID()) {
-		t.Fatal("failed joiner must be rolled back from room peers")
+	if err := h.room.Join(joiner); err != nil {
+		t.Fatalf("Join must not depend on bystander deliver: %v", err)
 	}
 
-	flaky.SetDeliverErr(nil)
-	if err := h.policy.OnTickPatchState(); err != nil {
-		t.Fatalf("OnTickPatchState after failed join: %v (phantom peer leaked into state)", err)
-	}
-
-	master.Clear()
-	if err := h.policy.OnTickFullState(); err != nil {
-		t.Fatalf("OnTickFullState after failed join: %v", err)
-	}
-	got := decodeOnlyFullState(t, h, master)
-	if len(got.Peers) != 2 {
-		t.Fatalf("peers = %#v, want {1,2} (phantom peer leaked)", got.Peers)
-	}
-	if _, ok := got.Peers[domain.PeerID(3)]; ok {
-		t.Fatal("phantom joiner present in authoritative state")
+	// Джойнер получил свой full со всеми тремя peer (запись в state
+	// закоммичена — сорванный тик её не откатывает).
+	got := decodeOnlyFullState(t, h, joiner)
+	if len(got.Peers) != 3 {
+		t.Fatalf("peers = %#v, want {1,2,3}", got.Peers)
 	}
 	if !got.Peers[domain.PeerID(1)].IsMaster {
 		t.Fatal("master flag must stay on peer 1")
 	}
 
-	joiner.Clear()
-	if err := h.room.Join(joiner); err != nil {
-		t.Fatalf("retry Join: %v", err)
+	// Ошибка всплывает на patch-тике broadcast'ом — но дельта не теряется:
+	// prevState коммитится только после успешного send, следующий тик
+	// (после починки peer'а) довозит её.
+	if err := h.policy.OnTickPatchState(); !errors.Is(err, errDeliverFailed) {
+		t.Fatalf("OnTickPatchState err = %v, want errDeliverFailed", err)
 	}
-	retry := decodeOnlyFullState(t, h, joiner)
-	if len(retry.Peers) != 3 {
-		t.Fatalf("peers after retry = %#v, want {1,2,3}", retry.Peers)
+	flaky.SetDeliverErr(nil)
+	flaky.Clear()
+	if err := h.policy.OnTickPatchState(); err != nil {
+		t.Fatalf("OnTickPatchState after recover: %v", err)
 	}
-	if !retry.Peers[domain.PeerID(1)].IsMaster {
-		t.Fatal("master flag must stay on peer 1 after retry")
+	patches := flaky.EventsByOpcode(state.OpCodePatchState)
+	if len(patches) != 1 {
+		t.Fatalf("flaky patches = %d, want 1 re-sent tick patch", len(patches))
 	}
-	if retry.Peers[domain.PeerID(3)].IsMaster {
-		t.Fatal("retried joiner must not be master")
+	patch, err := h.roomCodec.DecodePatch(patches[0].Frame.Payload)
+	if err != nil {
+		t.Fatalf("DecodePatch: %v", err)
+	}
+	if _, ok := patch.Peers.Added[joiner.GetID()]; !ok {
+		t.Fatalf("re-sent patch peers.added = %#v, want joiner delta preserved", patch.Peers.Added)
 	}
 }
 

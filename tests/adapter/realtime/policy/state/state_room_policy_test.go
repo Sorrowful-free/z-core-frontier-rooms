@@ -51,15 +51,20 @@ func TestOnJoin_FirstPeerGetsFullStateWithRoomMetadata(t *testing.T) {
 	}
 }
 
-func TestOnJoin_SecondPeerGetsFullAndMasterGetsPatch(t *testing.T) {
+// Tick-coalesced эмиссия (P34): join-дельта остальным уходит не сразу, а
+// ближайшим patch-тиком — универсальным broadcast всем, джойнер получает
+// эхо Added[себя] поверх уже полученного full (мягкий apply — upsert).
+func TestOnJoin_JoinDeltaReachesAllPeersOnNextTick(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(1), 4)
 	master := testpeer.New(1, "master")
 	client := testpeer.New(2, "client")
 
-	if err := h.room.Join(master); err != nil {
-		t.Fatalf("Join master: %v", err)
+	mustJoin(t, h.room, master)
+	// Converge: join-дельта master'а уходит первым тиком, prevState догоняет.
+	if err := h.policy.OnTickPatchState(); err != nil {
+		t.Fatalf("OnTickPatchState converge: %v", err)
 	}
 	master.Clear()
 
@@ -67,31 +72,37 @@ func TestOnJoin_SecondPeerGetsFullAndMasterGetsPatch(t *testing.T) {
 		t.Fatalf("Join client: %v", err)
 	}
 
-	masterEvents := master.Snapshot()
+	// Immediate-эмиссии для остальных нет: только full state джойнеру.
+	if got := master.Snapshot(); len(got) != 0 {
+		t.Fatalf("master events after join = %v, want none until tick", testpeer.Opcodes(got))
+	}
 	clientEvents := client.Snapshot()
-
 	if len(clientEvents) != 1 || clientEvents[0].Frame.OpCode != state.OpCodeFullState {
 		t.Fatalf("client should receive single full state, got %#v", testpeer.Opcodes(clientEvents))
 	}
 
-	patches := testpeer.FilterByOpcode(masterEvents, state.OpCodePatchState)
-	if len(patches) != 1 {
-		t.Fatalf("master should receive one patch, got opcodes %v", testpeer.Opcodes(masterEvents))
-	}
-	patch, err := h.roomCodec.DecodePatch(patches[0].Frame.Payload)
-	if err != nil {
-		t.Fatalf("DecodePatch: %v", err)
-	}
-	if _, ok := patch.Peers.Added[domain.PeerID(2)]; !ok {
-		t.Fatalf("patch peers.added = %#v", patch.Peers.Added)
+	if err := h.policy.OnTickPatchState(); err != nil {
+		t.Fatalf("OnTickPatchState: %v", err)
 	}
 
-	if len(testpeer.FilterByOpcode(clientEvents, state.OpCodePatchState)) != 0 {
-		t.Fatal("joiner should not receive join patch (already has full)")
+	for _, p := range []*testpeer.Peer{master, client} {
+		patches := testpeer.FilterByOpcode(p.Snapshot(), state.OpCodePatchState)
+		if len(patches) != 1 {
+			t.Fatalf("peer %d patches = %d, want 1 tick patch", p.GetID(), len(patches))
+		}
+		patch, err := h.roomCodec.DecodePatch(patches[0].Frame.Payload)
+		if err != nil {
+			t.Fatalf("DecodePatch peer %d: %v", p.GetID(), err)
+		}
+		if _, ok := patch.Peers.Added[domain.PeerID(2)]; !ok {
+			t.Fatalf("peer %d patch peers.added = %#v, want joiner", p.GetID(), patch.Peers.Added)
+		}
 	}
 }
 
-func TestOnMessage_FullEntities_BroadcastsPatchExcludingMaster(t *testing.T) {
+// Per-message эмиссии нет: OnMessage только мутирует state, дельта
+// доезжает patch-тиком всем — включая master-отправителя (эхо).
+func TestOnMessage_FullEntities_PatchReachesAllPeersOnTick(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(3), 8)
@@ -99,6 +110,7 @@ func TestOnMessage_FullEntities_BroadcastsPatchExcludingMaster(t *testing.T) {
 	client := testpeer.New(2, "client")
 
 	mustJoin(t, h.room, master, client)
+	mustConverge(t, h)
 	master.Clear()
 	client.Clear()
 
@@ -119,20 +131,26 @@ func TestOnMessage_FullEntities_BroadcastsPatchExcludingMaster(t *testing.T) {
 		t.Fatalf("OnMessage full entities: %v", err)
 	}
 
-	clientPatches := testpeer.FilterByOpcode(client.Snapshot(), state.OpCodePatchState)
-	if len(clientPatches) != 1 {
-		t.Fatalf("client patches = %d, want 1", len(clientPatches))
-	}
-	patch, err := h.roomCodec.DecodePatch(clientPatches[0].Frame.Payload)
-	if err != nil {
-		t.Fatalf("DecodePatch: %v", err)
-	}
-	if _, ok := patch.Entities.Added[state.EntityID(10)]; !ok {
-		t.Fatalf("entities.added = %#v", patch.Entities.Added)
+	if len(master.Snapshot()) != 0 || len(client.Snapshot()) != 0 {
+		t.Fatalf("no wire traffic expected before tick, master=%d client=%d",
+			len(master.Snapshot()), len(client.Snapshot()))
 	}
 
-	if len(testpeer.FilterByOpcode(master.Snapshot(), state.OpCodePatchState)) != 0 {
-		t.Fatal("master should not receive entities patch")
+	if err := h.policy.OnTickPatchState(); err != nil {
+		t.Fatalf("OnTickPatchState: %v", err)
+	}
+	for _, p := range []*testpeer.Peer{master, client} {
+		patches := testpeer.FilterByOpcode(p.Snapshot(), state.OpCodePatchState)
+		if len(patches) != 1 {
+			t.Fatalf("peer %d patches = %d, want 1", p.GetID(), len(patches))
+		}
+		patch, err := h.roomCodec.DecodePatch(patches[0].Frame.Payload)
+		if err != nil {
+			t.Fatalf("DecodePatch peer %d: %v", p.GetID(), err)
+		}
+		if _, ok := patch.Entities.Added[state.EntityID(10)]; !ok {
+			t.Fatalf("peer %d entities.added = %#v", p.GetID(), patch.Entities.Added)
+		}
 	}
 }
 
@@ -158,13 +176,14 @@ func TestOnMessage_FullEntities_RejectsNonMaster(t *testing.T) {
 	}
 }
 
-func TestOnMessage_PatchEntities_BroadcastsPatchExcludingMaster(t *testing.T) {
+func TestOnMessage_PatchEntities_PatchReachesAllPeersOnTick(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(14), 8)
 	master := testpeer.New(1, "master")
 	client := testpeer.New(2, "client")
 	mustJoin(t, h.room, master, client)
+	mustConverge(t, h)
 	master.Clear()
 	client.Clear()
 
@@ -191,20 +210,21 @@ func TestOnMessage_PatchEntities_BroadcastsPatchExcludingMaster(t *testing.T) {
 		t.Fatalf("OnMessage patch entities: %v", err)
 	}
 
-	clientPatches := testpeer.FilterByOpcode(client.Snapshot(), state.OpCodePatchState)
-	if len(clientPatches) != 1 {
-		t.Fatalf("client patches = %d, want 1", len(clientPatches))
+	if err := h.policy.OnTickPatchState(); err != nil {
+		t.Fatalf("OnTickPatchState: %v", err)
 	}
-	got, err := h.roomCodec.DecodePatch(clientPatches[0].Frame.Payload)
-	if err != nil {
-		t.Fatalf("DecodePatch: %v", err)
-	}
-	if _, ok := got.Entities.Added[state.EntityID(10)]; !ok {
-		t.Fatalf("entities.added = %#v", got.Entities.Added)
-	}
-
-	if len(testpeer.FilterByOpcode(master.Snapshot(), state.OpCodePatchState)) != 0 {
-		t.Fatal("master should not receive entities patch")
+	for _, p := range []*testpeer.Peer{master, client} {
+		patches := testpeer.FilterByOpcode(p.Snapshot(), state.OpCodePatchState)
+		if len(patches) != 1 {
+			t.Fatalf("peer %d patches = %d, want 1", p.GetID(), len(patches))
+		}
+		got, err := h.roomCodec.DecodePatch(patches[0].Frame.Payload)
+		if err != nil {
+			t.Fatalf("DecodePatch peer %d: %v", p.GetID(), err)
+		}
+		if _, ok := got.Entities.Added[state.EntityID(10)]; !ok {
+			t.Fatalf("peer %d entities.added = %#v", p.GetID(), got.Entities.Added)
+		}
 	}
 }
 
@@ -236,6 +256,9 @@ func TestOnMessage_PatchEntities_UpdatesExistingEntity(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("OnMessage full entities seed: %v", err)
 	}
+	// Converge: seed-дельта уходит тиком Added, иначе следующий тик унесёт
+	// её же — Updated-патч клиенты увидят только после этой эмиссии.
+	mustConverge(t, h)
 	master.Clear()
 	client.Clear()
 
@@ -259,6 +282,9 @@ func TestOnMessage_PatchEntities_UpdatesExistingEntity(t *testing.T) {
 		t.Fatalf("OnMessage patch entities update: %v", err)
 	}
 
+	if err := h.policy.OnTickPatchState(); err != nil {
+		t.Fatalf("OnTickPatchState: %v", err)
+	}
 	clientPatches := testpeer.FilterByOpcode(client.Snapshot(), state.OpCodePatchState)
 	if len(clientPatches) != 1 {
 		t.Fatalf("client patches = %d, want 1", len(clientPatches))
@@ -333,6 +359,8 @@ func TestOnTickPatchState_NoChangesNoSend(t *testing.T) {
 	master := testpeer.New(1, "master")
 	client := testpeer.New(2, "client")
 	mustJoin(t, h.room, master, client)
+	// Converge: первый тик после join несёт накопленную join-дельту.
+	mustConverge(t, h)
 	master.Clear()
 	client.Clear()
 
@@ -476,13 +504,16 @@ func TestOnMessage_UnknownOpcode_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestOnMessage_PatchInput_BroadcastsToAllIncludingMaster(t *testing.T) {
+// Input-дельта клиента доезжает patch-тиком всем — отправитель тоже
+// получает эхо своего патча (универсальный broadcast).
+func TestOnMessage_PatchInput_PatchReachesAllPeersOnTick(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(7), 4)
 	master := testpeer.New(1, "master")
 	client := testpeer.New(2, "client")
 	mustJoin(t, h.room, master, client)
+	mustConverge(t, h)
 	master.Clear()
 	client.Clear()
 
@@ -501,12 +532,29 @@ func TestOnMessage_PatchInput_BroadcastsToAllIncludingMaster(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("OnMessage patch input: %v", err)
 	}
-
-	if len(testpeer.FilterByOpcode(master.Snapshot(), state.OpCodePatchState)) != 1 {
-		t.Fatal("master should receive input patch")
+	if len(master.Snapshot()) != 0 || len(client.Snapshot()) != 0 {
+		t.Fatal("no wire traffic expected before tick")
 	}
-	if len(testpeer.FilterByOpcode(client.Snapshot(), state.OpCodePatchState)) != 1 {
-		t.Fatal("client should receive input patch")
+
+	if err := h.policy.OnTickPatchState(); err != nil {
+		t.Fatalf("OnTickPatchState: %v", err)
+	}
+	for _, p := range []*testpeer.Peer{master, client} {
+		patches := testpeer.FilterByOpcode(p.Snapshot(), state.OpCodePatchState)
+		if len(patches) != 1 {
+			t.Fatalf("peer %d patches = %d, want 1", p.GetID(), len(patches))
+		}
+		got, err := h.roomCodec.DecodePatch(patches[0].Frame.Payload)
+		if err != nil {
+			t.Fatalf("DecodePatch peer %d: %v", p.GetID(), err)
+		}
+		added, ok := got.Inputs.Added[domain.PeerID(2)]
+		if !ok {
+			t.Fatalf("peer %d inputs.added = %#v, want sender input", p.GetID(), got.Inputs.Added)
+		}
+		if v := added.Values[state.ValueId(1)]; len(v) != 1 || v[0] != 0xAB {
+			t.Fatalf("peer %d input value = %v, want [0xAB]", p.GetID(), []byte(v))
+		}
 	}
 }
 
@@ -554,6 +602,16 @@ func mustJoin(t *testing.T, room *realtime.Room, peers ...*testpeer.Peer) {
 		if err := room.Join(p); err != nil {
 			t.Fatalf("Join peer %d: %v", p.GetID(), err)
 		}
+	}
+}
+
+// mustConverge — один patch-тик: выносит накопленную дельту (join/leave/
+// message-мутации раз отправки теперь только на тике, P34) и коммитит
+// prevState — дальше каждый тик несёт только свежую дельту.
+func mustConverge(t *testing.T, h *harness) {
+	t.Helper()
+	if err := h.policy.OnTickPatchState(); err != nil {
+		t.Fatalf("OnTickPatchState converge: %v", err)
 	}
 }
 

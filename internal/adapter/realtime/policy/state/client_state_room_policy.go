@@ -8,18 +8,22 @@ import (
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain/state"
 )
 
+// OnMessage-обработчики больше не эмитят patch: они мутируют p.state
+// точечно (COW-записи, без clone/diff/send), дельта доезжает клиентам
+// ближайшим patch-тиком (tick-coalesced эмиссия, P34). Единственный
+// регулярный эмиттер OpCodePatchState — OnTickPatchState.
+
 func (p *StateRoomPolicy) onClientFullEntities(roomEvent events.RoomEvent) error {
 	if !p.master.isMaster(roomEvent.PeerID) {
 		return fmt.Errorf("%w: peer %d", domain.ErrNotMaster, roomEvent.PeerID)
 	}
 
-	oldRoomState := p.state.Clone()
 	full, err := p.entitiesCodec.Decode(roomEvent.Frame.Payload)
 	if err != nil {
 		return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
 	}
 	p.state.Entities = full
-	return p.publishRoomStateChange(oldRoomState, p.master.peerID())
+	return nil
 }
 
 func (p *StateRoomPolicy) onClientPatchEntities(roomEvent events.RoomEvent) error {
@@ -27,27 +31,36 @@ func (p *StateRoomPolicy) onClientPatchEntities(roomEvent events.RoomEvent) erro
 		return fmt.Errorf("%w: peer %d", domain.ErrNotMaster, roomEvent.PeerID)
 	}
 
-	oldRoomState := p.state.Clone()
 	patch, err := p.entitiesCodec.DecodePatch(roomEvent.Frame.Payload)
 	if err != nil {
 		return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
 	}
-	nextEntities, err := state.ApplyMapStatePatchCopy(
-		p.state.Entities,
-		*patch,
-		func(e state.EntityState) state.EntityState { return e.Clone() },
-		func(e1 state.EntityState, e2 state.EntityStatePatch) (*state.EntityState, error) {
-			if err := e1.ApplyPatch(e2); err != nil {
-				return nil, err
-			}
-			return &e1, nil
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
+
+	// Двухфазный apply: staged-результаты по ключам патча (clone только
+	// затронутых entity), запись в state разом — O(|patch|) и атомарность
+	// «ошибка = нет побочек».
+	staged := make(map[state.EntityID]state.EntityState, len(patch.Added)+len(patch.Updated))
+	for id, entity := range patch.Added {
+		staged[id] = entity
 	}
-	p.state.Entities = nextEntities
-	return p.publishRoomStateChange(oldRoomState, p.master.peerID())
+	for id, entityPatch := range patch.Updated {
+		current, ok := p.state.Entities[id]
+		if !ok {
+			return fmt.Errorf("%w: key %v not found in map", domain.ErrInRoomInvalidPayload, id)
+		}
+		next := current.Clone()
+		if err := next.ApplyPatch(entityPatch); err != nil {
+			return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
+		}
+		staged[id] = next
+	}
+	for id, entity := range staged {
+		p.state.Entities[id] = entity
+	}
+	for _, id := range patch.Removed {
+		delete(p.state.Entities, id)
+	}
+	return nil
 }
 
 func (p *StateRoomPolicy) onClientFullInput(roomEvent events.RoomEvent) error {
@@ -55,14 +68,12 @@ func (p *StateRoomPolicy) onClientFullInput(roomEvent events.RoomEvent) error {
 	if err != nil {
 		return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
 	}
-
-	return p.prepareAndSendRoomStatePatch(func(roomState *state.RoomState) error {
-		if _, ok := roomState.Peers[roomEvent.PeerID]; !ok {
-			return fmt.Errorf("%w: %d", domain.ErrPeerNotFound, roomEvent.PeerID)
-		}
-		roomState.Inputs[roomEvent.PeerID] = *full
-		return nil
-	})
+	peerID := roomEvent.PeerID
+	if _, ok := p.state.Peers[peerID]; !ok {
+		return fmt.Errorf("%w: %d", domain.ErrPeerNotFound, peerID)
+	}
+	p.state.Inputs[peerID] = *full
+	return nil
 }
 
 func (p *StateRoomPolicy) onClientPatchInput(roomEvent events.RoomEvent) error {
@@ -71,23 +82,22 @@ func (p *StateRoomPolicy) onClientPatchInput(roomEvent events.RoomEvent) error {
 		return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
 	}
 	peerID := roomEvent.PeerID
+	if _, ok := p.state.Peers[peerID]; !ok {
+		return fmt.Errorf("%w: %d", domain.ErrPeerNotFound, peerID)
+	}
 
-	return p.prepareAndSendRoomStatePatch(func(roomState *state.RoomState) error {
-		if _, ok := roomState.Peers[peerID]; !ok {
-			return fmt.Errorf("%w: %d", domain.ErrPeerNotFound, peerID)
-		}
-		inputState, ok := roomState.Inputs[peerID]
-		if !ok {
-			inputState = state.InputState{Values: state.NewMapState[state.ValueId, state.ValueState]()}
-		} else {
-			inputState = inputState.Clone()
-		}
-		if err := inputState.ApplyPatch(*patch); err != nil {
-			return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
-		}
-		roomState.Inputs[peerID] = inputState
-		return nil
-	})
+	inputState, ok := p.state.Inputs[peerID]
+	if !ok {
+		inputState = state.InputState{Values: state.NewMapState[state.ValueId, state.ValueState]()}
+	} else {
+		// COW: запись шарится с prevState-снапшотом — clone-then-replace.
+		inputState = inputState.Clone()
+	}
+	if err := inputState.ApplyPatch(*patch); err != nil {
+		return fmt.Errorf("%w: %w", domain.ErrInRoomInvalidPayload, err)
+	}
+	p.state.Inputs[peerID] = inputState
+	return nil
 }
 
 func (p *StateRoomPolicy) onClientRpc(roomEvent events.RoomEvent) error {
