@@ -39,7 +39,6 @@ import (
 	portrealtime "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/realtime"
 	portregistry "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/registry"
 	portreservation "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/reservation"
-	portenet "github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport/enet"
 	useroom "github.com/Sorrowful-free/z-core-frontier-rooms/internal/usecase/room"
 	fwebsocket "github.com/fasthttp/websocket"
 	"github.com/gofiber/fiber/v3"
@@ -213,14 +212,18 @@ func New(t *testing.T, opts ...Option) *Env {
 	reconnectUC := useroom.NewReconnectRoomUseCase(peerFactory, registry, reservation, cfg.reconnectTTL, logger, m)
 	admitUC := useroom.NewAdmitPeerUseCase(admission, joinUC, reconnectUC, logger)
 
-	var enetHandler *deliveryenet.RoomsHandler
+	// The handler is constructed unconditionally (P39): it is also the
+	// HostRegistry of IssueTicket and the use case no longer accepts a nil
+	// registry. Without cfg.enet the handler has zero hosts → AssignHost
+	// returns a zero assignment → unbound tickets, as before.
+	enetCfg := adapterenet.DefaultEnetConfig()
+	enetCfg.ListenPorts = nil
 	var enetPorts []uint16
 	if cfg.enet {
 		// Production ENet mux listener (P18): one host per port; 0 elements of
 		// enetPorts are auto-assigned free ports. Symbols are stub-safe (without
 		// the enet tag Listen is a no-op), but cfg.enet is set only by the tagged
 		// WithEnet → the block is dead in an untagged build.
-		enetCfg := adapterenet.DefaultEnetConfig()
 		enetCfg.ListenPorts = resolveEnetPorts(t, cfg.enetPorts)
 		enetCfg.MaxIncomingFrameBytes = cfg.transport.MaxIncomingFrameBytes
 		enetCfg.EnetIncomingQueueSize = cfg.transport.EnetIncomingQueueSize
@@ -230,17 +233,11 @@ func New(t *testing.T, opts ...Option) *Env {
 		// P12 is gone: each host has its own queue (P15).
 		enetCfg.ServiceTimeoutMs = 1
 		enetPorts = enetCfg.ListenPorts
-		enetHandler = deliveryenet.NewRoomsHandler(context.Background(), admitUC, disconnectUC,
-			adapterenet.NewEnetConnectionFactory(nil, logger), enetCfg, logger, m)
 	}
+	enetHandler := deliveryenet.NewRoomsHandler(context.Background(), admitUC, disconnectUC,
+		adapterenet.NewEnetConnectionFactory(nil, logger), enetCfg, logger, m)
 
-	// Handler (when ENet is enabled) - HostRegistry: strict binding of tickets
-	// to the assigned host; nil - unbound tickets.
-	var hostRegistry portenet.HostRegistry
-	if enetHandler != nil {
-		hostRegistry = enetHandler
-	}
-	issueUC := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, hostRegistry, logger)
+	issueUC := useroom.NewIssueTicketUseCase(registry, allocator, admission, reservation, enetHandler, logger)
 	createUC := useroom.NewCreateUseCase(registry, allocator, reservation, limits, issueUC, logger)
 
 	var idleSweep *useroom.SweepHandle
@@ -275,7 +272,7 @@ func New(t *testing.T, opts ...Option) *Env {
 		enetPorts:   enetPorts,
 	}
 
-	if enetHandler != nil {
+	if cfg.enet {
 		e.enetHandle = enetHandler.Listen()
 		// Fail-fast on bind error: run() exits immediately on a NewHost error.
 		select {

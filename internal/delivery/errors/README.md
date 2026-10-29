@@ -20,9 +20,7 @@ Import: `deliveryerrors "github.com/.../internal/delivery/errors"`.
 
 `JoinRejectOpCode`, `SendJoinReject` — `join_reject.go`. Reservation errors on join are delegated to `0x70+`; `ErrRoomFull` (`Room.Join` overflow) maps to `OpReservationFull` (`0x71`), the case sits above `ErrJoinDenied` — `ErrRoomFull` may arrive wrapped in it (policy `OnJoin`), in which case ordering decides.
 
-`SendJoinReject` / `SendReservationReject` / `SendInRoomError` return the `conn.Send` error (P19b): the caller counts `join_rejects_total` only on a successful send, otherwise it logs. The error can be safely ignored.
-
-`IsJoinRejectOpCode` covers **both** reject ranges (`0x40–0x5F` and `0x70–0x7F`) — both close the connection. `IsReservationRejectOpCode` — only `0x70–0x7F`, `IsInRoomErrorOpCode` — only `0x60–0x6F`.
+`SendJoinReject` returns the `conn.Send` error (P19b): the caller counts `join_rejects_total` only on a successful send, otherwise it logs. The error can be safely ignored.
 
 ## In-room (`0x60–0x6F`)
 
@@ -38,11 +36,11 @@ Error **to the sender**; the connection stays open.
 | `OpInRoomNoMaster` | `0x65` | `ErrNoMaster` |
 | `OpInRoomUnknownOpcode` | `0x66` | `ErrInRoomUnknownOpcode` |
 
-Mapping: `domain.InRoomErrorOpCode` (`room_errors.go`); this package holds the wrapper + `SendInRoomError` (`join_reject.go`).
+Mapping: `domain.InRoomErrorOpCode` (`room_errors.go`); this package holds only the `InRoomErrorOpCode` wrapper (`join_reject.go`) — in-room error frames reach the peer via `Room.Send`/`peer.Deliver`, not through a sender here.
 
 ## Reservation (`0x70–0x7F`)
 
-`ReservationRejectOpCode`, `SendReservationReject` — `reservation_reject.go`.
+`mapReservationRejectOpCode` (`reservation_reject.go`) — reached from `JoinRejectOpCode` on the join/admit path; the band has no standalone sender (`0x72`/`0x7F` stay defined as reserved, see [docs/client-protocol/errors.md](../../../docs/client-protocol/errors.md)).
 
 | OpCode | Hex | Sentinel |
 |--------|-----|----------|

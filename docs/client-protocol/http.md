@@ -175,7 +175,6 @@ For players joining an **existing** room. The host gets a ticket on create.
 | `401` | `invalid_credentials` | Wrong room password |
 | `404` | `room_not_found` | No such room |
 | `409` | `ticket_slot_held` | A `reserved` slot with the **same** `nick_name` already exists (TTL not expired) |
-| `409` | `peer_already_in_room` | `ErrPeerAlreadyInRoom` — mapped, but effectively unreachable on the HTTP issue path (issue always allocates a fresh peerID). Duplicate nicks are allowed |
 | `409` | `reservation_full` | No free slots |
 | `429` | `rate_limited` | REST endpoint limit from this IP |
 
@@ -195,7 +194,7 @@ Body: `{"reconnect_token": "<base64url>"}` — the peer's reconnect token (kind=
 
 ## Reservation slots (short)
 
-Issuing a ticket reserves a slot for a TTL (`ADMISSION_TTL`). While a slot is `reserved` with the same `nick_name`, a repeat issue returns `ticket_slot_held`; duplicate nicks and additional slots are otherwise allowed. Details: [internal/adapter/reservation/README.md](../../internal/adapter/reservation/README.md).
+Issuing a ticket reserves a slot for a TTL (`ADMISSION_TTL`). While a slot is `reserved` with the same `nick_name`, a repeat issue returns `ticket_slot_held`; duplicate nicks in the room are otherwise allowed — issue always allocates a fresh `peer_id`. Details: [internal/adapter/reservation/README.md](../../internal/adapter/reservation/README.md).
 
 ## Godot: create room example (host)
 

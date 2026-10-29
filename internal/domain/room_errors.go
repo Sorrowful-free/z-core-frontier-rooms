@@ -3,7 +3,7 @@ package domain
 import "errors"
 
 // In-room sentinel errors (after admit).
-// Wire OpCode: InRoomErrorOpCode; SendInRoomError — delivery/errors.
+// Wire OpCode: InRoomErrorOpCode (delivery/errors); frames go via peer.Deliver.
 
 var (
 	ErrInRoomInternal        = errors.New("in-room: internal")

@@ -4,28 +4,12 @@ import (
 	stderrors "errors"
 
 	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/domain"
-	"github.com/Sorrowful-free/z-core-frontier-rooms/internal/port/transport"
 )
 
-// ReservationRejectOpCode maps reservation errors to wire OpCode (0x70–0x7F, empty payload).
-func ReservationRejectOpCode(err error) domain.OpCode {
-	if op, ok := mapReservationRejectOpCode(err); ok {
-		return op
-	}
-	return domain.OpReservationInternal
-}
-
-// SendReservationReject sends one reject frame before the transport is closed.
-// A send error is returned to the caller (safe to ignore).
-func SendReservationReject(conn transport.Connection, err error) error {
-	return sendErrorFrame(conn, ReservationRejectOpCode(err))
-}
-
-// IsReservationRejectOpCode reports whether op belongs to the reservation reject range (0x70–0x7F).
-func IsReservationRejectOpCode(op domain.OpCode) bool {
-	return op >= 0x70 && op <= 0x7F
-}
-
+// mapReservationRejectOpCode maps reservation errors to wire OpCode
+// (0x70–0x7F, empty payload). Reached only via JoinRejectOpCode on the
+// join/admit path — reservation failures on the HTTP issue route return JSON,
+// and there is no standalone reservation-reject sender.
 func mapReservationRejectOpCode(err error) (domain.OpCode, bool) {
 	switch {
 	case stderrors.Is(err, domain.ErrReservationNotFound):

@@ -32,8 +32,8 @@ type IssueTicketResult struct {
 	ReconnectToken []byte
 	Room           RoomSummary
 	// EnetPort - port of the assigned ENet host (P18): the client connects
-	// to it. 0 - no binding (hostRegistry not wired, e.g. a WS-only
-	// environment).
+	// to it. 0 - the assignment carried no host (unbound ticket, e.g. a
+	// zero-host registry).
 	EnetPort uint16
 }
 
@@ -42,8 +42,9 @@ type IssueTicketUseCase struct {
 	allocator    identity.Allocator
 	admission    admission.Admission
 	reservation  reservation.Reservation
-	// hostRegistry - ENet host balancer (P18); nil - tickets without a
-	// binding (claims.HostID = HostIDUnbound, admit over WS only).
+	// hostRegistry - ENet host balancer (P18): always wired (composition
+	// root); a registry with zero hosts returns a zero assignment - an
+	// unbound ticket (claims.HostID = HostIDUnbound, admit over WS only).
 	hostRegistry portenet.HostRegistry
 	logger       logging.Logger
 }
@@ -90,13 +91,10 @@ func (uc *IssueTicketUseCase) IssueTicket(ctx context.Context, roomID domain.Roo
 	}
 
 	// Host assignment before Reserve: a balancer error leaves no slot behind.
-	var assignment portenet.HostAssignment
-	if uc.hostRegistry != nil {
-		assignment, err = uc.hostRegistry.AssignHost(ctx)
-		if err != nil {
-			uc.logger.Error("issue ticket: assign enet host failed", "error", err, "roomID", roomID, "peerID", peerID)
-			return IssueTicketResult{}, err
-		}
+	assignment, err := uc.hostRegistry.AssignHost(ctx)
+	if err != nil {
+		uc.logger.Error("issue ticket: assign enet host failed", "error", err, "roomID", roomID, "peerID", peerID)
+		return IssueTicketResult{}, err
 	}
 
 	expiresAt := time.Now().Add(uc.admission.TTL())

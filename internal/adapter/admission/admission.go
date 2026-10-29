@@ -21,7 +21,7 @@ var (
 // First byte of the credential is the kind:
 //   - join-ticket (kind=1): kind | roomID | peerID | issuedAt | expiresAt |
 //     hostID u16 | nickLen | nick | MAC; hostID=0 (domain.HostIDUnbound) -
-//     ticket not bound to a host (WS-only deploy, hostRegistry == nil).
+//     ticket not bound to a host (no ENet host assigned, e.g. WS-only deploy).
 //   - reconnect token (kind=2, P20): kind | roomID | peerID | hostID u16 |
 //     MAC — fixed-length credential (51 bytes), no nickName and no
 //     timestamps.

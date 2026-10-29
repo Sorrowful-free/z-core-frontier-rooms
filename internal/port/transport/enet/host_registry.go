@@ -16,9 +16,9 @@ type HostAssignment struct {
 
 // HostRegistry - catalog of the process's ENet hosts (shards) for balancing
 // ticket issues. Implemented by delivery/enet (RoomsHandler knows its hosts
-// and the number of live peers on each); usecase/room calls AssignHost on
-// Issue. nil registry in the usecase means unbound tickets (admit on any
-// host).
+// and the number of live peers on each); usecase/room always calls
+// AssignHost on Issue — a zero HostAssignment produces an unbound ticket
+// (hostID=0, fine for WS; rejected on ENet admit).
 type HostRegistry interface {
 	// AssignHost picks a host for a new ticket: least-loaded by the host's
 	// live peers, round-robin tie-break on equality.

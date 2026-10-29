@@ -8,26 +8,19 @@ import (
 )
 
 const (
-	codeInvalidRequest             = "invalid_request"
-	codeInvalidRoomID              = "invalid_room_id"
-	codeInvalidPeerID              = "invalid_peer_id"
-	codeInvalidCapacity            = "invalid_capacity"
-	codeInvalidNickName            = "invalid_nick_name"
-	codeRoomNotFound               = "room_not_found"
-	codePeerNotFound               = "peer_not_found"
-	codeRoomAlreadyExists          = "room_already_exists"
-	codeReservationNotFound        = "reservation_not_found"
-	codeReservationAlreadyExists   = "reservation_already_exists"
-	codeReservationFull            = "reservation_full"
-	codeTicketSlotHeld             = "ticket_slot_held"
-	codePeerAlreadyInRoom          = "peer_already_in_room"
-	codeReservationNotReserved     = "reservation_not_reserved"
-	codeReservationExpired         = "reservation_expired"
-	codeReservationAlreadyAdmitted = "reservation_already_admitted"
-	codeInvalidCredentials         = "invalid_credentials"
-	codeRateLimited                = "rate_limited"
-	codeRoomsLimitReached          = "rooms_limit_reached"
-	codeInternal                   = "internal_error"
+	codeInvalidRequest      = "invalid_request"
+	codeInvalidRoomID       = "invalid_room_id"
+	codeInvalidCapacity     = "invalid_capacity"
+	codeInvalidNickName     = "invalid_nick_name"
+	codeRoomNotFound        = "room_not_found"
+	codePeerNotFound        = "peer_not_found"
+	codeReservationNotFound = "reservation_not_found"
+	codeReservationFull     = "reservation_full"
+	codeTicketSlotHeld      = "ticket_slot_held"
+	codeInvalidCredentials  = "invalid_credentials"
+	codeRateLimited         = "rate_limited"
+	codeRoomsLimitReached   = "rooms_limit_reached"
+	codeInternal            = "internal_error"
 )
 
 func writeAPIError(c fiber.Ctx, status int, code, message string) error {
@@ -55,28 +48,14 @@ func statusAndCodeFromError(err error) (int, string) {
 		return fiber.StatusNotFound, codePeerNotFound
 	case errors.Is(err, domain.ErrReservationNotFound):
 		return fiber.StatusNotFound, codeReservationNotFound
-	case errors.Is(err, domain.ErrRoomAlreadyExists):
-		return fiber.StatusConflict, codeRoomAlreadyExists
 	case errors.Is(err, domain.ErrTicketSlotHeld):
 		return fiber.StatusConflict, codeTicketSlotHeld
-	case errors.Is(err, domain.ErrReservationAlreadyExists):
-		return fiber.StatusConflict, codeReservationAlreadyExists
 	case errors.Is(err, domain.ErrReservationFull):
 		return fiber.StatusConflict, codeReservationFull
-	case errors.Is(err, domain.ErrPeerAlreadyInRoom):
-		return fiber.StatusConflict, codePeerAlreadyInRoom
-	case errors.Is(err, domain.ErrReservationNotReserved):
-		return fiber.StatusConflict, codeReservationNotReserved
-	case errors.Is(err, domain.ErrReservationExpired):
-		return fiber.StatusConflict, codeReservationExpired
-	case errors.Is(err, domain.ErrReservationAlreadyAdmitted):
-		return fiber.StatusConflict, codeReservationAlreadyAdmitted
 	case errors.Is(err, domain.ErrInvalidCredentials):
 		return fiber.StatusUnauthorized, codeInvalidCredentials
 	case errors.Is(err, domain.ErrInvalidRoomID):
 		return fiber.StatusBadRequest, codeInvalidRoomID
-	case errors.Is(err, domain.ErrInvalidPeerID):
-		return fiber.StatusBadRequest, codeInvalidPeerID
 	case errors.Is(err, domain.ErrInvalidNickName):
 		return fiber.StatusBadRequest, codeInvalidNickName
 	case errors.Is(err, domain.ErrInvalidRoomCapacity):

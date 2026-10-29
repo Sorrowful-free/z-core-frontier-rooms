@@ -13,9 +13,8 @@ Import with alias: `deliveryerrors ".../internal/delivery/errors"` (package name
 | File | Range | API |
 |------|----------|-----|
 | `join_reject.go` | `0x40–0x5F` (+ reservation via join) | `JoinRejectOpCode`, `SendJoinReject` |
-| `reservation_reject.go` | `0x70–0x7F` | `ReservationRejectOpCode`, `SendReservationReject` |
-| `join_reject.go` (in-room) | `0x60–0x6F` | `InRoomErrorOpCode` wrapper, `SendInRoomError` |
-| `join_reject.go` / `reservation_reject.go` | — | `IsJoinRejectOpCode`, `IsInRoomErrorOpCode` / `IsReservationRejectOpCode` |
+| `reservation_reject.go` | `0x70–0x7F` | `mapReservationRejectOpCode` (join-reject path only; no standalone sender) |
+| `join_reject.go` (in-room) | `0x60–0x6F` | `InRoomErrorOpCode` wrapper (frames go via `Room.Send`/`peer.Deliver`) |
 | `domain/opcodes.go` + `NewPeerNotificationFrame` | `0x80+` | Room notifications — sent by **usecase** via `room.Send` (not delivery/errors): `OpPeerDisconnected`/`OpPeerReconnected`, payload `peerID u64 BE` (P20); `OpRoomClosed` `0x82` (P29) — room closed by the server (no-migration deploy, P33: host left), empty payload, disconnect follows the frame; sent via `peer.Deliver` from usecase teardown |
 
 Domain: `opcodes.go`, `join_errors.go`, `reservation_error.go`, `room_errors.go` (`InRoomErrorOpCode`).
@@ -39,7 +38,7 @@ Domain: `opcodes.go`, `join_errors.go`, `reservation_error.go`, `room_errors.go`
 ## In-room checklist (`0x60–0x6F`)
 
 - [x] `room_errors.go` (`InRoomErrorOpCode`) + `opcodes.go`
-- [x] `join_reject.go` (wrapper + `SendInRoomError`) + `tests/delivery/errors/in_room_test.go`
+- [x] `join_reject.go` (`InRoomErrorOpCode` wrapper) + `tests/delivery/errors/in_room_test.go`
 - [x] [internal/delivery/errors/README.md](../../internal/delivery/errors/README.md) (`0x60–0x66`)
 
 HTTP — `delivery/http`, not this package.

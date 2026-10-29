@@ -52,24 +52,7 @@ func sendErrorFrame(conn transport.Connection, op domain.OpCode) error {
 	})
 }
 
-// IsJoinRejectOpCode reports whether op belongs to the join/admit reject ranges
-// (0x40–0x5F join band, 0x70–0x7F reservation band — both close the connection).
-func IsJoinRejectOpCode(op domain.OpCode) bool {
-	return (op >= 0x40 && op <= 0x5F) || IsReservationRejectOpCode(op)
-}
-
-// IsInRoomErrorOpCode reports whether op belongs to the in-room error range (0x60–0x6F).
-func IsInRoomErrorOpCode(op domain.OpCode) bool {
-	return op >= 0x60 && op <= 0x6F
-}
-
 // InRoomErrorOpCode delegates to domain.InRoomErrorOpCode (adapter/realtime uses domain directly).
 func InRoomErrorOpCode(err error) domain.OpCode {
 	return domain.InRoomErrorOpCode(err)
-}
-
-// SendInRoomError sends one in-room error frame; connection may stay open.
-// A send error is returned to the caller (safe to ignore).
-func SendInRoomError(conn transport.Connection, err error) error {
-	return sendErrorFrame(conn, domain.InRoomErrorOpCode(err))
 }
