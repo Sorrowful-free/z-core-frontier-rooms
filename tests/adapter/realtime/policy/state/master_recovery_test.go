@@ -211,10 +211,12 @@ func TestOnMessage_RpcTargetMaster_NilMasterElectionFails_ReturnsErrNoMaster(t *
 	assertStrongInvariants(t, nm.shadow, nm.room)
 }
 
-// An empty room without a master: no one to re-elect → ErrNoMaster.
-// (the shadow observer is not attached: it would become the first peer and
-// the master — it would break the premise "a room without a master".)
-func TestOnMessage_RpcTargetMaster_EmptyRoom_ReturnsErrNoMaster(t *testing.T) {
+// An RPC frame in an empty room: the sender is absent from state.Peers,
+// so the ghost membership check (P35) rejects it with ErrPeerNotFound
+// before master resolution — ErrNoMaster is unreachable from a
+// non-member (the populated masterless-room case above keeps that
+// surface covered).
+func TestOnMessage_RpcTargetMaster_EmptyRoom_ReturnsErrPeerNotFound(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, domain.RoomID(91), 4)
@@ -224,11 +226,11 @@ func TestOnMessage_RpcTargetMaster_EmptyRoom_ReturnsErrNoMaster(t *testing.T) {
 		PeerID: domain.PeerID(1),
 		Frame:  domain.Frame{OpCode: state.OpCodeRpc, Payload: payload},
 	})
-	if !errors.Is(err, domain.ErrNoMaster) {
-		t.Fatalf("err = %v, want ErrNoMaster", err)
+	if !errors.Is(err, domain.ErrPeerNotFound) {
+		t.Fatalf("err = %v, want ErrPeerNotFound", err)
 	}
-	if op := domain.InRoomErrorOpCode(err); op != domain.OpInRoomNoMaster {
-		t.Fatalf("InRoomErrorOpCode = %#x, want %#x", op, domain.OpInRoomNoMaster)
+	if op := domain.InRoomErrorOpCode(err); op != domain.OpInRoomInternal {
+		t.Fatalf("InRoomErrorOpCode = %#x, want %#x", op, domain.OpInRoomInternal)
 	}
 }
 

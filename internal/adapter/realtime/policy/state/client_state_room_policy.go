@@ -108,6 +108,9 @@ func (p *StateRoomPolicy) onClientRpc(roomEvent events.RoomEvent) error {
 	}
 
 	senderPeerID := roomEvent.PeerID
+	if _, ok := p.state.Peers[senderPeerID]; !ok {
+		return fmt.Errorf("%w: %d", domain.ErrPeerNotFound, senderPeerID)
+	}
 	masterID := p.master.peerID()
 
 	peerEvent := events.PeerEvent{
