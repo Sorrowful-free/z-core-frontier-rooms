@@ -28,8 +28,8 @@ func (f *StateRoomPolicyFactory) CreateRoomPolicy() policy.RoomPolicy {
 		codec.NewEntitiesStateCodec(),
 		codec.NewInputStateCodec(),
 		codec.NewRpcStateCodec(),
-		DefaultFullStateInterval,
-		DefaultPatchStateInterval,
+		f.cfg.FullStateInterval,
+		f.cfg.PatchStateInterval,
 	)
 	// The master-elections counter lives in the episode machine; it is
 	// injected via the field so the NewStateRoomPolicy signature stays

@@ -8,6 +8,7 @@ import (
 	appconfig "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/config"
 	httplimitsadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/httplimits"
 	zaplogadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/logging/zap"
+	statepolicy "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/realtime/policy/state"
 	reservationadapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/reservation"
 	serveradapter "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/server"
 	adaptertransport "github.com/Sorrowful-free/z-core-frontier-rooms/internal/adapter/transport"
@@ -481,6 +482,70 @@ func TestLoadFromEnv_StatePolicyInvalid(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "STATE_POLICY_ALLOW_MASTER_MIGRATION") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// P36: STATE_POLICY_FULL_STATE_INTERVAL / STATE_POLICY_PATCH_STATE_INTERVAL —
+// empty → package defaults, valid durations → parsed, <= 0 / garbage → error.
+func TestLoadFromEnv_StatePolicyIntervalsDefault(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	t.Setenv("STATE_POLICY_FULL_STATE_INTERVAL", "")
+	t.Setenv("STATE_POLICY_PATCH_STATE_INTERVAL", "")
+
+	cfg, err := appconfig.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv: %v", err)
+	}
+	if cfg.StatePolicy.FullStateInterval != statepolicy.DefaultFullStateInterval {
+		t.Fatalf("full state interval = %v, want %v", cfg.StatePolicy.FullStateInterval, statepolicy.DefaultFullStateInterval)
+	}
+	if cfg.StatePolicy.PatchStateInterval != statepolicy.DefaultPatchStateInterval {
+		t.Fatalf("patch state interval = %v, want %v", cfg.StatePolicy.PatchStateInterval, statepolicy.DefaultPatchStateInterval)
+	}
+}
+
+func TestLoadFromEnv_StatePolicyIntervalsCustom(t *testing.T) {
+	t.Setenv("ADMISSION_SECRET", validSecret())
+	setHTTPAuthDisabled(t)
+	t.Setenv("STATE_POLICY_FULL_STATE_INTERVAL", "8s")
+	t.Setenv("STATE_POLICY_PATCH_STATE_INTERVAL", "100ms")
+
+	cfg, err := appconfig.LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv: %v", err)
+	}
+	if cfg.StatePolicy.FullStateInterval != 8*time.Second {
+		t.Fatalf("full state interval = %v, want 8s", cfg.StatePolicy.FullStateInterval)
+	}
+	if cfg.StatePolicy.PatchStateInterval != 100*time.Millisecond {
+		t.Fatalf("patch state interval = %v, want 100ms", cfg.StatePolicy.PatchStateInterval)
+	}
+}
+
+func TestLoadFromEnv_StatePolicyIntervalsInvalid(t *testing.T) {
+	cases := []struct {
+		name string
+		env  map[string]string
+	}{
+		{"full zero", map[string]string{"STATE_POLICY_FULL_STATE_INTERVAL": "0"}},
+		{"full negative", map[string]string{"STATE_POLICY_FULL_STATE_INTERVAL": "-1s"}},
+		{"full garbage", map[string]string{"STATE_POLICY_FULL_STATE_INTERVAL": "not-a-duration"}},
+		{"patch zero", map[string]string{"STATE_POLICY_PATCH_STATE_INTERVAL": "0"}},
+		{"patch negative", map[string]string{"STATE_POLICY_PATCH_STATE_INTERVAL": "-1s"}},
+		{"patch garbage", map[string]string{"STATE_POLICY_PATCH_STATE_INTERVAL": "not-a-duration"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("ADMISSION_SECRET", validSecret())
+			setHTTPAuthDisabled(t)
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			if _, err := appconfig.LoadFromEnv(); err == nil {
+				t.Fatalf("LoadFromEnv() = nil error, want failure for %v", tc.env)
+			}
+		})
 	}
 }
 

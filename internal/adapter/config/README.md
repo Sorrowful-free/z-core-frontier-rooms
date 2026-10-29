@@ -69,8 +69,10 @@ Validation — `reservation.ReservationConfig.Validate()`.
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `STATE_POLICY_ALLOW_MASTER_MIGRATION` | no | `true` | Deploy master-migration mode (P33): `false` — the room dies when the master leaves (`OnLeave` → `ErrRoomShouldClose` → teardown); a non-bool value — load error |
+| `STATE_POLICY_FULL_STATE_INTERVAL` | no | `4s` | Full-state broadcast tick (P36, `time.ParseDuration`); `<= 0` — load error |
+| `STATE_POLICY_PATCH_STATE_INTERVAL` | no | `50ms` | Patch (delta) broadcast tick (P36, `time.ParseDuration`); `<= 0` — load error |
 
-Validation — `realtime/policy/state.StatePolicyConfig.Validate()` (trivial, for ModuleConfig uniformity).
+Validation — `realtime/policy/state.StatePolicyConfig.Validate()`.
 
 ## Env (enet listener)
 

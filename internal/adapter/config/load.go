@@ -40,6 +40,8 @@ const (
 	envReservationOrphanSweepInterval = "RESERVATION_ORPHAN_SWEEP_INTERVAL"
 
 	envStatePolicyAllowMasterMigration = "STATE_POLICY_ALLOW_MASTER_MIGRATION"
+	envStatePolicyFullStateInterval    = "STATE_POLICY_FULL_STATE_INTERVAL"
+	envStatePolicyPatchStateInterval   = "STATE_POLICY_PATCH_STATE_INTERVAL"
 
 	envTransportMaxIncomingFrameBytes = "TRANSPORT_MAX_INCOMING_FRAME_BYTES"
 	envTransportRoomIncomingQueue     = "TRANSPORT_ROOM_INCOMING_QUEUE"
@@ -286,12 +288,28 @@ func loadReservationFromEnv() (reservationadapter.ReservationConfig, error) {
 	return cfg, nil
 }
 
-// loadStatePolicyFromEnv builds state.StatePolicyConfig (P33):
+// loadStatePolicyFromEnv builds state.StatePolicyConfig (P33, P36):
 // STATE_POLICY_ALLOW_MASTER_MIGRATION — global master-migration mode of the
 // deployment; empty → true (historical behavior), explicit value — ParseBool,
 // garbage → error.
+// STATE_POLICY_FULL_STATE_INTERVAL / STATE_POLICY_PATCH_STATE_INTERVAL —
+// full/patch state broadcast ticks; empty → the package defaults, <= 0 or
+// garbage → error (Validate).
 func loadStatePolicyFromEnv() (statepolicy.StatePolicyConfig, error) {
-	cfg := statepolicy.StatePolicyConfig{AllowMasterMigration: true}
+	fullInterval, err := durationFromEnv(envStatePolicyFullStateInterval, statepolicy.DefaultFullStateInterval)
+	if err != nil {
+		return statepolicy.StatePolicyConfig{}, err
+	}
+	patchInterval, err := durationFromEnv(envStatePolicyPatchStateInterval, statepolicy.DefaultPatchStateInterval)
+	if err != nil {
+		return statepolicy.StatePolicyConfig{}, err
+	}
+
+	cfg := statepolicy.StatePolicyConfig{
+		AllowMasterMigration: true,
+		FullStateInterval:    fullInterval,
+		PatchStateInterval:   patchInterval,
+	}
 	if raw := os.Getenv(envStatePolicyAllowMasterMigration); raw != "" {
 		allow, err := strconv.ParseBool(raw)
 		if err != nil {

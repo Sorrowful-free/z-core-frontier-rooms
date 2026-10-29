@@ -5,8 +5,12 @@ a global deploy flag `StatePolicyConfig.AllowMasterMigration` (env
 `STATE_POLICY_ALLOW_MASTER_MIGRATION`, P33): `false` — a master leave answers
 `domain.ErrRoomShouldClose` at the `OnLeave` entry (before the master machine
 and staged mutations; the room dies, teardown in the usecase), a non-master
-leave takes the normal path. `StateRoomPolicyFactory` accepts the config in
-its constructor and injects the flag as a field (precedent `p.master.metrics`).
+leave takes the normal path. The full/patch tick intervals are deploy env too
+(`STATE_POLICY_FULL_STATE_INTERVAL` / `STATE_POLICY_PATCH_STATE_INTERVAL`,
+P36; defaults `DefaultFullStateInterval` 4s / `DefaultPatchStateInterval`
+50ms, `Validate` requires both > 0). `StateRoomPolicyFactory` accepts the
+config in its constructor and injects the flag as a field (precedent
+`p.master.metrics`), the intervals go into `NewStateRoomPolicy`.
 
 ## RoomPolicy interface
 
@@ -24,7 +28,7 @@ its constructor and injects the flag as a field (precedent `p.master.metrics`).
 - **Metrics (P19/P19b):** `rooms_master_elections_total` counts every master assignment — both `assign` during re-elections and the first election on join (`onPeerJoined`, emitted staged like `assign`: a transaction rollback causes a rare overcount); `StateRoomPolicyFactory` accepts `port/metrics.Metrics` (nil-safe) and injects it into `masterMachine` as a field
 - **State emission (P34, tick-coalesced):** the only regular emitter of `OpCodePatchState` is `OnTickPatchState`. `OnMessage` handlers and join/leave mutate `p.state` pointwise (COW writes, no clone/diff/send); the delta arrives on the nearest tick via an unconditional broadcast to everyone — the publisher receives an echo of its own deltas (client-side apply is idempotent, `ApplyMapStatePatch` is lenient). The only immediate send: full state to the newly arrived peer on join. `prevState` is a shallow `Snapshot()` (the `RoomState` COW invariant), committed only after a successful send — a failed broadcast does not lose the delta
 - **Join:** full state to the new peer directly (the peer is not yet in `r.peers`); the `p.state` write is committed after successful delivery from an encode-only shallow view — on a send error `p.state`/`p.master` are not mutated (no phantom peer); the join delta to the others goes out on the patch tick
-- **Ticks:** full state 4s, patch 50ms (defaults); `0` in the constructor → defaults substituted. Split of the former `refreshPeerPings` (P34): the ping is written to state on the **full tick** before `sendFullState` (ping cadence = fullStateInterval, the patch diff does not see it); stale scan + `evTickPrune` — on the **patch tick** (`pruneStalePeers`, masterless recovery keeps 50ms)
+- **Ticks:** full state 4s, patch 50ms (defaults `DefaultFullStateInterval`/`DefaultPatchStateInterval`; deploy-tunable via env, P36); `0` in the constructor → defaults substituted. Split of the former `refreshPeerPings` (P34): the ping is written to state on the **full tick** before `sendFullState` (ping cadence = fullStateInterval, the patch diff does not see it); stale scan + `evTickPrune` — on the **patch tick** (`pruneStalePeers`, masterless recovery keeps 50ms)
 - **Master-only:** `FullEntities`, `PatchEntities`; input opcodes and RPC routing are accepted from all peers (membership in room state is checked)
 - **Patch apply (server):** two-phase — staged results per patch key (clone only the touched ones), written in one go; `Updated` on a missing key — `ErrInRoomInvalidPayload`
 - **Errors:** `domain` sentinels → in-room OpCode to the sender
@@ -38,4 +42,4 @@ its constructor and injects the flag as a field (precedent `p.master.metrics`).
 | `client_state_room_policy.go` | master messages |
 | `master_machine.go` | master-episode machine: trigger events, transitions, election |
 | `state_room_policy_factory.go` | DI defaults |
-| `state_policy_config.go` | `StatePolicyConfig` + `Validate()` (P33) |
+| `state_policy_config.go` | `StatePolicyConfig` + `Validate()` (P33, P36) |

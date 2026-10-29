@@ -34,7 +34,7 @@ Broadcast is **universal**: the patch goes to every peer without exclusions — 
 | Full state | `0x01` | every **4 s** |
 | Patch state | `0x02` | every **50 ms** |
 
-(The intervals are compile-time defaults — `DefaultFullStateInterval`/`DefaultPatchStateInterval`, not env-tunable.)
+(The defaults come from `DefaultFullStateInterval`/`DefaultPatchStateInterval` and are deploy-tunable via env `STATE_POLICY_FULL_STATE_INTERVAL` / `STATE_POLICY_PATCH_STATE_INTERVAL`, P36.)
 
 The client must be able to apply a patch on top of its local state (merge maps per the wire-doc rules).
 
