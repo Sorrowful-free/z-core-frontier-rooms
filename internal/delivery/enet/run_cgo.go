@@ -158,8 +158,17 @@ func (h *RoomsHandler) dispatchEvent(
 			return
 		}
 		if !sess.deliver(frame) {
-			h.logger.Warn("enet incoming queue full, dropping frame", "enet_peer_id", id)
-			h.metrics.EnetIncomingDropped()
+			if frame.Delivery == domain.DeliveryUnreliable {
+				h.logger.Warn("enet incoming queue full, dropping frame", "enet_peer_id", id)
+				h.metrics.EnetIncomingDropped()
+			} else {
+				// A reliable frame is never silently dropped (P37): a
+				// flooded session is a zombie — escalate to the same
+				// graceful teardown as a bad frame (DisconnectPeer when
+				// admitted, then DisconnectLater on the wire).
+				h.logger.Warn("enet incoming queue full, reliable frame undeliverable, disconnecting", "enet_peer_id", id)
+				h.disconnectSession(ctx, sessions, id, sess)
+			}
 		}
 
 	case libenet.EventDisconnect:
@@ -182,7 +191,9 @@ func (h *RoomsHandler) dispatchEvent(
 // Strict binding (P18) is checked by the facade: the ticket's claims.HostID
 // must match the host that accepted the connection, otherwise join-reject
 // (ErrWrongHost → OpWrongHost 0x77) before spending a reservation slot.
-// A ticket without hostID passes on any host.
+// A ticket without host binding (claims.HostID == HostIDUnbound — issued
+// without a HostRegistry, a WS-only deploy) does NOT pass on ENet: on a real
+// host (id ≥ 1) it mismatches and is rejected with the same ErrWrongHost.
 func (h *RoomsHandler) admit(ctx context.Context, host *enetHost, sess *peerSession, token []byte) error {
 	if len(token) == 0 {
 		h.logger.Warn("enet connect: empty token", "enet_peer_id", sess.id)

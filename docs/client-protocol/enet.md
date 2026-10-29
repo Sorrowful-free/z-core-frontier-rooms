@@ -172,7 +172,7 @@ An admitted session teardown goes through `DisconnectPeer` (all triggers: `Event
 - Client closed the connection / UDP timeout (`EventDisconnect`) → `DisconnectPeer` → grace.
 - Did not finish admit within `ENET_ADMIT_TIMEOUT` → disconnect (the deadline is on the admit fact in the host loop, not on packet arrival; the peer-limit slot does not linger; no grace — the peer was never admitted).
 - Oversized/invalid frame after admit → `DisconnectPeer` + graceful disconnect; queued outbound frames are flushed before teardown.
-- Server-side ENet inbound queue overflow → frame **dropped** (warn in logs), the connection survives.
+- Server-side inbound queue overflow (ENet session queue, `room.incoming`, `peer.outbound`): an **unreliable** frame is dropped (warn in logs) and the connection survives; a **reliable** frame is never silently dropped — the server escalates to a graceful disconnect → `DisconnectPeer` → grace (a flooded/stalled peer is treated as a zombie).
 - ENet zombie connection → the transport's own protocol timeout kills it → `EventDisconnect` → the same `DisconnectPeer` + grace. (The `!IsAlive` idle sweep is the **WS** mechanism — `TRANSPORT_PEER_IDLE_TIMEOUT`; for ENet, `IsAlive` reflects the connection's closed flag, not idleness.)
 - In a no-migration deploy (`STATE_POLICY_ALLOW_MASTER_MIGRATION=false`, P33): the **host's** teardown (leave/disconnect/idle evict — the same leave path) kills the room without grace or re-election — the rest get `0x82 OpRoomClosed` + graceful disconnect (`DisconnectLater` waits for the frame; `Send` → disconnect ordering is guaranteed by peer drain, P30 — both commands ride the same host-loop FIFO), and the reservation slots are revoked.
 

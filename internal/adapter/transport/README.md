@@ -11,7 +11,7 @@ Limits and shared data-plane logic (WS + ENet).
 | `MaxIncomingFrameBytes` | 256 KiB | `TRANSPORT_MAX_INCOMING_FRAME_BYTES` |
 | `RoomIncomingQueueSize` | 128 | `TRANSPORT_ROOM_INCOMING_QUEUE` (`0` = unbuffered) |
 | `PeerOutboundQueueSize` | 128 | `TRANSPORT_PEER_OUTBOUND_QUEUE` |
-| `EnetIncomingQueueSize` | 256 | `TRANSPORT_ENET_INCOMING_QUEUE` (full → **drop**, the host loop is not blocked) |
+| `EnetIncomingQueueSize` | 256 | `TRANSPORT_ENET_INCOMING_QUEUE` (full → unreliable frame **dropped**; reliable → session disconnect — the host loop is not blocked, P37) |
 | `PeerIdleTimeout` | 30s | `TRANSPORT_PEER_IDLE_TIMEOUT` (`0` — mechanism disabled; negatives are a Validate error) |
 | `PeerIdleSweepInterval` | 10s | `TRANSPORT_PEER_IDLE_SWEEP_INTERVAL` (`0` — sweep does not start; negatives are a Validate error) |
 | `WSWriteDeadline` | 10s | `TRANSPORT_WS_WRITE_DEADLINE` (`0` — no deadline; negatives are a Validate error) |
@@ -21,7 +21,7 @@ Limits and shared data-plane logic (WS + ENet).
 
 `PeerCloseDrainTimeout` — the budget ceiling for the drain-aware peer close (P30, see `adapter/realtime/README.md`): `peer.Stop` waits for the write loop to drain `outbound` no longer than this budget, then `conn.Close`; `0` — the mechanism is off (like `PeerIdleTimeout <= 0`), Stop goes to close immediately.
 
-**Overflow:** `room.incoming`, `peer.outbound` and the ENet session — **drop** the frame + warn (room loop / host loop / peer read are not blocked).
+**Overflow:** `room.incoming`, `peer.outbound` and the ENet session queue never block their consumer (room loop / host loop / peer read). On a full queue an **unreliable** frame is **dropped** + warn (+ drop counter); a **reliable** frame is never silently dropped (P37) — the transport escalates to teardown: `conn.Close` / session disconnect → the normal disconnect path (`DisconnectPeer` → grace). A stalled/flooded peer is a zombie; graceful teardown beats silent half-delivery.
 
 The ENet listener has a separate config — `enet.EnetConfig` (`enet/enet_config.go`, without build tags — stub builds need it too): `ListenPorts` (1..N UDP ports of host shards, P18), `PeerLimit` (per-host), `ChannelLimit`, `ServiceTimeoutMs`, `AdmitTimeout` + copies of `MaxIncomingFrameBytes`/`EnetIncomingQueueSize` from `TransportConfig` (in cmd/rooms). `ENET_*` env vars — `adapter/config.LoadFromEnv()` → `cfg.Enet`.
 

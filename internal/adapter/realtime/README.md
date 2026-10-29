@@ -2,13 +2,13 @@
 
 Room runtime: `Room`, `Peer`, factories.
 
-The factories (`NewRoomFactory`, `NewPeerFactory`) accept `port/metrics.Metrics` (nil-safe) and inject it as a field into the created `Room`/`Peer` — the `NewRoom`/`NewPeer` signatures remain stable for white-box tests (default `Noop`). Emits: joins/leaves + gauge `active_peers` on lifecycle transitions (**on actual mutation of the `peers` map** — a repeated join/leave of the same peer causes no drift, P19b) and `-len(peers)` in `Room.Stop` (P31: room kill paths — `closeRoom`, DELETE, empty-death, shutdown — kill peers bypassing `Leave`, and `registry.DeleteRoom` always goes through `room.Stop`, so a single line covers all death paths without double-counting peers that already left), drops of full `incoming`/`outbound`, gauge samples of both queue depths (`len(chan)` on enqueue/dequeue, an approximation), tick durations `rooms_room_tick_seconds{kind}`, send errors on a live connection `rooms_peer_send_errors_total` (expected teardown `!IsAlive` is not counted).
+The factories (`NewRoomFactory`, `NewPeerFactory`) accept `port/metrics.Metrics` (nil-safe) and inject it as a field into the created `Room`/`Peer` — the `NewRoom`/`NewPeer` signatures remain stable for white-box tests (default `Noop`). Emits: joins/leaves + gauge `active_peers` on lifecycle transitions (**on actual mutation of the `peers` map** — a repeated join/leave of the same peer causes no drift, P19b) and `-len(peers)` in `Room.Stop` (P31: room kill paths — `closeRoom`, DELETE, empty-death, shutdown — kill peers bypassing `Leave`, and `registry.DeleteRoom` always goes through `room.Stop`, so a single line covers all death paths without double-counting peers that already left), drops of full `incoming`/`outbound` (unreliable frames only — a reliable frame on a full queue escalates to connection teardown instead of a drop, P37), gauge samples of both queue depths (`len(chan)` on enqueue/dequeue, an approximation), tick durations `rooms_room_tick_seconds{kind}`, send errors on a live connection `rooms_peer_send_errors_total` (expected teardown `!IsAlive` is not counted).
 
 ## Room
 
 A single goroutine event loop (`processRoomEvents`):
 
-- `incoming` — buffer `RoomIncomingQueueSize` (default 128); full → drop (`domain.ErrQueueFull`); frames → `OnMessage`
+- `incoming` — buffer `RoomIncomingQueueSize` (default 128); full → `domain.ErrQueueFull` to the calling read loop (unreliable frame → drop; reliable → the peer closes its conn and exits, P37); frames → `OnMessage`
 - `lifecycle` — Join / Leave / Replace (serialized with OnMessage)
 - tickers — `OnTickFullState` / `OnTickPatchState` from `policy.TickIntervals()`
 
@@ -25,11 +25,11 @@ Public operations:
 | Outcome | `Room.Deliver` / `Peer.Deliver` | Caller behavior |
 |---------|---------------------------------|-----------------|
 | Success | `nil` | — |
-| Queue full | `domain.ErrQueueFull` | log; do **not** drop the connection (`processIncomingEvents` keeps reading) |
+| Queue full | `domain.ErrQueueFull` | `DeliveryUnreliable` frame → warn + drop, the read loop keeps reading; reliable/`DeliveryDefault` → warn + `connection.Close` and the read loop exits (P37 — a reliable frame is never silently dropped) |
 | Stopped | `room stopped` / `peer stopped` error | fatal for the peer loop (except an already-stopped one) |
 | Other error | other `Deliver` error | `processIncomingEvents` logs, closes the `connection` and exits — accelerated cleanup of a half-dead peer |
 
-`Room.Send`: `ErrQueueFull` on an individual peer — `Warn` and the broadcast continues to the rest (full-state/patch do not fail wholesale because of one full outbound). Any other `Deliver` error (incl. `peer stopped`) **aborts the broadcast** and is returned to the caller — the frame may not reach some peers.
+`Room.Send`: `ErrQueueFull` on an individual peer — `Warn` and the broadcast continues to the rest (full-state/patch do not fail wholesale because of one full outbound; on a reliable frame that peer is being torn down by its own `Deliver` anyway, P37). Any other `Deliver` error (incl. `peer stopped`) **aborts the broadcast** and is returned to the caller — the frame may not reach some peers.
 
 ## Shutdown
 
@@ -49,7 +49,7 @@ Tests: `tests/adapter/realtime/room_stop_test.go`, `tests/adapter/registry/room_
 - The peer does **not** store its room (P26): the entry point of the `incoming` mailbox is the narrow port `port/realtime.EventSink` (`Deliver(RoomEvent)`), passed as a parameter to `Start(sink)` and living only in the read goroutine's closure. The start-after-join contract (`Start` only after a successful `Join`/`Replace`) is a caller-side invariant, fixed in the port.
 - The peer's lifetime ctx is a separate `NewPeer`/`CreatePeer` argument (the caller passes `room.Context()`); the room is not needed to construct a peer.
 - I/O via `transport.Connection`
-- `outbound` — buffer `PeerOutboundQueueSize` (default 128); full → `domain.ErrQueueFull` (the room loop is not stalled)
+- `outbound` — buffer `PeerOutboundQueueSize` (default 128); full → `domain.ErrQueueFull` (the room loop is not stalled): `DeliveryUnreliable` → drop + `PeerOutboundDropped` counter; reliable/`DeliveryDefault` → `connection.Close` — teardown escalation (P37: the dead conn surfaces via the write/read error → `DisconnectPeer` → grace)
 - `Ping()` for refresh in the policy patch tick
 - `IsAlive()` — delegates to `transport.Connection`; `false` → the peer is subject to idle eviction ([ADR 0001](../../../docs/adr/0001-idle-peer-eviction.md))
 

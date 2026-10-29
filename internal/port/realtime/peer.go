@@ -38,5 +38,12 @@ type Peer interface {
 	// the drain wait is skipped and the connection is simply closed.
 	Stop() error
 
+	// Deliver queues one outbound frame. domain.ErrQueueFull on a full
+	// outbound queue is split by delivery kind (P37): a DeliveryUnreliable
+	// frame is simply dropped; a reliable/DeliveryDefault frame is never
+	// silently dropped — the peer closes its transport and the dead conn
+	// surfaces via the normal teardown path (send/read error →
+	// DisconnectPeer → grace). Producers are never blocked: a flooded peer
+	// is treated as a zombie.
 	Deliver(peerEvent events.PeerEvent) error
 }

@@ -24,6 +24,15 @@ type Room interface {
 	HasPeer(peerID domain.PeerID) bool
 	GetPeer(peerID domain.PeerID) (Peer, error)
 
+	// Send — targeted (PeerID) or broadcast (PeerIDInvalid, minus
+	// ExcludePeerID) outbound delivery. ErrQueueFull on an individual
+	// peer is Warn-logged and skipped — that peer is being torn down by
+	// its own Deliver anyway when the frame is reliable (P37); any other
+	// error aborts the broadcast.
 	Send(peerEvent events.PeerEvent) error
+	// Deliver — entry point of the room's incoming mailbox (the EventSink
+	// the peers' read loops write to). ErrQueueFull means the mailbox is
+	// full; on a reliable frame the reading peer escalates to closing the
+	// connection (P37), on an unreliable one it drops and keeps reading.
 	Deliver(roomEvent events.RoomEvent) error
 }

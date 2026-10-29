@@ -19,6 +19,7 @@ The config type is `transport/enet.EnetConfig` (`internal/adapter/transport/enet
 | After admit | channel `0`, `[OpCode u8][payload]`; server send reliable | — |
 | Inbound delivery | `PacketFlagReliable` → `DeliveryReliable`; without flag → `DeliveryUnreliable` (`flags_cgo.go`) | — |
 | Oversized packet/frame | graceful disconnect (+ `DisconnectPeer` if already admitted) | — |
+| Session incoming queue full | unreliable frame → drop + warn + `rooms_queue_drops_total{queue="enet_incoming"}`; reliable frame → graceful disconnect (+ `DisconnectPeer` if admitted) — a reliable frame is never silently dropped (P37) | — |
 | Admit error | OpCode `0x40`–`0x5F` and `0x70`–`0x7F` (1 byte) → **delivered**, then disconnect | — |
 | Admit timeout | peer did not send ticket within `AdmitTimeout` → disconnect without a wire frame | — |
 
@@ -41,7 +42,7 @@ Graceful shutdown: on ctx/Stop the host loop closes all sessions (`conn.Close` �
 
 ## Metrics (P19/P19b)
 
-`NewRoomsHandler` takes `port/metrics.Metrics` (nil-safe): admit reject frames are counted in `rooms_join_rejects_total{opcode}` only on a successful send (including `OpWrongHost` `0x77`; a send error is Warn-logged), a drop from a full ENet session queue — `rooms_queue_drops_total{queue="enet_incoming"}`, live sessions per host — `rooms_enet_host_peers{host}` (the same number as the least-loaded counter), command wait time in the `HostLoop` queue (enqueue → exec) — `rooms_enet_host_loop_queue_latency_seconds` (aggregated across hosts). `NewHostLoop` takes `Metrics` as its last parameter (nil-safe).
+`NewRoomsHandler` takes `port/metrics.Metrics` (nil-safe): admit reject frames are counted in `rooms_join_rejects_total{opcode}` only on a successful send (including `OpWrongHost` `0x77`; a send error is Warn-logged), an unreliable-frame drop from a full ENet session queue — `rooms_queue_drops_total{queue="enet_incoming"}` (a reliable frame on a full queue escalates to disconnect instead, P37), live sessions per host — `rooms_enet_host_peers{host}` (the same number as the least-loaded counter), command wait time in the `HostLoop` queue (enqueue → exec) — `rooms_enet_host_loop_queue_latency_seconds` (aggregated across hosts). `NewHostLoop` takes `Metrics` as its last parameter (nil-safe).
 
 Disconnect is graceful everywhere (`DisconnectLater` in `EnetConnection.Close`): queued reliable packets — including join reject — go out before the teardown. `DisconnectNow` is not used. The same mechanism guarantees delivery of `OpRoomClosed` (`0x82`) on room death in a no-migration deployment (P33): the frame and the disconnect ride the same host loop FIFO.
 

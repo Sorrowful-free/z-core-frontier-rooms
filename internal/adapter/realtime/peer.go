@@ -132,8 +132,17 @@ func processIncomingEvents(peer *Peer, sink realtime.EventSink) {
 			Frame:  frame,
 		}); err != nil {
 			if errors.Is(err, domain.ErrQueueFull) {
-				peer.logger.Warn("room incoming queue full, dropping frame", "peerID", peer.id)
-				continue
+				if frame.Delivery == domain.DeliveryUnreliable {
+					peer.logger.Warn("room incoming queue full, dropping frame", "peerID", peer.id)
+					continue
+				}
+				// A reliable frame is never silently dropped (P37): a peer
+				// flooding the room mailbox is a zombie — the same
+				// escalation as the fatal branch: close and let the read
+				// loop exit into the transport teardown path.
+				peer.logger.Warn("room incoming queue full, reliable frame undeliverable, closing connection", "peerID", peer.id)
+				_ = peer.connection.Close()
+				return
 			}
 			peer.logger.Error("error delivering room event", "error", err)
 			// Fatal delivery error — speed up the connection cleanup.
@@ -219,8 +228,18 @@ func (p *Peer) tryDeliver(ev events.PeerEvent) error {
 		}
 		return nil
 	default:
-		p.logger.Warn("peer outbound queue full, dropping frame", "peerID", p.id)
-		p.metrics.PeerOutboundDropped()
+		if ev.Frame.Delivery == domain.DeliveryUnreliable {
+			p.logger.Warn("peer outbound queue full, dropping frame", "peerID", p.id)
+			p.metrics.PeerOutboundDropped()
+			return domain.ErrQueueFull
+		}
+		// A reliable frame is never silently dropped (P37): a stalled or
+		// flooded outbound makes the peer a zombie anyway — escalate to
+		// teardown. No blocking send: the dead conn surfaces via the normal
+		// path (write-loop sendFrame error / read error → DisconnectPeer →
+		// grace).
+		p.logger.Warn("peer outbound queue full, reliable frame undeliverable, closing connection", "peerID", p.id)
+		_ = p.connection.Close()
 		return domain.ErrQueueFull
 	}
 }
