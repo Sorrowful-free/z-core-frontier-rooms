@@ -116,7 +116,8 @@ func (uc *DisconnectPeerUseCase) DisconnectPeer(ctx context.Context, session Pee
 		uc.logging.Error("disconnect peer: peer stop failed", "error", stopErr, "roomID", session.RoomID, "peerID", session.PeerID)
 	}
 
-	// Each recipient's FIFO outbound keeps the "remove patch → opcode" order.
+	// The opcode goes out immediately via room.Send (P34); the remove
+	// patch reaches recipients on the next patch tick.
 	sendErr := room.Send(events.PeerEvent{
 		Frame: domain.NewPeerNotificationFrame(domain.OpPeerDisconnected, session.PeerID),
 	})

@@ -90,7 +90,7 @@ func TestOnTickPatchState_PrunesAllStalePeersAndReelectsMaster(t *testing.T) {
 		t.Fatalf("peers.added[%d] = %#v ok=%v, want IsMaster=true", survivor.GetID(), added, ok)
 	}
 	if len(patch.Peers.Added) != 1 {
-		t.Fatalf("peers.added = %#v, want only survivor (stale не рекламируются)", patch.Peers.Added)
+		t.Fatalf("peers.added = %#v, want only survivor (stale are not advertised)", patch.Peers.Added)
 	}
 
 	sent = nil
@@ -133,7 +133,7 @@ func TestPeerPings_RefreshedOnFullTickOnly(t *testing.T) {
 		t.Fatalf("OnTickPatchState: %v", err)
 	}
 	if got := master.Snapshot(); len(got) != 0 {
-		t.Fatalf("master events on patch tick = %v, want none (ping не едет в patch)",
+		t.Fatalf("master events on patch tick = %v, want none (ping does not ride in the patch)",
 			testpeer.Opcodes(got))
 	}
 

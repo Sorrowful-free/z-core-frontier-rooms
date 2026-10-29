@@ -134,7 +134,7 @@ func TestApplyMapStatePatch_addedExistingKey_upserts(t *testing.T) {
 		t.Fatalf("ApplyMapStatePatch: %v", err)
 	}
 	if target[1] != 99 || target[2] != 20 {
-		t.Fatalf("map = %#v, want upserted 1:99 и added 2:20", target)
+		t.Fatalf("map = %#v, want upserted 1:99 and added 2:20", target)
 	}
 }
 

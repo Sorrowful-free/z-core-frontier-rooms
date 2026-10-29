@@ -99,10 +99,10 @@ func (uc *ReconnectRoomUseCase) ReconnectRoom(ctx context.Context, connection tr
 		return PeerSession{}, err
 	}
 
-	// OpPeerReconnected to the others (Q5): each recipient's FIFO outbound
-	// keeps the "add patch → opcode" order. A broadcast error does not sink
-	// the resume — the peer is already in the room and a reject would kill
-	// a live connection.
+	// OpPeerReconnected to the others (Q5): the opcode goes out immediately
+	// via room.Send (P34); the add patch reaches recipients on the next
+	// patch tick. A broadcast error does not sink the resume — the peer is
+	// already in the room and a reject would kill a live connection.
 	if err := room.Send(events.PeerEvent{
 		ExcludePeerID: claims.PeerID,
 		Frame:         domain.NewPeerNotificationFrame(domain.OpPeerReconnected, claims.PeerID),

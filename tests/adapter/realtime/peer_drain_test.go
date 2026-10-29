@@ -82,12 +82,12 @@ func TestPeer_Stop_DrainsCommittedFrameBeforeClose(t *testing.T) {
 	select {
 	case <-closeCh:
 	default:
-		t.Fatal("conn.Close не вызван в Stop")
+		t.Fatal("conn.Close was not called in Stop")
 	}
 	calls.record("close")
 
 	if got, want := calls.snapshot(), []string{"send", "close"}; !slices.Equal(got, want) {
-		t.Fatalf("conn calls = %v, want %v (Send до Close)", got, want)
+		t.Fatalf("conn calls = %v, want %v (Send before Close)", got, want)
 	}
 }
 
@@ -128,7 +128,7 @@ func TestPeer_Stop_DrainDisabled_DoesNotWaitForWriteLoop(t *testing.T) {
 		t.Fatalf("Stop: %v", err)
 	}
 	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Fatalf("Stop с drain=0 ждал write-loop: elapsed %v", elapsed)
+		t.Fatalf("Stop with drain=0 waited for the write loop: elapsed %v", elapsed)
 	}
 }
 
@@ -173,7 +173,7 @@ func TestPeer_Stop_BlockedSend_ForceCloseAfterDrainTimeout(t *testing.T) {
 	select {
 	case <-sendEntered:
 	case <-time.After(2 * time.Second):
-		t.Fatal("write-loop не дошёл до Send")
+		t.Fatal("write loop did not reach Send")
 	}
 
 	start := time.Now()
@@ -182,9 +182,9 @@ func TestPeer_Stop_BlockedSend_ForceCloseAfterDrainTimeout(t *testing.T) {
 	}
 	elapsed := time.Since(start)
 	if elapsed < drainTimeout {
-		t.Fatalf("Stop вернулся за %v раньше drain-дедлайна %v", elapsed, drainTimeout)
+		t.Fatalf("Stop returned in %v before the drain deadline %v", elapsed, drainTimeout)
 	}
 	if elapsed > 5*time.Second {
-		t.Fatalf("Stop висит над заблокированным Send: %v (дедлайн %v)", elapsed, drainTimeout)
+		t.Fatalf("Stop hangs on a blocked Send: %v (deadline %v)", elapsed, drainTimeout)
 	}
 }

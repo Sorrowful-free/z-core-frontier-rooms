@@ -187,7 +187,7 @@ func TestDelete_UnregisterAfterRegistrySuccess(t *testing.T) {
 
 	uc := newDeleteUseCase(t, registry, reservation, logger)
 	if err := uc.Delete(context.Background(), roomID, ""); err != nil {
-		t.Fatalf("err = %v, want nil (комната удалена — teardown-ошибки Warn)", err)
+		t.Fatalf("err = %v, want nil (room deleted — teardown errors are Warn)", err)
 	}
 }
 

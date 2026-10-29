@@ -83,7 +83,7 @@ func TestRoom_Leave_ConcurrentDoubleLeave_RegistryDedup(t *testing.T) {
 		t.Fatalf("double leave: succeeded=%d notFound=%d, want 1/1", succeeded, notFound)
 	}
 	if got := policy.onLeaves.Load(); got != 1 {
-		t.Fatalf("OnLeave calls = %d, want 1 (дедуп до policy)", got)
+		t.Fatalf("OnLeave calls = %d, want 1 (dedup before policy)", got)
 	}
 	if got := prom.Value(t, m.Gatherer(), "rooms_peer_leaves_total", nil); got != 1 {
 		t.Fatalf("peer_leaves = %v, want 1", got)

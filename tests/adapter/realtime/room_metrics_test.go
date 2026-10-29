@@ -58,14 +58,14 @@ func TestRoomMetrics_FirstElectionCounted(t *testing.T) {
 		t.Fatalf("join joiner: %v", err)
 	}
 	if got := prom.Value(t, m.Gatherer(), "rooms_master_elections_total", nil); got != 1 {
-		t.Fatalf("master_elections after second join = %v, want 1 (join не-master'а - не элекшн)", got)
+		t.Fatalf("master_elections after second join = %v, want 1 (a non-master join is not an election)", got)
 	}
 
 	if err := room.Leave(host); err != nil {
 		t.Fatalf("leave host: %v", err)
 	}
 	if got := prom.Value(t, m.Gatherer(), "rooms_master_elections_total", nil); got != 2 {
-		t.Fatalf("master_elections after master leave = %v, want 2 (перевыборы)", got)
+		t.Fatalf("master_elections after master leave = %v, want 2 (re-election)", got)
 	}
 }
 

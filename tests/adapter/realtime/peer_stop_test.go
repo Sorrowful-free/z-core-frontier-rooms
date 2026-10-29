@@ -64,7 +64,7 @@ func TestPeer_Stop_UnblocksReceive(t *testing.T) {
 			t.Fatalf("Stop: %v", err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("Stop hangs: Receive не разблокировался")
+		t.Fatal("Stop hangs: Receive did not unblock")
 	}
 
 	select {
@@ -123,6 +123,6 @@ func TestPeer_Stop_ConcurrentDeliver_NoPanic(t *testing.T) {
 	wg.Wait()
 
 	if err := peer.Deliver(ev); err == nil {
-		t.Fatal("Deliver после Stop должен вернуть ошибку «peer stopped», а не panic")
+		t.Fatal("Deliver after Stop must return a 'peer stopped' error, not panic")
 	}
 }

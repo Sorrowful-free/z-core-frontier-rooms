@@ -160,7 +160,7 @@ func TestIssueReconnectValidateRoundTrip(t *testing.T) {
 		t.Fatalf("claims = %+v", claims)
 	}
 	if claims.NickName != "" {
-		t.Fatalf("claims.NickName = %q, want empty (nick из слота)", claims.NickName)
+		t.Fatalf("claims.NickName = %q, want empty (nick from the slot)", claims.NickName)
 	}
 }
 
@@ -197,7 +197,7 @@ func TestReconnectTokenNoExpiry(t *testing.T) {
 	}
 	time.Sleep(2 * time.Millisecond)
 	if _, err := a.Validate(ctx, token); err != nil {
-		t.Fatalf("Validate reconnect после TTL admission: %v", err)
+		t.Fatalf("Validate reconnect after admission TTL: %v", err)
 	}
 }
 

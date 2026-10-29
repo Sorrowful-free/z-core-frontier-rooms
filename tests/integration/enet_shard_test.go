@@ -221,6 +221,6 @@ func TestE2E_ENetHostSharding(t *testing.T) {
 	unbound.waitDisconnect(t, 5*time.Second)
 	state, err := e.Reservation.State(ctx, roomID, peerID)
 	if err != nil || state != domain.ReservationSlotReserved {
-		t.Fatalf("reservation state = %v (err %v), want reserved (слот не потрачен)", state, err)
+		t.Fatalf("reservation state = %v (err %v), want reserved (slot not consumed)", state, err)
 	}
 }

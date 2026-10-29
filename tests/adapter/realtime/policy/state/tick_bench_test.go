@@ -21,8 +21,8 @@ func benchJoinPeers(b *testing.B, h *benchHarness, peerCount int) []*testpeer.Pe
 	return peers
 }
 
-// benchSeedEntities — entities via the master's FullInput path: the state
-// fills up as in production (the diff cost depends on |state|).
+// benchSeedEntities — entities via the master's FullEntities path: the
+// state fills up as in production (the diff cost depends on |state|).
 func benchSeedEntities(b *testing.B, h *benchHarness, master *testpeer.Peer, n int) {
 	b.Helper()
 	entities := state.NewMapState[state.EntityID, state.EntityState]()

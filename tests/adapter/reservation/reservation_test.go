@@ -422,7 +422,7 @@ func TestMarkDisconnected_KeepsAdmittedSlot(t *testing.T) {
 
 	// The slot is alive and admitted — capacity is still taken.
 	if err := res.Reserve(ctx, roomID, domain.PeerID(201), "other", time.Now().Add(time.Hour)); !errors.Is(err, domain.ErrReservationFull) {
-		t.Fatalf("Reserve after mark err = %v, want ErrReservationFull (слот в grace)", err)
+		t.Fatalf("Reserve after mark err = %v, want ErrReservationFull (slot is in grace)", err)
 	}
 
 	slots, err := res.ListAdmittedPeers(ctx, roomID)

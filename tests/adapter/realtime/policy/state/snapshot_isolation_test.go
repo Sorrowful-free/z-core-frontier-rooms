@@ -52,7 +52,7 @@ func TestTickPatchState_ConsecutiveMutations_EachEmitted(t *testing.T) {
 	}
 	patches := master.EventsByOpcode(state.OpCodePatchState)
 	if len(patches) != 1 {
-		t.Fatalf("master patches = %d, want 1 — дельта проглочена", len(patches))
+		t.Fatalf("master patches = %d, want 1 — delta swallowed", len(patches))
 	}
 	got, err := h.roomCodec.DecodePatch(patches[0].Frame.Payload)
 	if err != nil {
@@ -76,7 +76,7 @@ func TestTickPatchState_ConsecutiveMutations_EachEmitted(t *testing.T) {
 	}
 	patches = master.EventsByOpcode(state.OpCodePatchState)
 	if len(patches) != 1 {
-		t.Fatalf("master patches = %d, want 1 — вторая дельта проглочена (snapshot isolation broken)", len(patches))
+		t.Fatalf("master patches = %d, want 1 — second delta swallowed (snapshot isolation broken)", len(patches))
 	}
 	got, err = h.roomCodec.DecodePatch(patches[0].Frame.Payload)
 	if err != nil {

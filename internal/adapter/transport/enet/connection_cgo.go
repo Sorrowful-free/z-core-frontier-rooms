@@ -54,7 +54,7 @@ func (c *EnetConnection) Send(frame domain.Frame) error {
 		// go-enet quirk: SendBytes → SendPacket ignores the return code of
 		// enet_peer_send - sending to a disconnecting/zombie peer silently
 		// fails (nil error). The safeguard is the alive flag above; the break
-		// will surface as EventDisconnect → LeaveRoom on the host loop side.
+		// will surface as EventDisconnect → DisconnectPeer on the host loop side.
 		_ = c.peer.SendBytes(payload, 0, packetFlagsFromDelivery(frame.Delivery))
 	})
 }
@@ -96,7 +96,7 @@ func (c *EnetConnection) Close() error {
 	return nil
 }
 
-// IsAlive - false after Close(); on ENet zombies are reaped by the transport's own timeout (EventDisconnect → LeaveRoom).
+// IsAlive - false after Close(); on ENet zombies are reaped by the transport's own timeout (EventDisconnect → DisconnectPeer).
 func (c *EnetConnection) IsAlive() bool {
 	return c.alive.Load()
 }

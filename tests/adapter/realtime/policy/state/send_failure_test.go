@@ -135,7 +135,7 @@ func TestOnMessage_FullEntities_BystanderDeliverFails_MessageSucceeds(t *testing
 		PeerID: master.GetID(),
 		Frame:  domain.Frame{OpCode: state.OpCodeFullEntities, Payload: payload},
 	}); err != nil {
-		t.Fatalf("OnMessage: %v (send-фейл не должен доходить до OnMessage)", err)
+		t.Fatalf("OnMessage: %v (send failure must not reach OnMessage)", err)
 	}
 	assertWeakInvariants(t, shadow.view)
 

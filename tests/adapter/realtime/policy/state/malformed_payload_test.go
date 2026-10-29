@@ -181,7 +181,7 @@ func TestOnMessage_PatchInput_SoftApply_UpsertAndIgnore(t *testing.T) {
 				PeerID: member.GetID(),
 				Frame:  domain.Frame{OpCode: state.OpCodePatchInput, Payload: payload},
 			}); err != nil {
-				t.Fatalf("OnMessage patch input: %v (soft apply не должен фейлить)", err)
+				t.Fatalf("OnMessage patch input: %v (soft apply must not fail)", err)
 			}
 
 			master.Clear()

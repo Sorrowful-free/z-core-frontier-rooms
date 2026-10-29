@@ -76,6 +76,6 @@ func TestReservationMetrics_LazySweepCountsRevokes(t *testing.T) {
 		t.Fatalf("revoke after lazy sweep = %v, want 1", got)
 	}
 	if got := prom.Value(t, m.Gatherer(), "rooms_reservation_active_slots", nil); got != 1 {
-		t.Fatalf("active_slots after lazy sweep = %v, want 1 (только живой слот b)", got)
+		t.Fatalf("active_slots after lazy sweep = %v, want 1 (only the live slot b)", got)
 	}
 }
